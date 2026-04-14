@@ -182,46 +182,45 @@ function select_independent_eqs(eqs, Fp, n)
     return eqs[selected]
 end
 
-function newton_solve_Fp(eqs, Fp; max_trials=200, max_iter=50)
+function newton_solve_Fp(eqs, Fp; max_trials=500, max_iter=50)
     n = nvars(parent(eqs[1]))
     p = Int(characteristic(Fp))
     solutions = Vector{Vector}()
 
-    # 独立な n 本を選ぶ
-    eqs_sq = select_independent_eqs(eqs, Fp, n)
-
-    # 以下は eqs_sq を使って Newton
     for trial in 1:max_trials
         x = [Fp(rand(1:p-1)) for _ in 1:n]
 
         converged = false
         for iter in 1:max_iter
-            F_val = eval_system_Fp(eqs_sq, x)
+            F_val = eval_system_Fp(eqs, x)
 
             if all(iszero, F_val)
                 converged = true
                 break
             end
 
-            J = jacobian_Fp(eqs_sq, x, Fp, n)
+            J = jacobian_Fp(eqs, x, Fp, n)
 
-            if iszero(det(J))
+            # Overdetermined: use normal equation J^T J δ = J^T F
+            JtJ = transpose(J) * J
+            if iszero(det(JtJ))
                 break
             end
-
-            # Newton step
-            F_col = matrix(Fp, length(F_val), 1, F_val)
-            delta = solve(J, F_col; side=:right)
+            JtF = transpose(J) * matrix(Fp, length(F_val), 1, F_val)
+            delta = solve(JtJ, JtF; side=:right)
+            
             for i in 1:n
                 x[i] = x[i] - delta[i,1]
             end
         end
 
         if converged
-            # 全方程式で verify
             F_all = eval_system_Fp(eqs, x)
             if all(iszero, F_all)
-                push!(solutions, copy(x))
+                is_new = all(sol -> any(sol[i] != x[i] for i in 1:n), solutions)
+                if is_new || isempty(solutions)
+                    push!(solutions, copy(x))
+                end
             end
         end
     end
