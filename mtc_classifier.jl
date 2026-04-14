@@ -158,24 +158,52 @@ end
 
 # --- Newton's method over F_p ---
 
+function select_independent_eqs(eqs, Fp, n)
+    # ランダムな点で Jacobian を評価し、rank n の部分集合を選ぶ
+    p = Int(characteristic(Fp))
+    x_test = [Fp(rand(1:p-1)) for _ in 1:n]
+
+    selected = Int[]
+    for i in 1:length(eqs)
+        trial = [selected; i]
+        J = zero_matrix(Fp, length(trial), n)
+        for (ri, ei) in enumerate(trial)
+            for j in 1:n
+                df = derivative(eqs[ei], j)
+                J[ri, j] = eval_poly_Fp(df, x_test)
+            end
+        end
+        if rank(J) == length(trial)
+            push!(selected, i)
+        end
+        length(selected) == n && break
+    end
+
+    return eqs[selected]
+end
+
 function newton_solve_Fp(eqs, Fp; max_trials=200, max_iter=50)
     n = nvars(parent(eqs[1]))
     p = Int(characteristic(Fp))
     solutions = Vector{Vector}()
 
+    # 独立な n 本を選ぶ
+    eqs_sq = select_independent_eqs(eqs, Fp, n)
+
+    # 以下は eqs_sq を使って Newton
     for trial in 1:max_trials
         x = [Fp(rand(1:p-1)) for _ in 1:n]
 
         converged = false
         for iter in 1:max_iter
-            F_val = eval_system_Fp(eqs, x)
+            F_val = eval_system_Fp(eqs_sq, x)
 
             if all(iszero, F_val)
                 converged = true
                 break
             end
 
-            J = jacobian_Fp(eqs, x, Fp, n)
+            J = jacobian_Fp(eqs_sq, x, Fp, n)
 
             if iszero(det(J))
                 break
@@ -190,33 +218,11 @@ function newton_solve_Fp(eqs, Fp; max_trials=200, max_iter=50)
         end
 
         if converged
-            is_new = all(sol -> any(sol[i] != x[i] for i in 1:n), solutions)
-            if is_new || isempty(solutions)
+            # 全方程式で verify
+            F_all = eval_system_Fp(eqs, x)
+            if all(iszero, F_all)
                 push!(solutions, copy(x))
             end
-        end
-    end
-
-    return solutions
-end
-
-# --- Brute force for small systems ---
-
-function brute_force_Fp(eqs, Fp)
-    n = nvars(parent(eqs[1]))
-    p = Int(characteristic(Fp))
-    solutions = Vector{Vector}()
-
-    if BigInt(p)^n > 10^6
-        println("  WARNING: brute force too large (p^n = $(BigInt(p)^n))")
-        return solutions
-    end
-
-    for vals_int in Iterators.product(ntuple(_ -> 0:p-1, n)...)
-        vals = [Fp(v) for v in vals_int]
-        F_val = eval_system_Fp(eqs, vals)
-        if all(iszero, F_val)
-            push!(solutions, vals)
         end
     end
 
@@ -287,26 +293,20 @@ function classify_mtc(N::Int; max_rank::Int=20, num_primes::Int=5)
 
     # Level II: Solve pentagon over F_p
     for (idx, cand) in enumerate(valid_candidates)
-        cand.rank == 1 && continue  # Skip pointed categories
         println("\n--- Candidate $idx: rank=$(cand.rank), level=$(cand.level) ---")
 
-        R, eqs, n = get_pentagon_system(cand.Nijk, cand.rank)
-        println("Pentagon: $n variables, $(length(eqs)) equations")
-
-        if n == 0
+        if cand.rank == 1
             println("  Pointed category. F = trivial.")
             continue
         end
 
+        R, eqs, n = get_pentagon_system(cand.Nijk, cand.rank)
+        println("Pentagon: $n variables, $(length(eqs)) equations")
+
         for p in primes
             println("  F_$p: ")
             Rp, xp, eqs_Fp, Fp = system_to_Fp(eqs, R, p)
-
-            if n <= 5 && p <= 31
-                solutions = brute_force_Fp(eqs_Fp, Fp)
-            else
-                solutions = newton_solve_Fp(eqs_Fp, Fp)
-            end
+            solutions = newton_solve_Fp(eqs_Fp, Fp)
 
             println("$(length(solutions)) solutions")
             for (si, sol) in enumerate(solutions)
