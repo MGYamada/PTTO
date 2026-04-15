@@ -4,16 +4,13 @@
 #
 # Algorithm:
 #   Level I:   SL₂(Z/NZ) reps → modular data (S,T)
-#   Level II:  Pentagon/hexagon over F_p — Newton's method — CRT
-#
-# Key insight: Pentagon system is square after gauge fixing.
-#   F_p 上の Newton 法で exact に解ける。
+#   Level II:  Pentagon/hexagon — Newton's method
 #
 # Usage:
-#   using Oscar, TensorCategories
 #   include("mtc_classifier.jl")
 #   classify_mtc(5)
 
+using LinearAlgebra
 using Oscar
 using TensorCategories
 
@@ -95,7 +92,7 @@ function verlinde_float(S, r::Int, K, cond)
 end
 
 # ============================================================
-#  Level II: Pentagon solver over F_p
+#  Level II: Pentagon solver
 # ============================================================
 
 # --- Pentagon equations from TensorCategories.jl ---
@@ -109,123 +106,73 @@ function get_pentagon_system(Nijk::Array{Int,3}, r::Int)
     return R, eqs, n
 end
 
-# --- F_p reduction ---
-
-function to_Fp(f, Rp, p)
-    result = zero(Rp)
-    yp = gens(Rp)
-    for (c, m) in zip(coefficients(f), monomials(f))
-        c_int = mod(Int(numerator(c)) * invmod(Int(denominator(c)), p), p)
-        degs = degrees(m)
-        mono = prod(yp[i]^degs[i] for i in 1:length(degs))
-        result += c_int * mono
+function newton_damped(eqs, n, zeta; max_trials=20, max_iter=200)
+    solutions = []
+    
+    for trial in 1:max_trials
+        x = ComplexF64[rand(-3:3) + rand(-3:3)*zeta for _ in 1:n]
+        for i in 1:n
+            abs(x[i]) < 0.1 && (x[i] = 1.0 + zeta)
+        end
+        
+        for iter in 1:max_iter
+            F_val = ComplexF64[eval_poly_complex(eq, x) for eq in eqs]
+            res = maximum(abs.(F_val))
+            if res < 1e-12
+                println("Trial $trial: CONVERGED at iter $iter")
+                push!(solutions, copy(x))
+                break
+            end
+            
+            J = jacobian_complex(eqs, x, n)
+            delta = pinv(J) * F_val
+            
+            # Line search: find best step size
+            alpha = 1.0
+            for _ in 1:20
+                x_new = x - alpha * delta
+                F_new = ComplexF64[eval_poly_complex(eq, x_new) for eq in eqs]
+                res_new = maximum(abs.(F_new))
+                if res_new < res
+                    x = x_new
+                    break
+                end
+                alpha *= 0.5
+            end
+        end
     end
-    result
+    solutions
 end
 
-function system_to_Fp(eqs, R, p)
-    Fp = GF(p)
-    Rp, xp = polynomial_ring(Fp, symbols(R))
-    eqs_Fp = [to_Fp(eq, Rp, p) for eq in eqs]
-    return Rp, xp, eqs_Fp, Fp
-end
-
-# --- Evaluate and differentiate over F_p ---
-
-function eval_poly_Fp(f, vals)
-    result = zero(parent(vals[1]))
+function eval_poly_complex(f, vals::Vector{ComplexF64})
+    # f が定数 0 の場合
+    isa(f, Integer) && return ComplexF64(f)
+    iszero(f) && return ComplexF64(0.0)
+    
+    result = 0.0 + 0.0im
     for (c, m) in zip(coefficients(f), monomials(f))
         degs = degrees(m)
-        term = c * prod(vals[i]^degs[i] for i in 1:length(degs))
+        term = ComplexF64(Float64(numerator(c)) / Float64(denominator(c)))
+        for i in 1:length(degs)
+            degs[i] > 0 && (term *= vals[i]^degs[i])
+        end
         result += term
     end
     result
 end
 
-function eval_system_Fp(eqs, vals)
-    [eval_poly_Fp(eq, vals) for eq in eqs]
-end
-
-function jacobian_Fp(eqs, vals, Fp, n)
+function jacobian_complex(eqs, vals::Vector{ComplexF64}, n)
     m = length(eqs)
-    J = zero_matrix(Fp, m, n)
-    for i in 1:m, j in 1:n
-        df = derivative(eqs[i], j)
-        J[i,j] = eval_poly_Fp(df, vals)
+    J = zeros(ComplexF64, m, n)
+    for i in 1:m
+        isa(eqs[i], Integer) && continue
+        iszero(eqs[i]) && continue
+        for j in 1:n
+            df = derivative(eqs[i], j)
+            J[i,j] = eval_poly_complex(df, vals)
+        end
     end
     J
-end
-
-# --- Newton's method over F_p ---
-
-function select_independent_eqs(eqs, Fp, n)
-    # ランダムな点で Jacobian を評価し、rank n の部分集合を選ぶ
-    p = Int(characteristic(Fp))
-    x_test = [Fp(rand(1:p-1)) for _ in 1:n]
-
-    selected = Int[]
-    for i in 1:length(eqs)
-        trial = [selected; i]
-        J = zero_matrix(Fp, length(trial), n)
-        for (ri, ei) in enumerate(trial)
-            for j in 1:n
-                df = derivative(eqs[ei], j)
-                J[ri, j] = eval_poly_Fp(df, x_test)
-            end
-        end
-        if rank(J) == length(trial)
-            push!(selected, i)
-        end
-        length(selected) == n && break
-    end
-
-    return eqs[selected]
-end
-
-function newton_solve_Fp(eqs, Fp; max_trials=500, max_iter=50)
-    n = nvars(parent(eqs[1]))
-    p = Int(characteristic(Fp))
-    solutions = Vector{Vector}()
-
-    for trial in 1:max_trials
-        x = [Fp(rand(1:p-1)) for _ in 1:n]
-
-        converged = false
-        for iter in 1:max_iter
-            F_val = eval_system_Fp(eqs, x)
-
-            if all(iszero, F_val)
-                converged = true
-                break
-            end
-
-            J = jacobian_Fp(eqs, x, Fp, n)
-
-            # Overdetermined: use normal equation J^T J δ = J^T F
-            JtJ = transpose(J) * J
-            if iszero(det(JtJ))
-                break
-            end
-            JtF = transpose(J) * matrix(Fp, length(F_val), 1, F_val)
-            delta = solve(JtJ, JtF; side=:right)
-            
-            for i in 1:n
-                x[i] = x[i] - delta[i,1]
-            end
-        end
-
-        if converged
-            F_all = eval_system_Fp(eqs, x)
-            if all(iszero, F_all)
-                is_new = all(sol -> any(sol[i] != x[i] for i in 1:n), solutions)
-                if is_new || isempty(solutions)
-                    push!(solutions, copy(x))
-                end
-            end
-        end
-    end
-
-    return solutions
 end
 
 # --- Hexagon solver ---
@@ -237,30 +184,13 @@ function solve_hexagon_Fp(F_values, Nijk, r, Fp)
 end
 
 # ============================================================
-#  CRT Reconstruction
-# ============================================================
-
-function good_primes(N::Int, count::Int)
-    result = Int[]
-    p = N + 1
-    while length(result) < count
-        is_prime(p) && p % N == 1 && push!(result, p)
-        p += 1
-    end
-    result
-end
-
-# ============================================================
 #  Main
 # ============================================================
 
-function classify_mtc(N::Int; max_rank::Int=20, num_primes::Int=5)
+function classify_mtc(N::Int; max_rank::Int=20)
     println("=" ^ 60)
     println("MTC Classification: N = $N")
     println("=" ^ 60)
-
-    primes = good_primes(N, num_primes)
-    println("Good primes (p ≡ 1 mod $N): $primes")
 
     # Level I: Enumerate modular data candidates
     all_irreps = []
@@ -290,7 +220,7 @@ function classify_mtc(N::Int; max_rank::Int=20, num_primes::Int=5)
 
     println("\n$(length(valid_candidates)) candidates found.")
 
-    # Level II: Solve pentagon over F_p
+    # Level II: Solve pentagon
     for (idx, cand) in enumerate(valid_candidates)
         println("\n--- Candidate $idx: rank=$(cand.rank), level=$(cand.level) ---")
 
@@ -302,15 +232,10 @@ function classify_mtc(N::Int; max_rank::Int=20, num_primes::Int=5)
         R, eqs, n = get_pentagon_system(cand.Nijk, cand.rank)
         println("Pentagon: $n variables, $(length(eqs)) equations")
 
-        for p in primes
-            println("  F_$p: ")
-            Rp, xp, eqs_Fp, Fp = system_to_Fp(eqs, R, p)
-            solutions = newton_solve_Fp(eqs_Fp, Fp)
-
-            println("$(length(solutions)) solutions")
-            for (si, sol) in enumerate(solutions)
-                println("    [$si] $sol")
-            end
+        solutions = newton_damped(eqs, n, exp(2π * im / N))
+        println("$(length(solutions)) solutions")
+        for (si, sol) in enumerate(solutions)
+            println("    [$si] $sol")
         end
     end
 
