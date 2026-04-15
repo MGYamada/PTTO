@@ -345,6 +345,12 @@ function classify_mtc(N::Int; max_rank::Int=20, max_trials::Int=20)
     println("MTC Classification: N = $N")
     println("=" ^ 60)
 
+    if N == 1
+        println("N=1: trivial MTC (rank 1, F = 1)")
+        println("=" ^ 60)
+        return
+    end
+
     # Level I
     candidates = enumerate_modular_data(N; max_rank=max_rank)
 
