@@ -3,8 +3,9 @@
 # April 14-15, 2026 — Arithmetic Condensed Matter Geometry
 #
 # Level I (exact over Q(ζ_N)):
-#   N = ∏ pᵢ^aᵢ → SL₂(Z/pᵢ^aᵢ Z) irreps → tensor products → modular data
-#   Admissibility checks: Verlinde, (ST)³, Cauchy (via norm), Frobenius-Schur
+#   N = ∏ pᵢ^aᵢ → SL₂(Z/pᵢ^aᵢ Z) irreps → external tensor products
+#                → DIRECT SUM enumeration with multiplicity (⊕_α m_α ρ_α)
+#   Admissibility: Verlinde, (ST)³ = ζ_24^c · S² with c ∈ 0..23, Cauchy, FS
 # Level II (numerical, ComplexF64):
 #   Pentagon — two solver backends:
 #     :homotopy (default) — HomotopyContinuation.jl, polyhedral start system
@@ -251,24 +252,94 @@ function fix_signs_exact(S_exact, K, N::Int, r::Int)
     return S_fixed, signs
 end
 
-# --- Admissibility: (ST)³ = ±S² in Q(ζ_N) ---
+# --- Admissibility: (ST)³ = λ·S² with λ an 8-th root of unity ---
 
-function check_ST_exact(S, T, K, r::Int)
-    """Check (ST)³ = ±S² over Q(ζ_N). Projective SL₂(Z) representation."""
+"""
+    check_ST_exact(S, T, K, N, r) -> (ok::Bool, c::Union{Int,Nothing})
+
+Check whether there exists a central charge c ∈ {0, 1, ..., 7} such that
+`(ST)³ = ζ_8^c · S²` over K = Q(ζ_N). Returns `(true, c)` on the first
+match, `(false, nothing)` otherwise.
+
+Physically, c mod 8 is the central charge of the MTC. The old version only
+tested c ∈ {0, 4} (i.e. λ = ±1) and thereby rejected all MTCs with c ≢ 0
+mod 4 (e.g. Ising has c = 1/2, so 16 · c = 8, which corresponds to
+λ = ζ_16 — actually the 16-th root of unity case; see note below).
+
+Note: some conventions use 24-th roots (for SL₂(Z) projective class in
+central extensions), others use 8-th roots (for the MTC multiplicative
+central charge e^{2πic/8}). We scan both 8 and 24 to be safe. If N is
+divisible by 8 (resp 24), ζ_8 (resp ζ_24) lives in K and can be constructed;
+if not, we still try to solve for λ as a root of `λ · S² - (ST)³ = 0`
+entry-wise, which only works when (ST)³ and S² are proportional.
+"""
+function check_ST_exact(S, T, K, N::Int, r::Int)
     ST = S * T
     ST3 = ST * ST * ST
     S2 = S * S
-    
-    # Check ST3 == S2 or ST3 == -S2
-    diff_plus = ST3 - S2
-    diff_minus = ST3 + S2
-    
-    iszero(diff_plus) && return true
-    iszero(diff_minus) && return true
-    
-    # Also try scalar multiples ST3 = λ S2 for λ a root of unity
-    # For simplicity, only check ±1
-    return false
+
+    # (ST)³ = λ · S² must hold entry-wise with one common scalar λ.
+    # Find the first nonzero entry of S² and compute λ candidate from it.
+    λ_candidate = nothing
+    for i in 1:r, j in 1:r
+        if !iszero(S2[i, j])
+            # λ = ST3[i,j] / S2[i,j]
+            λ_candidate = ST3[i, j] // S2[i, j]
+            # Verify λ is consistent across ALL entries
+            consistent = true
+            for a in 1:r, b in 1:r
+                if !iszero(S2[a, b])
+                    if !iszero(ST3[a, b] - λ_candidate * S2[a, b])
+                        consistent = false
+                        break
+                    end
+                else
+                    if !iszero(ST3[a, b])
+                        consistent = false
+                        break
+                    end
+                end
+            end
+            if !consistent
+                return (false, nothing)
+            end
+            break
+        end
+    end
+
+    if λ_candidate === nothing
+        # S² is zero → pathological; reject
+        return (false, nothing)
+    end
+
+    # Check if λ_candidate is a root of unity of order dividing 24.
+    # We try ζ_8^c for c = 0..7 first (most common), then ζ_24^c for full scan.
+    # Since ζ_n ∈ Q(ζ_N) iff n | N (when we embed canonically), we can only
+    # directly test roots of unity whose order divides N.
+    # Pragmatic approach: check λ^8 = 1, then return c such that λ = ζ_8^c.
+
+    # Compute λ^8 - 1 and test exactness.
+    λ8 = λ_candidate^8
+    if !isone(λ8)
+        # Try λ^24 = 1 as a fallback
+        λ24 = λ_candidate^24
+        if !isone(λ24)
+            return (false, nothing)
+        end
+    end
+
+    # λ is a root of unity; find c ∈ 0..23 such that λ = ζ_24^c in K (if 24 | N),
+    # else fall back to matching c ∈ 0..7 via numeric embedding.
+    # Numeric match (always works):
+    zeta_N_num = exp(2π * im / N)
+    deg = degree(K)
+    λ_num = to_complex(λ_candidate, zeta_N_num, deg)
+    for c in 0:23
+        if abs(λ_num - exp(2π * im * c / 24)) < 1e-8
+            return (true, c)
+        end
+    end
+    return (false, nothing)
 end
 
 # --- Complex conjugation on Q(ζ_N) ---
@@ -412,7 +483,57 @@ end
 
 # --- Level I main ---
 
-function enumerate_modular_data(N::Int; max_rank::Int=20, verbose::Bool=false)
+"""
+    _block_diag_matrices(M_list, K) -> big_matrix
+
+Given a list of square matrices over K, produce the block-diagonal matrix.
+Used to assemble ⊕_α m_α · (S_α) into a single (S) matrix.
+"""
+function _block_diag_matrices(M_list, K)
+    total_size = sum(nrows(M) for M in M_list)
+    big = zero_matrix(K, total_size, total_size)
+    offset = 0
+    for M in M_list
+        sz = nrows(M)
+        for i in 1:sz, j in 1:sz
+            big[offset + i, offset + j] = M[i, j]
+        end
+        offset += sz
+    end
+    return big
+end
+
+"""
+    _enumerate_multiplicity_vectors(rank_list, max_total_rank) -> iterator
+
+Enumerate non-negative integer vectors (m_1, ..., m_K) such that
+∑ m_k · rank_list[k] ≤ max_total_rank, excluding the zero vector.
+"""
+function _enumerate_multiplicity_vectors(rank_list::Vector{Int}, max_total_rank::Int)
+    result = Vector{Vector{Int}}()
+    K = length(rank_list)
+    function recurse(idx::Int, remaining::Int, current::Vector{Int})
+        if idx > K
+            if sum(current) > 0  # at least one nonzero multiplicity
+                push!(result, copy(current))
+            end
+            return
+        end
+        max_m = div(remaining, rank_list[idx])
+        for m in 0:max_m
+            current[idx] = m
+            recurse(idx + 1, remaining - m * rank_list[idx], current)
+        end
+        current[idx] = 0
+    end
+    recurse(1, max_total_rank, zeros(Int, K))
+    return result
+end
+
+function enumerate_modular_data(N::Int; max_rank::Int=20,
+                                 verbose::Bool=false,
+                                 enumerate_direct_sums::Bool=true,
+                                 max_multiplicity::Int=max_rank)
     pf = prime_power_factors(N)
     println("N = $N = ", join(["$(p)^$(a)" for (p,a) in pf], " × "))
     
@@ -442,11 +563,34 @@ function enumerate_modular_data(N::Int; max_rank::Int=20, verbose::Bool=false)
         println("  SL₂(Z/$(p^a)Z): $(length(st_pairs)) irreps")
     end
     
-    # Step 2: Tensor products
+    # Step 2: Build catalog of "atomic" irreps of SL₂(Z/NZ) via external tensor product.
+    # Each entry is (S_α, T_α, r_α, name_α).
+    atomic_catalog = []
+    if length(factor_irreps) == 1
+        for (S, T, r) in factor_irreps[1]
+            push!(atomic_catalog, (S=S, T=T, rank=r, name="$(r)d"))
+        end
+    else
+        indices = [1:length(fi) for fi in factor_irreps]
+        for idx_tuple in Iterators.product(indices...)
+            total_rank = prod(factor_irreps[k][idx_tuple[k]][3] for k in 1:length(pf))
+            total_rank > max_rank && continue
+            S = factor_irreps[1][idx_tuple[1]][1]
+            T = factor_irreps[1][idx_tuple[1]][2]
+            for k in 2:length(factor_irreps)
+                S = kron_oscar(S, factor_irreps[k][idx_tuple[k]][1], K)
+                T = kron_oscar(T, factor_irreps[k][idx_tuple[k]][2], K)
+            end
+            name = join(["$(factor_irreps[k][idx_tuple[k]][3])d" for k in 1:length(pf)], "⊗")
+            push!(atomic_catalog, (S=S, T=T, rank=total_rank, name=name))
+        end
+    end
+    println("  Atomic irreps of SL₂(Z/$(N)Z) (≤ rank $max_rank): $(length(atomic_catalog))")
+
+    # Step 3: Enumerate direct sums with multiplicity.
     valid_candidates = []
-    
     reject_count = Dict("Verlinde"=>0, "(ST)³"=>0, "Cauchy"=>0, "FS"=>0)
-    
+
     function process_candidate(S, T, r, name="")
         r > max_rank && return
         
@@ -464,8 +608,9 @@ function enumerate_modular_data(N::Int; max_rank::Int=20, verbose::Bool=false)
             return
         end
         
-        # (ST)³ = ±S²
-        if !check_ST_exact(S_fixed, T, K, r)
+        # (ST)³ = ζ_24^c · S² for some c ∈ 0..23
+        ok_st, central_charge = check_ST_exact(S_fixed, T, K, N, r)
+        if !ok_st
             reject_count["(ST)³"] += 1
             verbose && println("  rank=$r rejected: (ST)³")
             return
@@ -493,30 +638,43 @@ function enumerate_modular_data(N::Int; max_rank::Int=20, verbose::Bool=false)
         
         push!(valid_candidates, (
             S=S_float, T=T_float, S_exact=S_fixed, T_exact=T,
-            Nijk=Nijk, rank=r, name=name
+            Nijk=Nijk, rank=r, name=name,
+            central_charge=central_charge,
         ))
     end
-    
-    if length(factor_irreps) == 1
-        for (S, T, r) in factor_irreps[1]
-            process_candidate(S, T, r)
+
+    rank_list = [cand.rank for cand in atomic_catalog]
+
+    if !enumerate_direct_sums
+        # Legacy behavior: try each atomic irrep alone.
+        for (α, cand) in enumerate(atomic_catalog)
+            process_candidate(cand.S, cand.T, cand.rank, cand.name)
         end
     else
-        indices = [1:length(fi) for fi in factor_irreps]
-        for idx_tuple in Iterators.product(indices...)
-            total_rank = prod(factor_irreps[k][idx_tuple[k]][3] for k in 1:length(pf))
-            total_rank > max_rank && continue
-            
-            # Tensor product
-            S = factor_irreps[1][idx_tuple[1]][1]
-            T = factor_irreps[1][idx_tuple[1]][2]
-            for k in 2:length(factor_irreps)
-                S = kron_oscar(S, factor_irreps[k][idx_tuple[k]][1], K)
-                T = kron_oscar(T, factor_irreps[k][idx_tuple[k]][2], K)
+        mult_vectors = _enumerate_multiplicity_vectors(rank_list, max_rank)
+        # Filter out too-large per-irrep multiplicities
+        mult_vectors = filter(v -> all(m -> m <= max_multiplicity, v), mult_vectors)
+        println("  Multiplicity vectors to try: $(length(mult_vectors))")
+        for mv in mult_vectors
+            # Build block diagonal (S, T) from the multiplicities.
+            blocks_S = AbstractAlgebra.Generic.MatSpaceElem{AbsSimpleNumFieldElem}[]
+            blocks_T = AbstractAlgebra.Generic.MatSpaceElem{AbsSimpleNumFieldElem}[]
+            name_parts = String[]
+            total_rank = 0
+            for (α, m) in enumerate(mv)
+                m == 0 && continue
+                for _ in 1:m
+                    push!(blocks_S, atomic_catalog[α].S)
+                    push!(blocks_T, atomic_catalog[α].T)
+                    total_rank += atomic_catalog[α].rank
+                end
+                push!(name_parts, m == 1 ? atomic_catalog[α].name : "$(m)·$(atomic_catalog[α].name)")
             end
-            
-            name = join(["$(factor_irreps[k][idx_tuple[k]][3])d" for k in 1:length(pf)], "⊗")
-            process_candidate(S, T, total_rank, name)
+            total_rank > max_rank && continue
+            S_big = _block_diag_matrices(blocks_S, K)
+            T_big = _block_diag_matrices(blocks_T, K)
+            name = "⊕ " * join(name_parts, " ⊕ ")
+            process_candidate(S_big, T_big, total_rank, name)
         end
     end
     
@@ -527,7 +685,8 @@ function enumerate_modular_data(N::Int; max_rank::Int=20, verbose::Bool=false)
     println("$(length(valid_candidates)) valid modular data candidates.")
     for (i, cand) in enumerate(valid_candidates)
         name = hasproperty(cand, :name) ? cand.name : ""
-        println("  [$i] rank=$(cand.rank) $name")
+        cc = hasproperty(cand, :central_charge) ? " (c=$(cand.central_charge)/8)" : ""
+        println("  [$i] rank=$(cand.rank) $name$cc")
     end
     
     return valid_candidates
