@@ -203,14 +203,18 @@ function to_ZZ(x::AbsSimpleNumFieldElem)
     ZZ(numerator(c0))
 end
 
-# Simplified Verlinde: compute complex, check closeness to integer
-function verlinde_float_from_exact(S_exact, K, N::Int, r::Int; tol=1e-6)
+# Simplified Verlinde: compute complex, check closeness to integer.
+# Returns Nijk::Array{Int,3} on success, or a diagnostic tuple
+# (:reason, extra_info) on failure.
+function verlinde_float_from_exact(S_exact, K, N::Int, r::Int; tol=1e-6, with_reason::Bool=false)
     zeta = exp(2π * im / N)
     deg = degree(K)
     S_num = matrix_to_complex(S_exact, zeta, deg)
     
     for l in 1:r
-        abs(S_num[1,l]) < 1e-12 && return nothing
+        if abs(S_num[1,l]) < 1e-12
+            return with_reason ? (:zero_S1l, l) : nothing
+        end
     end
     
     Nijk = zeros(Int, r, r, r)
@@ -218,10 +222,10 @@ function verlinde_float_from_exact(S_exact, K, N::Int, r::Int; tol=1e-6)
         val = sum(S_num[i,l] * S_num[j,l] * conj(S_num[k,l]) / S_num[1,l] for l in 1:r)
         n = round(Int, real(val))
         if abs(real(val) - n) > tol || abs(imag(val)) > tol
-            return nothing
+            return with_reason ? (:noninteger, (i, j, k, val)) : nothing
         end
         if n < 0
-            return nothing
+            return with_reason ? (:negative, (i, j, k, n)) : nothing
         end
         Nijk[i,j,k] = n
     end
@@ -484,6 +488,86 @@ end
 # --- Level I main ---
 
 """
+    inspect_atomic_irreps(N::Int; max_rank::Int=20)
+
+Diagnostic: list the atomic irreps of SL₂(ℤ/Nℤ) with their numerical
+(S, T) matrices, to help debug why certain candidates are rejected by
+Verlinde etc.
+"""
+function inspect_atomic_irreps(N::Int; max_rank::Int=20)
+    pf = prime_power_factors(N)
+    K, z = cyclotomic_field(N)
+    zeta_num = exp(2π * im / N)
+    deg = degree(K)
+
+    factor_irreps = []
+    for (p, a) in pf
+        gap_irreps = irreps_for_prime_power(p, a)
+        st_pairs = []
+        for rep in gap_irreps
+            r = Int(rep.degree)
+            cond_S = matrix_conductor(rep.S, r)
+            cond_T = matrix_conductor(rep.T, r)
+            rep_cond = lcm(cond_S, cond_T)
+            N % rep_cond != 0 && continue
+            S = gap_to_oscar_matrix(rep.S, r, K, N)
+            T = gap_to_oscar_matrix(rep.T, r, K, N)
+            push!(st_pairs, (S, T, r))
+        end
+        push!(factor_irreps, st_pairs)
+    end
+
+    atomic_catalog = []
+    if length(factor_irreps) == 1
+        for (S, T, r) in factor_irreps[1]
+            push!(atomic_catalog, (S=S, T=T, rank=r, name="$(r)d"))
+        end
+    else
+        indices = [1:length(fi) for fi in factor_irreps]
+        for idx_tuple in Iterators.product(indices...)
+            total_rank = prod(factor_irreps[k][idx_tuple[k]][3] for k in 1:length(pf))
+            total_rank > max_rank && continue
+            S = factor_irreps[1][idx_tuple[1]][1]
+            T = factor_irreps[1][idx_tuple[1]][2]
+            for k in 2:length(factor_irreps)
+                S = kron_oscar(S, factor_irreps[k][idx_tuple[k]][1], K)
+                T = kron_oscar(T, factor_irreps[k][idx_tuple[k]][2], K)
+            end
+            name = join(["$(factor_irreps[k][idx_tuple[k]][3])d" for k in 1:length(pf)], "⊗")
+            push!(atomic_catalog, (S=S, T=T, rank=total_rank, name=name))
+        end
+    end
+
+    for (α, cand) in enumerate(atomic_catalog)
+        println("=" ^ 60)
+        println("Atomic irrep [$α]: $(cand.name) rank=$(cand.rank)")
+        println("=" ^ 60)
+        S_num = matrix_to_complex(cand.S, zeta_num, deg)
+        T_num = matrix_to_complex(cand.T, zeta_num, deg)
+        println("S = ")
+        for i in 1:cand.rank
+            for j in 1:cand.rank
+                print(lpad(string(round(S_num[i,j]; digits=4)), 24))
+            end
+            println()
+        end
+        println("T (diagonal) = ", [round(T_num[i,i]; digits=4) for i in 1:cand.rank])
+        println("S[1, :] = ", [round(S_num[1,j]; digits=4) for j in 1:cand.rank])
+        println("S[1,1] = $(round(S_num[1,1]; digits=4))")
+        # Test Verlinde on this atomic irrep alone
+        S_fixed, signs = fix_signs_exact(cand.S, K, N, cand.rank)
+        reason = verlinde_float_from_exact(S_fixed, K, N, cand.rank; with_reason=true)
+        if reason isa Tuple
+            println("→ Atomic Verlinde FAILS: $(reason[1]) — $(reason[2])")
+        else
+            println("→ Atomic Verlinde OK. Nijk = integer fusion rules")
+        end
+        println()
+    end
+    return atomic_catalog
+end
+
+"""
     _block_diag_matrices(M_list, K) -> big_matrix
 
 Given a list of square matrices over K, produce the block-diagonal matrix.
@@ -598,28 +682,38 @@ function enumerate_modular_data(N::Int; max_rank::Int=20,
         S_fixed, signs = fix_signs_exact(S, K, N, r)
         
         # Verlinde (use float for speed, then verify integers)
-        Nijk = verlinde_float_from_exact(S_fixed, K, N, r)
-        if Nijk === nothing
-            reject_count["Verlinde"] += 1
-            return
-        end
-        if !all(Nijk .>= 0)
-            reject_count["Verlinde"] += 1
-            return
+        if verbose
+            reason = verlinde_float_from_exact(S_fixed, K, N, r; with_reason=true)
+            if reason isa Tuple
+                reject_count["Verlinde"] += 1
+                println("  rank=$r rejected: Verlinde($(reason[1])) details=$(reason[2]) name=$name")
+                return
+            end
+            Nijk = reason  # it's the actual Nijk array
+        else
+            Nijk = verlinde_float_from_exact(S_fixed, K, N, r)
+            if Nijk === nothing
+                reject_count["Verlinde"] += 1
+                return
+            end
+            if !all(Nijk .>= 0)
+                reject_count["Verlinde"] += 1
+                return
+            end
         end
         
         # (ST)³ = ζ_24^c · S² for some c ∈ 0..23
         ok_st, central_charge = check_ST_exact(S_fixed, T, K, N, r)
         if !ok_st
             reject_count["(ST)³"] += 1
-            verbose && println("  rank=$r rejected: (ST)³")
+            verbose && println("  rank=$r rejected: (ST)³ name=$name")
             return
         end
         
         # Cauchy
         if !check_cauchy_exact(S_fixed, K, N, r)
             reject_count["Cauchy"] += 1
-            verbose && println("  rank=$r rejected: Cauchy")
+            verbose && println("  rank=$r rejected: Cauchy name=$name")
             return
         end
         
@@ -1424,7 +1518,10 @@ function classify_mtc(N::Int; max_rank::Int=20, max_trials::Int=20,
                       auto_slice::Bool=true,
                       include_singular::Bool=false,
                       solve_hexagon::Bool=true,
-                      max_hexagon_per_candidate::Int=3)
+                      max_hexagon_per_candidate::Int=3,
+                      verbose::Bool=false,
+                      enumerate_direct_sums::Bool=true,
+                      max_multiplicity::Int=max_rank)
     println("=" ^ 60)
     println("MTC Classification: N = $N  (pentagon solver = :$solver)")
     println("=" ^ 60)
@@ -1435,7 +1532,9 @@ function classify_mtc(N::Int; max_rank::Int=20, max_trials::Int=20,
         return
     end
     
-    candidates = enumerate_modular_data(N; max_rank=max_rank)
+    candidates = enumerate_modular_data(N; max_rank=max_rank, verbose=verbose,
+                                         enumerate_direct_sums=enumerate_direct_sums,
+                                         max_multiplicity=max_multiplicity)
     
     for (idx, cand) in enumerate(candidates)
         println("\n--- Candidate $idx: rank=$(cand.rank) ---")
