@@ -11,8 +11,10 @@
 #   classify_mtc(12)
 
 using LinearAlgebra
+using SparseArrays
 using Oscar
 using TensorCategories
+using KrylovKit
 
 # ============================================================
 #  Level I: Modular data via CRT decomposition
@@ -299,14 +301,16 @@ function jacobian_complex(eqs, vals::Vector{ComplexF64}, n)
     J
 end
 
-function newton_damped(eqs, n, zeta; max_trials=20, max_iter=200)
+function solve_pentagon_sparse_newton(eqs, n, zeta; max_trials=20, max_iter=200)
+    derivs = [[derivative(eq, j) for j in 1:n] for eq in eqs]
+
     solutions = []
     for trial in 1:max_trials
         x = ComplexF64[rand(-3:3) + rand(-3:3)*zeta for _ in 1:n]
         for i in 1:n
             abs(x[i]) < 0.1 && (x[i] = 1.0 + zeta)
         end
-        
+
         for iter in 1:max_iter
             F_val = ComplexF64[eval_poly_complex(eq, x) for eq in eqs]
             res = maximum(abs.(F_val))
@@ -315,17 +319,19 @@ function newton_damped(eqs, n, zeta; max_trials=20, max_iter=200)
                 push!(solutions, copy(x))
                 break
             end
-            
-            J = jacobian_complex(eqs, x, n)
-            delta = pinv(J) * F_val
-            
+
+            # Sparse Jacobian
+            J = sparse_jacobian(eqs, derivs, x, n)
+
+            # Normal equation: J'J δ = J'F, solved by conjugate gradient
+            delta, info = linsolve(v -> J' * (J * v), J' * F_val; ishermitian = true, isposdef = true, verbosity = 0)
+
             # Line search
             alpha = 1.0
             for _ in 1:20
                 x_new = x - alpha * delta
                 F_new = ComplexF64[eval_poly_complex(eq, x_new) for eq in eqs]
-                res_new = maximum(abs.(F_new))
-                if res_new < res
+                if maximum(abs.(F_new)) < res
                     x = x_new
                     break
                 end
@@ -334,6 +340,26 @@ function newton_damped(eqs, n, zeta; max_trials=20, max_iter=200)
         end
     end
     solutions
+end
+
+function sparse_jacobian(eqs, derivs, x, n)
+    m = length(eqs)
+    I = Int[]
+    J_idx = Int[]
+    V = ComplexF64[]
+
+    for i in 1:m
+        for j in 1:n
+            v = eval_poly_complex(derivs[i][j], x)
+            if abs(v) > 1e-15
+                push!(I, i)
+                push!(J_idx, j)
+                push!(V, v)
+            end
+        end
+    end
+
+    sparse(I, J_idx, V, m, n)
 end
 
 # ============================================================
@@ -372,7 +398,7 @@ function classify_mtc(N::Int; max_rank::Int=20, max_trials::Int=20)
         end
 
         zeta = exp(2π * im / N)
-        solutions = newton_damped(eqs, n, zeta; max_trials=max_trials)
+        solutions = solve_pentagon_sparse_newton(eqs, n, zeta; max_trials=max_trials)
         println("  $(length(solutions)) solutions found")
     end
 
