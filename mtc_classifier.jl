@@ -815,9 +815,9 @@ block in-order, invert, and rebuild a fresh vector that would regenerate
 those inverted blocks under the same `assign` convention.
 """
 function invert_associator_numeric(F_values::Vector{ComplexF64},
-                                   mult::Array{Int,3}, one::Vector{Int})
+                                   mult::Array{Int,3}, one_vec::Vector{Int})
     dummy = TensorCategories.six_j_category(QQ, mult)
-    dummy.one = one
+    dummy.one = one_vec
     m = dummy.simples
 
     # First pass: extract blocks in the same order `assign_F_to_associator!` uses.
@@ -826,7 +826,7 @@ function invert_associator_numeric(F_values::Vector{ComplexF64},
     y_stack = copy(F_values)
     extracted_blocks = Vector{Tuple{Int,Int,Matrix{ComplexF64}}}()  # (r, t, M)
     for i in 1:m, j in 1:m, k in 1:m, o in 1:m
-        sum(one[[i, j, k]]) > 0 && continue
+        sum(one_vec[[i, j, k]]) > 0 && continue
         (r, t) = size(dummy.ass[i, j, k, o])
         @assert r == t "F-block at ($i,$j,$k,$o) is $r×$t — not square"
         # Mirror assign exactly:
@@ -952,22 +952,22 @@ Returns the two categories (forward and reverse) and the combined equation
 list. The polynomial ring has 2 * r_var_count variables (first half = r,
 second half = s = reverse braiding).
 """
-function hexagon_equations(mult::Array{Int,3}, one::Vector{Int},
+function hexagon_equations(mult::Array{Int,3}, one_vec::Vector{Int},
                            F_values::Vector{ComplexF64})
     m = size(mult, 1)
 
     # Sanity check F_values length
     _dummy = TensorCategories.six_j_category(QQ, mult)
-    _dummy.one = one
+    _dummy.one = one_vec
     expected_n_F = TensorCategories._number_of_variables_in_pentagon_equations(_dummy)
     @assert length(F_values) == expected_n_F "F_values length $(length(F_values)) != expected $expected_n_F"
 
     # Precompute F⁻¹ values numerically (block-wise)
-    Finv_values = invert_associator_numeric(F_values, mult, one)
+    Finv_values = invert_associator_numeric(F_values, mult, one_vec)
 
     # Count R variables (using the dummy category for consistent structure)
     _dummy_cc = TensorCategories.six_j_category(AcbField(), mult)
-    _dummy_cc.one = one
+    _dummy_cc.one = one_vec
     r_var_count = _number_of_variables_in_hexagon_equations(_dummy_cc)
 
     # Build a single polynomial ring with 2 * r_var_count variables:
@@ -980,11 +980,11 @@ function hexagon_equations(mult::Array{Int,3}, one::Vector{Int},
     # poly_C_fwd: associator = F, braiding = r
     # poly_C_rev: associator = F⁻¹, braiding = s
     poly_C_fwd = TensorCategories.six_j_category(R_ring, mult)
-    poly_C_fwd.one = one
+    poly_C_fwd.one = one_vec
     assign_F_to_associator!(poly_C_fwd, F_values)
 
     poly_C_rev = TensorCategories.six_j_category(R_ring, mult)
-    poly_C_rev.one = one
+    poly_C_rev.one = one_vec
     assign_F_to_associator!(poly_C_rev, Finv_values)
 
     # Fill braidings
