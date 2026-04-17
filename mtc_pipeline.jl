@@ -1,6 +1,10 @@
-# mtc_pipeline.jl (v5: F_p exact arithmetic)
+# mtc_pipeline.jl (v5: F_p exact arithmetic — self-contained)
 #
 # Conductor-first MTC classification using F_p arithmetic.
+#
+# This file is SELF-CONTAINED: it includes all necessary GAP/Oscar
+# utilities, type definitions, and the classification pipeline.
+# No separate mtc_classifier.jl or mtc_types.jl needed.
 #
 # Pipeline:
 #   1. Build atomic catalog: SL₂(ℤ) irreps at levels n | N with cond(S,T) | N
@@ -9,16 +13,106 @@
 #   4. For direct sums: full S search in F_p^{r×r} with SS†=D²I + Verlinde
 #   5. CRT lift: multiple primes → reconstruct Q(ζ_N) solution
 #
-# Key advantages over floating-point:
-#   - No ε-tolerance issues
-#   - Exact integer arithmetic throughout
-#   - Finite field → finite search is manifestly finite
-#
-# Prerequisites: include("mtc_classifier.jl")
-
-include("mtc_types.jl")
+# Usage:
+#   include("mtc_pipeline.jl")
+#   results = classify_modular_data(5)
+#   table = periodic_table(10; max_rank=4)
 
 using LinearAlgebra
+using Oscar
+
+# ============================================================
+#  §0a. GAP/Oscar utilities (from mtc_classifier.jl)
+# ============================================================
+
+function load_sl2reps()
+    GAP.Globals.LoadPackage(GapObj("SL2Reps"))
+end
+
+function gap_to_oscar_matrix(gap_mat, r, K::AbsSimpleNumField, cond_target::Int)
+    z = gen(K)
+    M = zero_matrix(K, r, r)
+    for i in 1:r, j in 1:r
+        entry_cond = Int(GAP.Globals.Conductor(gap_mat[i,j]))
+        cond_target % entry_cond != 0 &&
+            error("Entry conductor $entry_cond does not divide target $cond_target")
+        mult = div(cond_target, entry_cond)
+        coeffs = GAP.Globals.CoeffsCyc(gap_mat[i,j], entry_cond)
+        val = zero(K)
+        for k in 1:entry_cond
+            if !Bool(GAP.Globals.IsZero(coeffs[k]))
+                num = Int(GAP.Globals.NumeratorRat(coeffs[k]))
+                den = Int(GAP.Globals.DenominatorRat(coeffs[k]))
+                val += QQ(num, den) * z^((k-1) * mult)
+            end
+        end
+        M[i,j] = val
+    end
+    M
+end
+
+function matrix_conductor(gap_mat, r)
+    cond = 1
+    for i in 1:r, j in 1:r
+        cond = lcm(cond, Int(GAP.Globals.Conductor(gap_mat[i,j])))
+    end
+    cond
+end
+
+function to_complex(val::AbsSimpleNumFieldElem, zeta::ComplexF64, deg::Int)
+    result = 0.0 + 0.0im
+    for k in 0:deg-1
+        c = coeff(val, k)
+        result += (Float64(numerator(c)) / Float64(denominator(c))) * zeta^k
+    end
+    result
+end
+
+function matrix_to_complex(M, zeta::ComplexF64, deg::Int)
+    r = nrows(M); c = ncols(M)
+    [to_complex(M[i,j], zeta, deg) for i in 1:r, j in 1:c]
+end
+
+# Load SL2Reps
+load_sl2reps()
+
+# ============================================================
+#  §0b. Type definitions (from mtc_types.jl)
+# ============================================================
+
+struct AtomicIrrep
+    dim::Int
+    level::Int
+    label::String
+    S       # Oscar matrix over Q(ζ_N)
+    T       # Oscar matrix over Q(ζ_N)
+    parity::Int   # +1 even, -1 odd
+    K       # cyclotomic field
+    N::Int  # conductor
+end
+
+Base.show(io::IO, a::AtomicIrrep) = print(io,
+    "AtomicIrrep(dim=$(a.dim), level=$(a.level), " *
+    "$(a.parity==1 ? "even" : a.parity==-1 ? "odd" : "mixed"), label=$(a.label))")
+
+function compute_parity(ρ_S::AbstractMatrix{<:Number}; tol::Real=1e-10)
+    S2 = ρ_S * ρ_S
+    r = size(S2, 1)
+    is_plus = maximum(abs.(S2 - I(r))) < tol
+    is_minus = maximum(abs.(S2 + I(r))) < tol
+    is_plus ? 1 : is_minus ? -1 : 0
+end
+
+function _numeric_order(T_num::AbstractMatrix{<:Number}, r::Int, N::Int; tol::Real=1e-8)
+    T_power = copy(T_num)
+    for n in 1:N
+        if maximum(abs.(T_power - I(r))) < tol
+            return n
+        end
+        T_power = T_power * T_num
+    end
+    N
+end
 
 # ============================================================
 #  §1. F_p utilities
