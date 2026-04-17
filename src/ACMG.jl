@@ -44,6 +44,9 @@ include("Enumerator.jl")
 # SL(2, ℤ/N) irrep catalog (Oscar + GAP/SL2Reps)
 include("SL2Reps.jl")
 
+# Stratum enumeration (combinatorial partition of rank by irrep dimensions)
+include("StratumEnum.jl")
+
 # Exports
 export ModularDatumFp, FusionRule
 export validate_modular_data, build_modular_datum, compute_alpha, compute_charge_conjugation
@@ -53,5 +56,6 @@ export is_square, sqrt_mod, primitive_root, root_of_unity, roots_of_unity
 export matmul_mod, matpow_mod, diagmul_right, diagmul_left, lift_symmetric
 export fusion_isomorphic, fusion_matrix, validate
 export AtomicIrrep, build_atomic_catalog, all_divisors
+export Stratum, enumerate_strata, count_strata, describe_stratum, find_unit_indices
 
 end # module ACMG

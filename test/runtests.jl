@@ -6,4 +6,5 @@ using ACMG
     include("test_fibonacci.jl")
     include("test_ising.jl")
     include("test_sl2reps.jl")
+    include("test_stratum_enum.jl")
 end
