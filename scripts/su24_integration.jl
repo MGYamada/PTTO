@@ -91,7 +91,7 @@ su24_found = false
 for (_, _, cands) in found_mtcs
     for c in cands
         if ACMG.signed_Fp(c.D2, c.p) == 12
-            su24_found = true
+            global su24_found = true
             break
         end
     end
