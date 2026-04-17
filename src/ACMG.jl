@@ -1,21 +1,22 @@
 """
     ACMG — Arithmetic Condensed Matter Geometry
 
-Modular Tensor Category classification via p-fix modular data enumeration
-over F_p, with subsequent F/R symbol construction.
+Modular Tensor Category classification via NRWW block-U enumeration
+over Z[ζ_N], with F_p filtering/validation layer.
 
-Design philosophy:
-- Primary object: modular data (S, T) over F_p
-- Fusion rule N_ij^k is derived via Verlinde formula
-- Classification proceeds prime-by-prime, union over admissible primes
-- F, R symbols are solved from fusion rule directly (reusing v5 HC solver)
+Design philosophy (v0.2):
+- Primary search: Z[ζ_N], using SL(2, ℤ/N) irrep catalog + block-U structure
+- Validation: F_p layer (from v0.1), already validated against Fibonacci & Ising
+- Fusion rule, F, R symbols: derived via Verlinde (F_p) then lifted
 
 Module organization:
-- FpArith:       F_p arithmetic primitives (inverse, sqrt, n-th roots)
-- Dimensions:    Quantum dimension enumeration (small totally real algebraic integers)
-- ModularData:   (S, T) enumeration and validation over F_p
-- FusionExtract: Verlinde-based fusion rule extraction and integrality lift
-- Admissibility: BNRW checks (Cauchy, FS) — stubs initially, to be filled from v5
+- FpArith:       F_p arithmetic primitives
+- Types:         ModularDatumFp, FusionRule with axiom validation
+- Dimensions:    Quantum dimension enumeration (stub)
+- ModularData:   (S, T) axiom checking over F_p
+- FusionExtract: Verlinde-based fusion rule extraction
+- Enumerator:    top-level driver (stub)
+- SL2Reps:       SL(2, ℤ/N) irreducible representation catalog (via GAP/SL2Reps)
 """
 module ACMG
 
@@ -40,6 +41,9 @@ include("FusionExtract.jl")
 # Top-level enumeration driver
 include("Enumerator.jl")
 
+# SL(2, ℤ/N) irrep catalog (Oscar + GAP/SL2Reps)
+include("SL2Reps.jl")
+
 # Exports
 export ModularDatumFp, FusionRule
 export validate_modular_data, build_modular_datum, compute_alpha, compute_charge_conjugation
@@ -48,5 +52,6 @@ export verlinde_coefficient
 export is_square, sqrt_mod, primitive_root, root_of_unity, roots_of_unity
 export matmul_mod, matpow_mod, diagmul_right, diagmul_left, lift_symmetric
 export fusion_isomorphic, fusion_matrix, validate
+export AtomicIrrep, build_atomic_catalog, all_divisors
 
 end # module ACMG

@@ -1,11 +1,12 @@
 name = "ACMG"
 uuid = "a5c4e913-6f7b-4e2a-9d01-9a3e5b8f7c2d"
 authors = ["Masahiko"]
-version = "0.1.0-prototype"
+version = "0.2.0-prototype"
 
 [deps]
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Primes = "27ebfcd6-29c5-5fa9-bf4b-fb8fc14df3ae"
+Oscar = "f1435218-dba5-11e9-1e4d-f1a5fab5fc13"
 
 [compat]
 julia = "1.9"
