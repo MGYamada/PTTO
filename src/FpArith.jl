@@ -83,8 +83,8 @@ Return the smallest positive primitive root modulo p.
 function primitive_root(p::Integer)
     p == 2 && return 1
     order_target = p - 1
-    # Factor p - 1 to check orders
-    factors = [f for (f, _) in factor(order_target)]
+    # Factor p - 1 to check orders (qualify as Primes.factor to avoid clash with Oscar)
+    factors = [f for (f, _) in Primes.factor(order_target)]
     for g in 2:(p-1)
         is_primitive = true
         for q in factors

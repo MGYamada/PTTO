@@ -229,7 +229,8 @@ error if not available.
 """
 function load_sl2reps_package()
     ok = Oscar.GAP.Globals.LoadPackage(Oscar.GAP.GapObj("SL2Reps"))
-    ok == Oscar.GAP.Globals.true || error(
+    # GAP returns `true` (a GAP boolean), Oscar.GAP converts to Julia Bool automatically
+    ok == true || error(
         "Failed to load GAP SL2Reps package. Install once via:\n" *
         "    julia> using Oscar\n" *
         "    julia> Oscar.GAP.Packages.install(\"SL2Reps\")"
