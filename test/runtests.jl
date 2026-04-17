@@ -8,4 +8,5 @@ using ACMG
     include("test_sl2reps.jl")
     include("test_stratum_enum.jl")
     include("test_blocku.jl")
+    include("test_crt.jl")
 end

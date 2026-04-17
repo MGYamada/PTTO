@@ -50,6 +50,9 @@ include("StratumEnum.jl")
 # Block-U parametrisation and MTC reconstruction (Phase 2)
 include("BlockU.jl")
 
+# Multi-prime CRT reconstruction (Phase 3)
+include("CRT.jl")
+
 # Exports
 export ModularDatumFp, FusionRule
 export validate_modular_data, build_modular_datum, compute_alpha, compute_charge_conjugation
@@ -65,5 +68,11 @@ export find_zeta_in_Fp, cyclotomic_to_Fp
 export t_eigenspace_decomposition, parameter_dim
 export o2_circle_points, apply_o2_block, verlinde_find_unit
 export find_mtcs_at_prime, signed_Fp
+# Phase 3: CRT reconstruction
+export crt, crt2, rational_reconstruct, compute_sqrt_d_mod_p
+export fusion_signature, group_mtcs_by_fusion
+export reconstruct_rational, reconstruct_in_Z_sqrt_d
+export reconstruct_matrix_in_Z_sqrt_d, reconstruct_S_matrix
+export verify_reconstruction, describe_matrix
 
 end # module ACMG
