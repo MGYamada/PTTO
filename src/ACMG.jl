@@ -53,6 +53,9 @@ include("BlockU.jl")
 # Multi-prime CRT reconstruction (Phase 3)
 include("CRT.jl")
 
+# Phase 4: Pentagon/Hexagon solver for (F, R) classification
+include("Phase4/Phase4.jl")
+
 # Exports
 export ModularDatumFp, FusionRule
 export validate_modular_data, build_modular_datum, compute_alpha, compute_charge_conjugation
@@ -76,5 +79,9 @@ export fusion_signature, group_mtcs_by_fusion, group_mtcs_galois_aware
 export reconstruct_rational, reconstruct_in_Z_sqrt_d
 export reconstruct_matrix_in_Z_sqrt_d, reconstruct_S_matrix
 export verify_reconstruction, describe_matrix
+
+# Phase 4 exports (namespace access via ACMG.Phase4.*)
+# The Phase4 submodule is accessible as ACMG.Phase4 without re-export.
+# Users should call e.g. ACMG.Phase4.get_pentagon_system(...)
 
 end # module ACMG
