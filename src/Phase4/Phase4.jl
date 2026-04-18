@@ -51,6 +51,7 @@ include("HexagonEquations.jl")
 include("HexagonSolver.jl")
 include("ModularDataLift.jl")
 include("Verify.jl")
+include("KitaevComplex.jl")
 
 using .PentagonEquations
 using .PentagonSolver
@@ -58,6 +59,7 @@ using .HexagonEquations
 using .HexagonSolver
 using .ModularDataLift
 using .Verify
+using .KitaevComplex
 
 # Re-export the user-facing API
 export get_pentagon_system
@@ -72,5 +74,13 @@ export lift_mtc_candidate
 export pentagon_residuals, hexagon_residuals
 export extract_R_block, block_positions_R
 export ribbon_residuals, VerifyReport, verify_mtc
+
+# KitaevComplex (Kitaev 2006 App E.6 tangent cohomology + slice)
+export KitaevCx, build_kitaev_complex, build_complex
+export Cn_dim, Cn_basis
+export delta_matrix, chi_matrix
+export verify_homotopy, verify_complex
+export slice_constraint, kernel_chi
+export tangent_cohomology_dims
 
 end # module Phase4
