@@ -10,4 +10,5 @@ using ACMG
     include("test_blocku.jl")
     include("test_crt.jl")
     include("test_block_u_general.jl")
+    include("test_phase4_fibonacci.jl")
 end
