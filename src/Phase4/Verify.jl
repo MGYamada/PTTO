@@ -188,44 +188,41 @@ end
 # ============================================================
 
 """
-    ribbon_residuals(R_values, T_expected, Nijk, dual) -> Vector{Float64}
+    ribbon_residuals(R_values, T_expected, Nijk) -> Vector{Float64}
 
-For each simple object `i`, check the **double braiding / twist** relation
+For every triple (i, j, k) with `Nijk[i, j, k] > 0`, check the
+multiplicity-free ribbon relation
 
-    θ_i² · R^{i*, i}_1 · R^{i, i*}_1 = 1
+    (R^{ij}_k)² = θ_i · θ_j / θ_k
 
-which follows from the ribbon axiom specialised to the unit channel
-(k = 1, j = i*). Multiplicity-free: both R-blocks are 1×1 scalars.
+This follows from the ribbon axiom c_{Y,X} ∘ c_{X,Y} = θ_{X⊗Y} · (θ_X⁻¹ ⊗ θ_Y⁻¹),
+restricted to the X_k summand of X_i ⊗ X_j. In the multiplicity-free
+case each R-block is a scalar, so the relation becomes a single
+quadratic equation per non-zero fusion entry.
 
-Rationale:
-  The full ribbon axiom says c_{Y,X} ∘ c_{X,Y} = θ_{X⊗Y} (θ_X^{-1} ⊗ θ_Y^{-1}).
-  On the simple summand X_k of X_i ⊗ X_j this becomes
-      R^{ji}_k · R^{ij}_k = θ_k / (θ_i · θ_j).
-  Setting j = i* and k = 1 (so θ_k = θ_1 = 1) gives the formula above,
-  using θ_{i*} = θ_i (MTC property).
-
-This check is **independent of the sign/branch of θ_i**: both braidings
-of the Fibonacci-type (R and R⁻¹) satisfy it because only θ_i² appears.
+This is **independent of the ± sign of R** (squared), so both of
+Fibonacci's two braidings must satisfy it.
 
 Arguments:
 - `R_values::Vector{ComplexF64}`: hexagon solution (full or forward-half)
-- `T_expected::Vector{ComplexF64}`: θ_i values
+- `T_expected::Vector{ComplexF64}`: θ_i values (θ_k on RHS, θ_i θ_j on LHS)
 - `Nijk::Array{Int,3}`:             fusion
-- `dual::Vector{Int}`:              dual map, dual[i] = i*
 
-Returns: Vector{Float64} of length `rank`. Entry `i` is
-|θ_i² · R^{i*,i}_1 · R^{i,i*}_1 - 1|.
+Returns: `Vector{Float64}` one residual per non-zero (i, j, k) triple,
+each entry |(R^{ij}_k)² · θ_k - θ_i · θ_j|.
 
-Caveat: This is a NECESSARY condition, not sufficient. It does not
-detect the wrong branch of θ_i (θ_i vs -θ_i) since the test is squared.
+Non-multiplicity-free case is NOT supported (Nijk[i,j,k] > 1 will
+error).
+
+Caveat: This is a NECESSARY condition only. It does not check that
+θ_i matches the braiding (same formula holds for -θ_i too because of
+the square).
 """
 function ribbon_residuals(R_values::Vector{ComplexF64},
                           T_expected::Vector{ComplexF64},
-                          Nijk::Array{Int,3},
-                          dual::Vector{Int})
+                          Nijk::Array{Int,3})
     r = size(Nijk, 1)
     length(T_expected) == r || error("T_expected has wrong length")
-    length(dual) == r || error("dual has wrong length")
 
     # Expected r_var_count for forward-only
     r_var_count = 0
@@ -242,26 +239,17 @@ function ribbon_residuals(R_values::Vector{ComplexF64},
               "$r_var_count (forward only) or $(2 * r_var_count) (both).")
     end
 
-    residuals = zeros(Float64, r)
-    for i in 1:r
-        istar = dual[i]
-        # Check Nijk[i, istar, 1] = 1 (axiom: unit in i ⊗ i*)
-        if Nijk[i, istar, 1] != 1
-            error("Nijk[$i, $istar, 1] = $(Nijk[i, istar, 1]), expected 1 " *
-                  "(fusion with unit for self-dual pair)")
-        end
-
-        # R^{i, i*}_1 : scalar (multiplicity-free)
-        R_ii_1 = extract_R_block(R_fwd, Nijk, i, istar, 1)
-        # R^{i*, i}_1 : scalar
-        R_ii_1_swap = extract_R_block(R_fwd, Nijk, istar, i, 1)
-        @assert size(R_ii_1) == (1, 1) "multiplicity-free expected"
-        @assert size(R_ii_1_swap) == (1, 1) "multiplicity-free expected"
-
-        r1 = R_ii_1[1, 1]
-        r2 = R_ii_1_swap[1, 1]
-        θ_sq = T_expected[i]^2
-        residuals[i] = abs(θ_sq * r1 * r2 - 1)
+    residuals = Float64[]
+    for i in 1:r, j in 1:r, k in 1:r
+        N_ijk = Nijk[i, j, k]
+        N_ijk == 0 && continue
+        N_ijk == 1 || error("Non-multiplicity-free (N[$i,$j,$k]=$N_ijk) " *
+                             "not supported by ribbon_residuals")
+        R_block = extract_R_block(R_fwd, Nijk, i, j, k)
+        R = R_block[1, 1]
+        lhs = R^2 * T_expected[k]
+        rhs = T_expected[i] * T_expected[j]
+        push!(residuals, abs(lhs - rhs))
     end
     return residuals
 end
@@ -293,25 +281,23 @@ function Base.show(io::IO, r::VerifyReport)
 end
 
 """
-    verify_mtc(F_values, R_values, Nijk; T=nothing, dual=nothing)
-        -> VerifyReport
+    verify_mtc(F_values, R_values, Nijk; T=nothing) -> VerifyReport
 
 Run all three residual checks and return a summary.
 
-If both `T` and `dual` are supplied, the ribbon check (double-braiding
-relation) is included. Otherwise it is skipped (ribbon_max = nothing).
+If `T` is supplied, the ribbon check ((R^{ij}_k)² = θ_i θ_j / θ_k) is
+included. Otherwise it is skipped (ribbon_max = nothing).
 """
 function verify_mtc(F_values::Vector{ComplexF64},
                     R_values::Vector{ComplexF64},
                     Nijk::Array{Int,3};
-                    T::Union{Vector{ComplexF64}, Nothing} = nothing,
-                    dual::Union{Vector{Int}, Nothing} = nothing)
+                    T::Union{Vector{ComplexF64}, Nothing} = nothing)
     pent = pentagon_residuals(F_values, Nijk)
     hex = hexagon_residuals(F_values, R_values, Nijk)
 
     ribbon_max = nothing
-    if T !== nothing && dual !== nothing
-        rib = ribbon_residuals(R_values, T, Nijk, dual)
+    if T !== nothing
+        rib = ribbon_residuals(R_values, T, Nijk)
         ribbon_max = maximum(rib)
     end
 
