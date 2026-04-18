@@ -36,7 +36,7 @@ Classified MTCs
 
 The pipeline has been validated end-to-end on SU(2)_4 at rank 5, N = 24.
 
-## Current status (v0.2 prototype)
+## Current status (v0.3 prototype)
 
 ### Phase 0: Atomic catalog — ✅ complete
 
@@ -58,37 +58,48 @@ The pipeline has been validated end-to-end on SU(2)_4 at rank 5, N = 24.
 - Note: `require_unit_summand=false` is the correct default. In non-
   abelian MTCs the unit object sits as a basis vector *inside* a larger
   irrep block (wherever T-eigenvalue 1 occurs), not as a separate 1d_1
-  summand. See the Design Notes below.
+  summand.
 
-### Phase 1.5: T-spectrum filter — 🔜 next
+### Phase 2: Block-U parametrisation — ✅ complete
 
-- Given target spins (h_0, ..., h_{r-1}), filter strata whose T-spectrum
-  (as a multiset) agrees with the target.
-- At N = 24 rank 5 this reduces 25,440 strata to O(1) candidates.
+- `BlockU.jl`: general O(n) Cayley parametrisation, T-eigenspace
+  decomposition, Verlinde integrality check with unit identification.
+- `find_mtcs_at_prime(catalog, stratum, p)`: full per-prime driver.
+- Single degenerate eigenspace of dimension n_θ ≤ 3 is currently
+  supported (feasibility limit of naive Cayley sweep; see table below).
+- Validated end-to-end on SU(2)_4 at rank 5, N = 24 — all matching
+  strata recover exactly 2 Galois-conjugate MTC candidates per prime.
 
-### Phase 2: Block-U parametrisation — 🔜 next
+### Phase 3: CRT reconstruction — ✅ complete
 
-- For each stratum, identify T-eigenspaces V_θ and the degenerate ones
-  (n_θ ≥ 2).
-- Parametrise block-U as U ∈ GL(V)^T with U U^T ∈ End_G(ρ) — equivalently,
-  a rotation on each V_θ (see Design Notes).
-- Search via F_p multi-prime sweep: at each good prime p (N | p-1),
-  enumerate the F_p-rational points of O(n_θ), check Verlinde
-  non-negativity.
-
-### Phase 3: CRT reconstruction — 🔜 next
-
-- Collate solutions across multiple primes.
-- Reconstruct S-entries as elements of Z[ζ_N] (often Z[√D²-factors]).
+- `CRT.jl`: multi-prime CRT, rational reconstruction, Galois-aware
+  grouping, Z[√d] entry-wise reconstruction.
+- `group_mtcs_galois_aware(results, anchor_prime)`: aligns candidates
+  across primes into the same Galois sector via 2-prime trial
+  reconstruction — a fusion-tensor match alone is insufficient because
+  each prime returns Galois-conjugate pairs.
+- `compute_sqrt3_cyclotomic_mod_p(p)`: uses ζ₂₄² + ζ₂₄²² for a
+  Galois-consistent choice of √3 across primes (not "smaller
+  representative", which is NOT Galois-invariant).
+- Validated on SU(2)_4 N = 24: reconstructs 2√3·S ∈ Z[√3]^{5×5} from
+  4 primes {73, 97, 193, 241}, cross-validated at 3 fresh primes
+  {313, 337, 409}. Both Galois orbit members (Group 1, Group 2) recover
+  7/7 ✓ each.
 
 ### Test statistics
 
-151 tests passing (runtests.jl):
-- 18 FpArith primitives
-- 34 Fibonacci at p=41 (N=5, rank 2)
-- 30 Ising at p=17 (N=16, rank 3)
-- 9 SL2Reps catalog (N ∈ {5, 8, 16})
+**334 tests passing** (runtests.jl):
+- 63 FpArith primitives
+- 34 Fibonacci at p = 41 (N = 5, rank 2)
+- 30 Ising at p = 17 (N = 16, rank 3)
+- 9 SL2Reps helpers + atomic catalog construction (N ∈ {5, 8, 16})
 - 15 StratumEnum (synthetic rank 1–5 cases)
+- 72 BlockU pure F_p helpers (incl. Fibonacci and Ising Verlinde check)
+- 40 CRT primitives (crt, rational_reconstruct, Z[√d] reconstruction,
+  Galois-aware grouping)
+- 71 General O(n) Cayley (inverse_mod_p, enumerate_so_n_Fp,
+  enumerate_o_n_Fp, apply_block_U)
+
 
 ## Design notes
 
@@ -222,38 +233,39 @@ This has been validated end-to-end on SU(2)_4 rank 5 N = 24:
 Fast (~1 second), exact (no floating-point), parallel (primes
 independent).
 
-### Feasibility of block-U enumeration by n_θ
+### Galois-aware grouping across primes
 
-The total cost of a single-prime sweep is dominated by |O(n_θ)(F_p)|
-for each degenerate eigenspace, where n_θ = dim V_θ. Empirically at
-p = 73:
+A subtle but important point in multi-prime CRT reconstruction:
+**two primes picking up the same abstract MTC may return different
+Galois-conjugate representatives** of the (S, T)-matrix pair.
 
-| n_θ | |O(n_θ)(F_p)| | Single-prime sweep time | Feasibility |
-|-----|---|-----|-----|
-|  1  | 2 | instant | trivial (discrete sign) |
-|  2  | ~2p = 146 | < 1 s | naive enumeration |
-|  3  | ~p³ = 4×10⁵ | ~20 s | naive OK |
-|  4  | ~p⁶ = 1.5×10¹¹ | ~10³ h | **infeasible naively** |
-| ≥ 4 | ~p^{n(n-1)/2} | — | needs algebraic solver |
+Concretely, `find_mtcs_at_prime` returns multiple candidates per prime
+(e.g. for SU(2)_4, 2 candidates — a Galois-conjugate pair that differ
+by √3 ↔ −√3). Across primes, the "first" candidate and the "second"
+candidate in the ordered output may switch roles arbitrarily, because
+(a) the F_p enumeration order of O(n)(F_p) points is prime-dependent,
+and (b) the choice of primitive root in `find_zeta_in_Fp(N, p)` varies
+across primes.
 
-So naive F_p enumeration handles n_θ ≤ 3; beyond that, Cayley
-parametrisation + Verlinde polynomial system (Gröbner basis over F_p)
-is required. The Cayley parameter space has dimension C(n_θ, 2) =
-parameter_dim, which is also the variable count for the polynomial
-system — so this is the natural transition.
+**Fusion tensors are Galois-invariant** — so matching candidates across
+primes by N-tensor alone lumps together Galois-conjugate pairs into a
+single group. But CRT requires **same Galois sector at every prime**,
+otherwise entries won't lift to a consistent Z[√d] element.
 
-**Practically, rank 5 classification fits entirely in the n_θ ≤ 2
-regime.** The NsdGOL5.g catalog shows spin patterns with at most
-2-fold T-eigenvalue degeneracy for rank 5. Higher n_θ (and hence the
-need for algebraic solvers) is expected to appear at rank ≥ 6, e.g.
-for Drinfeld centers D(Z_n) with n ≥ 2 (rank n²) where multiple
-self-dual objects share T = 1.
+**Solution: `group_mtcs_galois_aware(results, anchor_prime)`.** For each
+candidate at the anchor prime, seed a group. For each other prime, pick
+the candidate whose S-matrix, together with the anchor's, is consistent
+under 2-prime Z[√d] reconstruction (i.e. actually lifts with small
+integer coefficients). This picks the "correct" Galois-conjugate at each
+prime, yielding one Galois-coherent group per orbit member.
 
-**This finite-field discretisation of continuous strata is not in
-NRWW.** Their block-U framework is stated over C, without reduction
-to F_p or a concrete enumeration scheme. The equivalence
-|continuous stratum| ↔ |O(n_θ)(F_p)| under base change, combined with
-CRT reconstruction back to Z[ζ_N], is new in this work.
+For SU(2)_4 this correctly splits the collection into 2 groups (one per
+Galois orbit element), each lifting to a consistent Z[√3] matrix that
+verifies at fresh primes.
+
+This construction is not in NRWW; it arises specifically because our
+pipeline computes in F_p rather than an abstract number field and must
+cope with the Galois ambiguity of F_p realisations.
 
 ### What becomes obsolete
 
@@ -293,14 +305,16 @@ confirmation.
 ```
 src/
   ACMG.jl                 — module root, exports
-  FpArith.jl              — F_p primitives
+  FpArith.jl              — F_p primitives (Tonelli-Shanks, matmul, etc.)
   Types.jl                — ModularDatumFp, FusionRule
   ModularData.jl          — (S, T) axiom validation
   FusionExtract.jl        — F_p Verlinde → Z lift
   Dimensions.jl           — (stub) quantum dimension enumeration
   Enumerator.jl           — (stub) top-level driver
-  SL2Reps.jl              — Oscar + GAP/SL2Reps catalog builder
-  StratumEnum.jl          — {m_λ} combinatorial enumeration
+  SL2Reps.jl              — Oscar + GAP/SL2Reps catalog builder (Phase 0)
+  StratumEnum.jl          — {m_λ} combinatorial enumeration (Phase 1)
+  BlockU.jl               — general O(n) Cayley + single-prime driver (Phase 2)
+  CRT.jl                  — multi-prime CRT + Galois-aware grouping (Phase 3)
 
 test/
   runtests.jl
@@ -309,6 +323,14 @@ test/
   test_ising.jl
   test_sl2reps.jl
   test_stratum_enum.jl
+  test_blocku.jl          — pure F_p block-U helpers
+  test_crt.jl             — CRT primitives + Z[√d] reconstruction
+  test_block_u_general.jl — general O(n) Cayley parametrisation
+
+scripts/
+  su24_integration.jl     — Phase 2 end-to-end for SU(2)_4
+  su24_crt.jl             — Phase 3 end-to-end (multi-prime CRT)
+  diagnose_crt.jl         — per-prime candidate inspection (debugging aid)
 ```
 
 ## References
@@ -324,32 +346,49 @@ test/
 
 ## Next steps
 
-**Near-term (Phase 2 implementation):**
+**Near-term:**
 
-1. **Phase 1.5** (Julia): `enumerate_strata_by_T(catalog, target_spins)` to
-   filter strata by T-spectrum multiset. This alone reduces the rank-5
-   N=24 search from ~25,000 strata to ~1 candidate.
-2. **Phase 2a** (Julia): port the Python O(2) sweep to F_p, tested on
-   SU(2)_4 for end-to-end reproduction inside Julia ACMG.
-3. **Phase 2b** (Julia): multi-prime CRT reconstruction helper, with
-   sanity-check at unused primes.
-4. **Validation**: reproduce all 16 variants of NsdGOL[2] ∪ NsdGOL[3]
-   (rank 5 N=24) via the full pipeline.
+1. **Multi-variant validation**: reproduce all 16 variants of
+   NsdGOL[2] ∪ NsdGOL[3] (rank 5 N = 24) through the pipeline.
+   Each (ρ_3, ρ_2) pair from Phase 2 gives a Galois orbit; verify
+   all orbit members are covered.
+2. **Phase 1.5**: `enumerate_strata_by_T(catalog, target_spins)` to
+   pre-filter strata by T-spectrum multiset (reduces ~25k strata for
+   rank 5 N = 24 to O(1) candidates).
+3. **Rank 5 beyond N = 24**: try N ∈ {5, 7, 11, 15, 20} — most of these
+   should have no multi-component MTC (consistent with empirical rank 5
+   classification).
 
-**Medium-term (beyond rank 5):**
+**Medium-term:**
 
-5. Extend to rank 5 other conductors (N ∈ {5, 7, 11, ...}).
-6. Attempt rank 6 with NRW ground truth (NsdGOL6.g). Identify the
-   smallest example with n_θ = 3 to stress-test O(3) naive enumeration.
-7. **Algebraic solver** for n_θ ≥ 4 cases (Cayley parametrisation +
-   Gröbner basis over F_p). Target case: Drinfeld center D(Z_2) at
-   rank 4, where n_1 = 4.
+4. **Rank 6 + n_θ = 3**: find the smallest real MTC with n_θ = 3 in
+   NsdGOL6.g (no such example exists at rank 5). Current naive O(3)
+   sweep handles this in ~20 s/prime at p = 73.
+5. **Phase 4 (BNRW admissibility)**: implement Cauchy theorem
+   (Galois norm of D²) and Frobenius-Schur indicators for candidate
+   filtering beyond Verlinde integrality.
+6. **Multiple degenerate eigenspaces**: extend `find_mtcs_at_prime` to
+   handle ≥ 2 degenerate V_θ simultaneously (cartesian product of
+   O(n_θ) sweeps).
 
 **Long-term:**
 
-8. BNRW admissibility criteria (Cauchy, Frobenius-Schur) for integer
-   candidates surviving Verlinde.
-9. Galois orbit organisation of the classification output.
-10. Haagerup Z(H_3) at rank 12, N=39 — the original motivation for
-    multi-component MTC search.
+7. **Algebraic solver for n_θ ≥ 4**: Cayley parametrisation + Gröbner
+   basis over F_p for the Verlinde polynomial system. Target: Drinfeld
+   centers D(Z_n), which have n_θ = n at rank n².
+8. **Galois orbit organisation** of the final MTC catalog.
+9. **Haagerup Z(H_3)** at rank 12, N = 39 — the original motivation for
+   multi-component MTC search.
+
+## Status summary (as of v0.3)
+
+| Component | Status | Notes |
+|-----|-----|-----|
+| Phase 0 (catalog) | ✅ | N = 24, 103 irreps ≤ rank 5 |
+| Phase 1 (strata) | ✅ | 25k strata for rank 5 N = 24 |
+| Phase 2 (block-U) | ✅ | General O(n), n ≤ 3 naive, SU(2)_4 validated |
+| Phase 3 (CRT) | ✅ | Galois-aware, 7/7 primes for SU(2)_4 |
+| Phase 1.5 (T-filter) | 🔜 | Optimisation; not blocking |
+| Phase 4 (admissibility) | 🔜 | BNRW Cauchy + FS indicators |
+| n_θ ≥ 4 solver | 🔜 | Algebraic (Gröbner over F_p) required |
 
