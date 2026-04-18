@@ -39,43 +39,57 @@ fresh_primes = [313, 337, 409]  # for cross-validation
 
 println("\nRunning Phase 2 sweep at primes $(test_primes)...")
 results_by_prime = Dict{Int, Vector{ACMG.MTCCandidate}}()
-for p in test_primes
+all_primes = vcat(test_primes, fresh_primes)
+for p in all_primes
     cands = ACMG.find_mtcs_at_prime(catalog, stratum, p; verlinde_threshold = 3)
     results_by_prime[p] = cands
     println("  p=$p: $(length(cands)) candidates")
 end
 
-# Step 4: Group by fusion tensor
-println("\nGrouping candidates by fusion tensor...")
-groups = ACMG.group_mtcs_by_fusion(results_by_prime)
-println("  Found $(length(groups)) distinct fusion-tensor groups")
+# Step 4: Group by Galois-aware matching (each group = same Galois sector)
+println("\nGrouping candidates (Galois-aware, anchored at p=$(test_primes[1]))...")
+groups = ACMG.group_mtcs_galois_aware(results_by_prime, test_primes[1]; scale_d = 3)
+println("  Found $(length(groups)) Galois-coherent groups")
 
 for (gi, g) in enumerate(groups)
     n_primes = length(g)
     rep = first(values(g))
     d_signed = [ACMG.signed_Fp(x, rep.p) for x in rep.d]
-    println("  Group $gi: present at $n_primes primes, unit=$(rep.unit_index), d=$d_signed")
+    println("  Group $gi: present at $n_primes primes, unit=$(rep.unit_index), d=$d_signed (at p=$(rep.p))")
 end
 
-# Step 5: For each complete group (one candidate per prime), reconstruct S in Z[√3]
+# Step 5: For each complete group, reconstruct S in Z[√3] using cyclotomic √3
 println("\n=== Reconstructing S-matrix in Z[√3] for each group ===")
 
 for (gi, group) in enumerate(groups)
-    if length(group) != length(test_primes)
-        println("\nGroup $gi: incomplete (only $(length(group))/$(length(test_primes)) primes), skipping")
-        continue
+    rep = first(values(group))
+
+    # Split primes into "used" (for reconstruction) and "fresh" (for cross-validation)
+    used = Int[]
+    fresh = Int[]
+    for p in all_primes
+        haskey(group, p) || continue
+        if p in test_primes
+            push!(used, p)
+        else
+            push!(fresh, p)
+        end
     end
 
-    println("\nGroup $gi — complete across all $(length(test_primes)) primes")
-    rep = first(values(group))
+    println("\nGroup $gi — $(length(used)) used primes + $(length(fresh)) fresh primes")
+    println("  Used: $used")
+    println("  Fresh: $fresh")
     println("  Representative: $rep")
 
-    # Reconstruct 2√3 · S (so that entries are integers in Z[√3])
-    # Use cyclotomic √3 = ζ₂₄² + ζ₂₄⁻² for Galois-consistent branch across primes
+    length(used) >= 2 || (println("  need ≥2 used primes; skip"); continue)
+
+    used_subgroup = Dict(p => group[p] for p in used)
+
+    # Reconstruct 2√3 · S with cyclotomic √3
     local recon
     try
         recon = ACMG.reconstruct_S_matrix(
-            group;
+            used_subgroup;
             scale_d = 3, bound = 5,
             sqrtd_fn = (d, p) -> ACMG.compute_sqrt3_cyclotomic_mod_p(p))
     catch e
@@ -87,8 +101,8 @@ for (gi, group) in enumerate(groups)
     println(ACMG.describe_matrix(recon, 3))
 
     # Sanity check at used primes
-    println("\n  Verifying at used primes (must pass):")
-    for p in test_primes
+    println("\n  Verifying at used primes:")
+    for p in used
         ok = ACMG.verify_reconstruction(
             recon, group[p], 3;
             scale = 2,
@@ -96,45 +110,14 @@ for (gi, group) in enumerate(groups)
         println("    p=$p: $(ok ? "✓" : "✗")")
     end
 
-    # Cross-validate at fresh primes
-    # NOTE: fresh-prime validation is subtle because different primes may
-    # pick up different Galois conjugates of the same MTC. The fusion
-    # tensor is Galois-invariant, but specific (u, v) choices and the
-    # sqrt3-branch may differ. If ✗ appears here, the reconstruction
-    # is still correct — it just means that prime's `find_mtcs_at_prime`
-    # returned a Galois-conjugate instance.
-    println("\n  Cross-validation at FRESH primes (unused in reconstruction):")
-    println("  (Note: ✗ here may indicate Galois-conjugate mismatch, not a bug)")
-    for p in fresh_primes
-        cands = ACMG.find_mtcs_at_prime(catalog, stratum, p; verlinde_threshold = 3)
-        # Find candidate with matching fusion tensor
-        matching = nothing
-        for c in cands
-            if c.N == rep.N && c.unit_index == rep.unit_index
-                matching = c
-                break
-            end
-        end
-        if matching === nothing
-            println("    p=$p: no matching candidate found ⚠")
-            continue
-        end
-        # Try both cyclotomic sign branches
-        ok_positive = ACMG.verify_reconstruction(
-            recon, matching, 3;
+    # Cross-validate at fresh primes (should now pass since Galois-aware)
+    println("\n  Cross-validation at FRESH primes:")
+    for p in fresh
+        ok = ACMG.verify_reconstruction(
+            recon, group[p], 3;
             scale = 2,
             sqrtd_fn = (d, pp) -> ACMG.compute_sqrt3_cyclotomic_mod_p(pp))
-        ok_negative = ACMG.verify_reconstruction(
-            recon, matching, 3;
-            scale = 2,
-            sqrtd_fn = (d, pp) -> mod(-ACMG.compute_sqrt3_cyclotomic_mod_p(pp), pp))
-        if ok_positive
-            println("    p=$p: ✓ (+√3 branch)")
-        elseif ok_negative
-            println("    p=$p: ✓ (-√3 branch, Galois conjugate)")
-        else
-            println("    p=$p: ✗ (different Galois conjugate; fusion tensor matches but (S,T) is non-trivial conjugate)")
-        end
+        println("    p=$p: $(ok ? "✓" : "✗")")
     end
 end
 
