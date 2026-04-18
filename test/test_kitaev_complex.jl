@@ -7,9 +7,8 @@ in F-coordinate form on:
   - Ising      (rank 3)
 
 Expected (from Python prototype):
-  Fibonacci:  nF = 4 (in σσσσ-block analogue), gauge_orbit = 1, slice = 3, H³ = 0.
-  Ising:      nF = 36 (all entries) / 11 deformable, effective gauge = 1,
-              slice = 10, H³ = 0.
+  Fibonacci:  4 deformable F-vars (σσσσ analogue), gauge_orbit = 1, slice = 3, H³ = 0.
+  Ising:      36 F-vars, 11 deformable, effective gauge = 1, slice = 10, H³ = 0.
 """
 
 using Test
@@ -36,32 +35,26 @@ function fibonacci_fusion()
 end
 
 # Standard Fibonacci F-symbol. F^{τττ}_τ is a 2×2 matrix; all other allowed
-# entries are forced to ±1 by unit / structural reasons (here = +1 in our
-# convention since we have no nontrivial signs in non-σ context).
+# entries are +1 by unit axiom.
 function fibonacci_F()
+    fr = fibonacci_fusion()
     φ = (1 + sqrt(5)) / 2
     sφ = sqrt(φ)
     F_τττ_τ = [1/φ    1/sφ;
                1/sφ  -1/φ]
     function F(a::Int, b::Int, c::Int, d::Int, e::Int, f::Int)
-        # Allowed channel check
-        fr = fibonacci_fusion()
         (fr.N[a, b, e] == 1 && fr.N[e, c, d] == 1 &&
          fr.N[b, c, f] == 1 && fr.N[a, f, d] == 1) || return 0.0
-        # Any vacuum leg → +1
         1 in (a, b, c, d) && return 1.0
-        # a = b = c = d = τ = 2:  use the Hadamard-like 2×2.  e, f ∈ {1, 2}
         return F_τττ_τ[e, f]
     end
     return F
 end
 
-
 # ============================================================================
 # Ising: fusion + base F-symbol (standard)
 # ============================================================================
 #
-# 1 = unit, ψ = fermion, σ = anyon.   ψ⊗ψ = 1, ψ⊗σ = σ⊗ψ = σ, σ⊗σ = 1 ⊕ ψ.
 # Indices:  1 = 1, 2 = ψ, 3 = σ.
 #
 function ising_fusion()
@@ -89,7 +82,6 @@ function ising_F()
         (fr.N[a, b, e] == 1 && fr.N[e, c, d] == 1 &&
          fr.N[b, c, f] == 1 && fr.N[a, f, d] == 1) || return 0.0
         1 in (a, b, c, d) && return 1.0
-        # σ = 3, ψ = 2.  Count σ's:
         nsig = count(==(3), (a, b, c, d))
         nsig == 0 && return 1.0
         if nsig == 2
@@ -100,7 +92,6 @@ function ising_F()
         end
         if nsig == 4
             d != 3 && return 0.0
-            # 2×2 indexed by (e, f) ∈ {1, 2}; map to Julia 1-based with 1->1, 2->2
             return F_sss_s[e, f]
         end
         return 1.0
@@ -108,6 +99,8 @@ function ising_F()
     return F
 end
 
+# Alias for shorter calls in tests
+const KC = Phase4.KitaevComplex
 
 @testset "KitaevComplex" begin
 
@@ -115,27 +108,27 @@ end
     @testset "Fibonacci F-coordinate gauge analysis" begin
         fr = fibonacci_fusion()
         F  = fibonacci_F()
-        fcs = build_F_coord_space(fr, F)
+        fcs = KC.build_F_coord_space(fr, F)
 
-        # Sanity: F-vars include the σσσσ analogue = (τ,τ,τ,τ,e,f) for e,f ∈ {1,2}
+        # F-vars for the σσσσ analogue = (τ,τ,τ,τ,e,f) for e,f ∈ {1,2}: 4 entries
         ττττ_keys = filter(k -> k[1:4] == (2, 2, 2, 2), fcs.vars)
         @test length(ττττ_keys) == 4
 
-        ga = analyze_gauge(fcs)
+        ga = KC.analyze_gauge(fcs)
 
-        # Vertices: (τ,τ;1) and (τ,τ;τ) → 2 vertices
+        # Vertices: (τ,τ;1) and (τ,τ;τ) → 2
         @test length(ga.verts) == 2
 
-        # The deformable (non-vacuum) F-vars are exactly the 4 (τ,τ,τ,τ,*,*) entries
+        # Deformable (non-vacuum) F-vars = 4
         non_vacuum = [k for k in fcs.vars if !(1 in k[1:4])]
         @test length(non_vacuum) == 4
 
-        # Effective gauge orbit dim (on F-tangent) = 1
-        @test gauge_orbit_dim(ga) == 1
+        # Effective gauge orbit dim = 1
+        @test KC.gauge_orbit_dim(ga) == 1
 
         # Ocneanu rigidity: H³ = 0
-        @test H3_dimension(ga) == 0
-        @test verify_ocneanu_rigidity(ga; tol = 1e-9)
+        @test KC.H3_dimension(ga) == 0
+        @test KC.verify_ocneanu_rigidity(ga; tol = 1e-9)
 
         # Pentagon-gauge consistency:  Δ_pent · Δ_gauge_eff = 0
         @test opnorm(ga.Delta_pent * ga.Delta_gauge_eff) < 1e-10
@@ -145,26 +138,26 @@ end
     @testset "Ising F-coordinate gauge analysis" begin
         fr = ising_fusion()
         F  = ising_F()
-        fcs = build_F_coord_space(fr, F)
+        fcs = KC.build_F_coord_space(fr, F)
 
-        # Total F-vars: 36 (matches Python count)
-        @test F_var_count(fcs) == 36
+        # Total F-vars: 36
+        @test KC.F_var_count(fcs) == 36
 
         # Deformable (non-vacuum) F-vars: 11
         non_vacuum = [k for k in fcs.vars if !(1 in k[1:4])]
         @test length(non_vacuum) == 11
 
-        ga = analyze_gauge(fcs)
+        ga = KC.analyze_gauge(fcs)
 
         # Vertices: (ψ,ψ;1), (ψ,σ;σ), (σ,ψ;σ), (σ,σ;1), (σ,σ;ψ) = 5
         @test length(ga.verts) == 5
 
-        # Effective gauge dim after restricting to unit-preserving subspace = 1
-        @test gauge_orbit_dim(ga) == 1
+        # Effective gauge orbit dim after restricting to unit-preserving subspace = 1
+        @test KC.gauge_orbit_dim(ga) == 1
 
         # H³ = 0
-        @test H3_dimension(ga) == 0
-        @test verify_ocneanu_rigidity(ga; tol = 1e-9)
+        @test KC.H3_dimension(ga) == 0
+        @test KC.verify_ocneanu_rigidity(ga; tol = 1e-9)
 
         # Pentagon-gauge consistency
         @test opnorm(ga.Delta_pent * ga.Delta_gauge_eff) < 1e-9
@@ -178,10 +171,10 @@ end
             )
             fr = fr_fn()
             F  = F_fn()
-            fcs = build_F_coord_space(fr, F)
-            ga = analyze_gauge(fcs)
+            fcs = KC.build_F_coord_space(fr, F)
+            ga = KC.analyze_gauge(fcs)
 
-            S = slice_basis(ga)
+            S = KC.slice_basis(ga)
 
             # Slice basis is orthonormal
             @test opnorm(S' * S - I) < 1e-10
@@ -193,7 +186,7 @@ end
             @test opnorm(ga.Unit * S) < 1e-10
 
             # Slice dimension matches expectation
-            @test slice_dim(ga) == expected_slice_dim
+            @test KC.slice_dim(ga) == expected_slice_dim
         end
     end
 end

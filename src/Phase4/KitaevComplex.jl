@@ -31,9 +31,7 @@ algebraicity (the constraints are linear in F).
 
   Kitaev, A. "Anyons in an exactly solved model and beyond."
     Annals Phys. 321 (2006), App. E.6.
-  Etingof, P., Nikshych, D., Ostrik, V. "On fusion categories."
-    Ann. Math. 162 (2005), 581–642.
-  Davydov, A.: Yetter (tangent) cohomology of fusion categories.
+
 """
 module KitaevComplex
 
