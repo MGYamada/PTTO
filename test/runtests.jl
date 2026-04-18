@@ -14,4 +14,5 @@ using ACMG
     include("test_phase4_lift.jl")
     include("test_phase4_verify.jl")
     include("test_kitaev_complex.jl")
+    include("test_sliced_pentagon.jl")
 end

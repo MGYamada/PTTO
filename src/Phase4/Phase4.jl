@@ -52,6 +52,7 @@ include("HexagonSolver.jl")
 include("ModularDataLift.jl")
 include("Verify.jl")
 include("KitaevComplex.jl")
+include("SlicedPentagonSolver.jl")
 
 using .PentagonEquations
 using .PentagonSolver
@@ -60,6 +61,7 @@ using .HexagonSolver
 using .ModularDataLift
 using .Verify
 using .KitaevComplex
+using .SlicedPentagonSolver
 
 # Re-export the user-facing API
 export get_pentagon_system
