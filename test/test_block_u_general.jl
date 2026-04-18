@@ -5,15 +5,15 @@ using ACMG
 Tests for general O(n) Cayley parametrisation in BlockU.jl.
 """
 
+# Helper: 2x2 determinant (defined at top-level so @testset blocks see it)
+det_2x2(M) = M[1, 1] * M[2, 2] - M[1, 2] * M[2, 1]
+
 @testset "General O(n) Cayley" begin
 
     @testset "inverse_mod_p" begin
         # 2x2 example
         p = 7
         M = [3 1; 2 4]
-        # det = 12 - 2 = 10 = 3 mod 7, det_inv = 5
-        # adj = [[4, -1], [-2, 3]] = [[4, 6], [5, 3]] mod 7
-        # M^{-1} = 5 * adj = [[20, 30], [25, 15]] = [[6, 2], [4, 1]] mod 7
         Minv = inverse_mod_p(M, p)
         @test Minv !== nothing
         # Verify: M * Minv ≡ I
@@ -30,9 +30,8 @@ Tests for general O(n) Cayley parametrisation in BlockU.jl.
     end
 
     @testset "cayley_so_n at n=2 reproduces O(2) circle points" begin
-        # Cayley with single param a → SO(2) rotation:
-        # A = [[0, a], [-a, 0]], (I-A)(I+A)^{-1} = (1/(1+a²)) [[1-a², -2a], [2a, 1-a²]]
-        # cos = (1-a²)/(1+a²), sin = 2a/(1+a²) (Weierstrass)
+        # Cayley with single param a → SO(2) rotation.
+        # A = [[0, a], [-a, 0]], U = (I-A)(I+A)^{-1}
         p = 13
         for a in 0:(p-1)
             U = cayley_so_n([a], 2, p)
@@ -47,22 +46,19 @@ Tests for general O(n) Cayley parametrisation in BlockU.jl.
     end
 
     @testset "enumerate_so_n_Fp counts" begin
-        # SO(1) = {1}, |SO(1)(F_p)| = 1
+        # SO(1) = {1}
         @test length(enumerate_so_n_Fp(1, 7)) == 1
 
-        # |SO(2)(F_p)|: rotation matrices form circle, |circle| = p ± 1
-        # Cayley misses the singular point(s), so we get p - (#singular)
-        # for p=13: 1 + a² = 0 has 2 solutions if -1 is QR (p ≡ 1 mod 4) → 13-2 = 11
-        # for p=11: 1 + a² = 0 has 0 solutions (p ≡ 3 mod 4) → 11
+        # Cayley map on SO(2) covers p - #{a: 1+a²=0} points.
+        # For p=13 (≡1 mod 4): 1+a²=0 at a=±5, so 2 excluded → 13 - 2 = 11
+        # For p=11 (≡3 mod 4): no solutions → 11
         so2_p13 = enumerate_so_n_Fp(2, 13)
-        # 13 ≡ 1 (mod 4), so -1 is QR; we lose 2 Cayley-singular params
         @test length(so2_p13) == 11
 
         so2_p11 = enumerate_so_n_Fp(2, 11)
-        # 11 ≡ 3 (mod 4), -1 is not QR, no Cayley-singular params
         @test length(so2_p11) == 11
 
-        # All elements should be valid SO(2): det = 1, U U^T = I
+        # All elements should be valid SO(2)
         for U in so2_p13
             @test mod(det_2x2(U), 13) == 1
             UUT = [mod(sum(U[i, k] * U[j, k] for k in 1:2), 13) for i in 1:2, j in 1:2]
@@ -83,20 +79,31 @@ Tests for general O(n) Cayley parametrisation in BlockU.jl.
     end
 
     @testset "apply_block_U sanity" begin
-        # 4x4 S, apply 2x2 block at (1, 2)
+        # Note: apply_block_U reduces entries mod p. For identity-block test,
+        # keep all S entries already in [0, p) so that S and apply_block_U(S,...,I,...)
+        # compare equal without mod reduction.
         p = 13
-        S = [1 2 3 4; 2 5 6 7; 3 6 8 9; 4 7 9 10]
-        # Identity block doesn't change S
+        S = [1 2 3 4; 2 5 6 7; 3 6 8 9; 4 7 9 10]  # all entries < 13
         U_id = [1 0; 0 1]
         @test apply_block_U(S, [1, 2], U_id, p) == S
 
-        # Test on 3x3 block at (1, 3, 4)
-        S5 = [10 11 12 13 14; 11 15 16 17 18; 12 16 19 20 21;
-              13 17 20 22 23; 14 18 21 23 24]
+        # 5x5 with 3x3 block test — keep entries in [0, p)
+        S5 = [1 2 3 4 5;
+              2 6 7 8 9;
+              3 7 10 11 12;
+              4 8 11 0 1;
+              5 9 12 1 2]
         U_id3 = [1 0 0; 0 1 0; 0 0 1]
         @test apply_block_U(S5, [1, 3, 4], U_id3, p) == S5
+
+        # Non-trivial: 90° rotation on (1, 2) block should permute rows/cols 1, 2
+        # U = [[0, -1], [1, 0]] (mod p: [[0, p-1], [1, 0]])
+        U_rot = [0 (p-1); 1 0]
+        S_rot = apply_block_U(S, [1, 2], U_rot, p)
+        @test size(S_rot) == (4, 4)
+        # Entries outside the (1,2) block should be unchanged
+        @test S_rot[3, 3] == S[3, 3]
+        @test S_rot[3, 4] == S[3, 4]
+        @test S_rot[4, 4] == S[4, 4]
     end
 end
-
-# Helper: 2x2 determinant
-det_2x2(M) = M[1, 1] * M[2, 2] - M[1, 2] * M[2, 1]
