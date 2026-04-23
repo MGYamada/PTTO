@@ -21,7 +21,6 @@ This module provides:
 
 Depends on: Primes (already in v0.2 via ACMG); no new dependencies.
 """
-module ModularDataLift
 
 using LinearAlgebra
 using Primes
@@ -32,8 +31,6 @@ using Primes
 #   primitive_root(p) :: Int
 # both live in ACMG.BlockU / ACMG.FpArith.
 
-export lift_T_Fp_to_complex, lift_S_sqrtd_to_complex
-export lift_mtc_candidate, DiscreteLogTable
 
 # ============================================================
 #  Discrete log infrastructure
@@ -211,4 +208,3 @@ function lift_mtc_candidate(candidate, recon_S::Matrix{Tuple{Int,Int}};
     return (S_ℂ, T_ℂ, Nijk)
 end
 
-end # module ModularDataLift

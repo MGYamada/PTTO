@@ -1,6 +1,5 @@
 using Test
 using ACMG
-using ACMG.Phase4
 
 """
 Phase 4 Verify tests.
@@ -33,8 +32,8 @@ Iterate over all pentagon × hexagon combinations and return the first
 """
 function find_matching_FR(Nijk, T_expected; atol = 1e-8)
     r = size(Nijk, 1)
-    _R, eqs, n = Phase4.get_pentagon_system(Nijk, r)
-    F_sols = Phase4.solve_pentagon_homotopy(eqs, n;
+    _R, eqs, n = get_pentagon_system(Nijk, r)
+    F_sols = solve_pentagon_homotopy(eqs, n;
                                             slice = 1, show_progress = false)
 
     best = (ribbon_max = Inf, F = nothing, R = nothing,
@@ -42,11 +41,11 @@ function find_matching_FR(Nijk, T_expected; atol = 1e-8)
             n_tried = 0, n_matches = 0)
 
     for (fi, F_raw) in enumerate(F_sols)
-        F = Phase4.refine_solution_newton(eqs, F_raw; tol = 1e-14)
+        F = refine_solution_newton(eqs, F_raw; tol = 1e-14)
         local R_sols
         try
-            _, hex_eqs, n_r = Phase4.get_hexagon_system(Nijk, r, F)
-            R_sols = Phase4.solve_hexagon_homotopy(hex_eqs, n_r;
+            _, hex_eqs, n_r = get_hexagon_system(Nijk, r, F)
+            R_sols = solve_hexagon_homotopy(hex_eqs, n_r;
                                                    show_progress = false)
         catch
             continue
@@ -54,7 +53,7 @@ function find_matching_FR(Nijk, T_expected; atol = 1e-8)
 
         for (ri, R) in enumerate(R_sols)
             best = (; best..., n_tried = best.n_tried + 1)
-            rib_max = maximum(Phase4.ribbon_residuals(R, T_expected, Nijk))
+            rib_max = maximum(ribbon_residuals(R, T_expected, Nijk))
             if rib_max < atol
                 best = (; best..., n_matches = best.n_matches + 1)
                 if rib_max < best.ribbon_max
@@ -104,35 +103,35 @@ end
     R = best.R
 
     @testset "Pentagon residuals" begin
-        pent_res = Phase4.pentagon_residuals(F, Nijk)
+        pent_res = pentagon_residuals(F, Nijk)
         max_pent = maximum(pent_res)
         println("  Pentagon max residual: $max_pent")
         @test max_pent < 1e-8
     end
 
     @testset "Hexagon residuals" begin
-        hex_res = Phase4.hexagon_residuals(F, R, Nijk)
+        hex_res = hexagon_residuals(F, R, Nijk)
         max_hex = maximum(hex_res)
         println("  Hexagon max residual: $max_hex")
         @test max_hex < 1e-8
     end
 
     @testset "R-block extraction" begin
-        R11_1 = Phase4.extract_R_block(R, Nijk, 1, 1, 1)
+        R11_1 = extract_R_block(R, Nijk, 1, 1, 1)
         @test size(R11_1) == (1, 1)
 
-        R22_1 = Phase4.extract_R_block(R, Nijk, 2, 2, 1)
+        R22_1 = extract_R_block(R, Nijk, 2, 2, 1)
         @test size(R22_1) == (1, 1)
-        R22_2 = Phase4.extract_R_block(R, Nijk, 2, 2, 2)
+        R22_2 = extract_R_block(R, Nijk, 2, 2, 2)
         @test size(R22_2) == (1, 1)
 
         # No such block: Nijk[1,1,2] = 0
-        empty_block = Phase4.extract_R_block(R, Nijk, 1, 1, 2)
+        empty_block = extract_R_block(R, Nijk, 1, 1, 2)
         @test size(empty_block) == (0, 0)
     end
 
     @testset "verify_mtc roundtrip (all residuals near zero)" begin
-        report = Phase4.verify_mtc(F, R, Nijk; T = T_expected)
+        report = verify_mtc(F, R, Nijk; T = T_expected)
         @test report.rank == 2
         @test report.pentagon_max < 1e-8
         @test report.hexagon_max < 1e-8

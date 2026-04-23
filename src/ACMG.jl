@@ -8,31 +8,38 @@ sweep + CRT reconstruction, and pentagon/hexagon `(F, R)` solution.
 Top-level pipeline (Phase 5):
 
     using ACMG
-    classified = classify_mtcs_at_conductor(5; max_rank = 2,
-                                             primes = [11, 31, 41, 61])
+    classified = classify_mtcs_at_conductor(24; max_rank = 5,
+                                             primes = [73, 97, 193, 241],
+                                             skip_FR = true)
 
 returns a `Vector{ClassifiedMTC}`, one per Galois sector per stratum.
 
-Module organisation:
-- FpArith:         F_p arithmetic primitives (Tonelli-Shanks, primitive
-                   roots, matmul, lift_symmetric, ...)
-- Types:           `ModularDatumFp`, `FusionRule` with axiom validation
-- Dimensions:      quantum dimension enumeration (stub)
-- ModularData:     (S, T) axiom checking over F_p
-- FusionExtract:   Verlinde-based fusion rule extraction
-- Enumerator:      top-level legacy driver (stub)
-- SL2Reps:         SL(2, ℤ/N) irreducible representation catalog
-                   (via Oscar + GAP/SL2Reps)  [Phase 0]
-- StratumEnum:     combinatorial partition `Σ m_λ d_λ = r`  [Phase 1]
-- BlockU:          general O(n) Cayley + single-prime MTC driver
-                   (`find_mtcs_at_prime`)  [Phase 2]
-- CRT:             multi-prime CRT reconstruction + Galois-aware
-                   grouping  [Phase 3]
-- Phase4:          submodule — pentagon/hexagon (F, R) solver
-                   + ribbon verify  [Phase 4]
-- Phase5:          this file's `classify_mtcs_at_conductor` + friends,
-                   wiring everything into an `N → List[ClassifiedMTC]`
-                   pipeline  [Phase 5]
+Module organisation (all at ACMG top level — no submodules):
+- FpArith:             F_p arithmetic primitives (Tonelli-Shanks,
+                       primitive roots, matmul, lift_symmetric, ...)
+- Types:               `ModularDatumFp`, `FusionRule` with axiom validation
+- Dimensions:          quantum dimension enumeration (stub)
+- ModularData:         (S, T) axiom checking over F_p
+- FusionExtract:       Verlinde-based fusion rule extraction
+- Enumerator:          legacy top-level driver (stub)
+- SL2Reps:             SL(2, ℤ/N) irreducible representation catalog
+                       (Oscar + GAP/SL2Reps)                  [Phase 0]
+- StratumEnum:         combinatorial partition `Σ m_λ d_λ = r`[Phase 1]
+- BlockU:              general O(n) Cayley + single-prime driver
+                       `find_mtcs_at_prime`                   [Phase 2]
+- CRT:                 multi-prime CRT reconstruction + Galois-aware
+                       grouping                               [Phase 3]
+- PentagonEquations:   pentagon equations from fusion rule
+                       (TensorCategories wrapper)             [Phase 4]
+- PentagonSolver:      HC + damped Newton pentagon solvers    [Phase 4]
+- HexagonEquations:    hexagon equations with F baked in      [Phase 4]
+- HexagonSolver:       HC solver for R                        [Phase 4]
+- ModularDataLift:     F_p / ℤ[√d] → ℂ lift                   [Phase 4]
+- Verify:              pentagon / hexagon / ribbon residuals,
+                       `VerifyReport`, `verify_mtc`           [Phase 4]
+- Phase5:              end-to-end driver `classify_mtcs_at_conductor`,
+                       `compute_FR_from_ST`, `classify_from_group`,
+                       and the `ClassifiedMTC` output type    [Phase 5]
 """
 module ACMG
 
@@ -69,17 +76,22 @@ include("BlockU.jl")
 # Multi-prime CRT reconstruction — Phase 3
 include("CRT.jl")
 
-# Phase 4: Pentagon/Hexagon solver for (F, R) classification — submodule
-include("Phase4/Phase4.jl")
+# Phase 4: Pentagon/Hexagon (F, R) solver + verify, all at top level
+include("PentagonEquations.jl")
+include("PentagonSolver.jl")
+include("HexagonEquations.jl")
+include("HexagonSolver.jl")
+include("ModularDataLift.jl")
+include("Verify.jl")
 
-# Phase 5: end-to-end pipeline driver — uses Phase 4 submodule + all of the above
+# Phase 5: end-to-end pipeline driver
 include("Phase5.jl")
 
 # ============================================================
 #  Exports
 # ============================================================
 
-# Core types and Fp arithmetic
+# Core types and F_p arithmetic
 export ModularDatumFp, FusionRule
 export validate_modular_data, build_modular_datum, compute_alpha, compute_charge_conjugation
 export extract_fusion_rule_Fp, lift_fusion_to_Z, extract_and_lift
@@ -110,29 +122,16 @@ export reconstruct_rational, reconstruct_in_Z_sqrt_d
 export reconstruct_matrix_in_Z_sqrt_d, reconstruct_S_matrix
 export verify_reconstruction, describe_matrix
 
-# Phase 4: (F, R) classification — re-exported at ACMG top level.
-#
-# Users can now write `ACMG.verify_mtc(...)`, `ACMG.get_pentagon_system(...)`
-# etc. directly without `ACMG.Phase4.` prefixing. The `Phase4` submodule
-# is still accessible as `ACMG.Phase4` for those who want explicit
-# namespacing.
-using .Phase4: get_pentagon_system,
-               solve_pentagon_newton, solve_pentagon_homotopy,
-               refine_solution_newton,
-               hexagon_equations, get_hexagon_system,
-               solve_hexagon_homotopy,
-               assign_F_to_associator!, invert_associator_numeric,
-               DiscreteLogTable, lift_T_Fp_to_complex,
-               lift_S_sqrtd_to_complex, lift_mtc_candidate,
-               pentagon_residuals, hexagon_residuals,
-               extract_R_block, block_positions_R,
-               ribbon_residuals, VerifyReport, verify_mtc
-
+# Phase 4: (F, R) classification
 export get_pentagon_system
 export solve_pentagon_newton, solve_pentagon_homotopy, refine_solution_newton
+export eval_poly_complex, sparse_jacobian
+export oscar_poly_to_hc, build_hc_system
 export hexagon_equations, get_hexagon_system
+export _number_of_variables_in_hexagon_equations
+export _coerce_complex, invert_associator_numeric, assign_F_to_associator!
 export solve_hexagon_homotopy
-export assign_F_to_associator!, invert_associator_numeric
+export oscar_poly_to_hc_complex, build_hc_system_complex
 export DiscreteLogTable, lift_T_Fp_to_complex, lift_S_sqrtd_to_complex
 export lift_mtc_candidate
 export pentagon_residuals, hexagon_residuals

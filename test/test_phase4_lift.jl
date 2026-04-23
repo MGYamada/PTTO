@@ -1,7 +1,6 @@
 using Test
 using Oscar
 using ACMG
-using ACMG.Phase4
 
 """
 Phase 4 ModularDataLift tests.
@@ -18,7 +17,7 @@ Two focused cases:
 
     @testset "DiscreteLogTable basic" begin
         # F_41, N=5: ζ_5 = 10 (from Fibonacci test)
-        tbl = Phase4.DiscreteLogTable(5, 41, 10)
+        tbl = DiscreteLogTable(5, 41, 10)
         @test tbl.lookup[1] == 0                      # ζ^0 = 1
         @test tbl.lookup[10] == 1                     # ζ^1 = 10
         @test tbl.lookup[mod(10^2, 41)] == 2          # ζ^2 = 18
@@ -42,7 +41,7 @@ Two focused cases:
         @test zeta_Fp == 10
 
         T_Fp = [1, 18]
-        T_complex = Phase4.lift_T_Fp_to_complex(T_Fp, N, p, zeta_Fp)
+        T_complex = lift_T_Fp_to_complex(T_Fp, N, p, zeta_Fp)
         @test length(T_complex) == 2
         @test isapprox(T_complex[1], ComplexF64(1.0); atol = 1e-12)
         # Expected: ζ_5^2 = exp(4πi/5)
@@ -56,7 +55,7 @@ Two focused cases:
         # Then S_entry = (3 + 2√3) / (2·√3) = 3/(2√3) + 1 = √3/2 + 1
         d = 3
         recon = [(3, 2);;]  # 1×1 matrix via the recent comprehension syntax
-        S = Phase4.lift_S_sqrtd_to_complex(recon, d; scale = 2)
+        S = lift_S_sqrtd_to_complex(recon, d; scale = 2)
         @test size(S) == (1, 1)
         expected = (3 + 2 * sqrt(3.0)) / (2 * sqrt(3.0))
         @test isapprox(real(S[1, 1]), expected; atol = 1e-12)
@@ -64,7 +63,7 @@ Two focused cases:
 
         # 2×2: identity-like
         recon2 = [(0, 1) (2, 0); (2, 0) (0, 1)]
-        S2 = Phase4.lift_S_sqrtd_to_complex(recon2, d; scale = 2)
+        S2 = lift_S_sqrtd_to_complex(recon2, d; scale = 2)
         # (0 + 1·√3) / (2√3) = 1/2
         @test isapprox(real(S2[1, 1]), 0.5; atol = 1e-12)
         # (2 + 0·√3) / (2√3) = 1/√3
@@ -82,7 +81,7 @@ Two focused cases:
         ks = [0, 1, 3, 7, 11]
         T_Q = [zeta^k for k in ks]
         T_Fp = [ACMG.cyclotomic_to_Fp(t, zeta_Fp, p) for t in T_Q]
-        T_recovered = Phase4.lift_T_Fp_to_complex(T_Fp, N, p, zeta_Fp)
+        T_recovered = lift_T_Fp_to_complex(T_Fp, N, p, zeta_Fp)
 
         for (i, k) in enumerate(ks)
             expected = exp(2π * im * k / N)
@@ -95,6 +94,6 @@ Two focused cases:
         N, p = 5, 41
         zeta_Fp = 10
         # 2 is not in ⟨ζ_5⟩ = {1, 10, 18, 16, 37}
-        @test_throws Exception Phase4.lift_T_Fp_to_complex([2], N, p, zeta_Fp)
+        @test_throws Exception lift_T_Fp_to_complex([2], N, p, zeta_Fp)
     end
 end

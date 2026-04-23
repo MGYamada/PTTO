@@ -1,6 +1,5 @@
 using Test
 using ACMG
-using ACMG.Phase4
 
 """
 Phase 5 end-to-end pipeline tests.

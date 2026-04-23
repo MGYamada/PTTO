@@ -92,7 +92,7 @@ struct ClassifiedMTC
     T_complex::Vector{ComplexF64}
     F_values::Union{Vector{ComplexF64}, Nothing}
     R_values::Union{Vector{ComplexF64}, Nothing}
-    verify_report::Union{Any, Nothing}  # Phase4.VerifyReport
+    verify_report::Union{VerifyReport, Nothing}
     galois_sector::Int
 end
 
@@ -172,10 +172,10 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
         "T_complex length $(length(T_complex)) does not match rank $r")
 
     # Pentagon system
-    _R, eqs, n = Phase4.get_pentagon_system(Nijk, r)
+    _R, eqs, n = get_pentagon_system(Nijk, r)
     verbose && println("  Pentagon: $n variables, $(length(eqs)) equations")
 
-    F_sols = Phase4.solve_pentagon_homotopy(eqs, n;
+    F_sols = solve_pentagon_homotopy(eqs, n;
                                              slice = pentagon_slice,
                                              include_singular = false,
                                              show_progress = show_progress)
@@ -194,7 +194,7 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
     for (fi, F_raw) in enumerate(F_sols)
         local F
         try
-            F = Phase4.refine_solution_newton(eqs, F_raw; tol = 1e-14)
+            F = refine_solution_newton(eqs, F_raw; tol = 1e-14)
         catch err
             verbose && println("    F[$fi] Newton refinement failed: $err")
             continue
@@ -202,8 +202,8 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
 
         local R_sols
         try
-            _R_ring, hex_eqs, n_r = Phase4.get_hexagon_system(Nijk, r, F)
-            R_sols = Phase4.solve_hexagon_homotopy(hex_eqs, n_r;
+            _R_ring, hex_eqs, n_r = get_hexagon_system(Nijk, r, F)
+            R_sols = solve_hexagon_homotopy(hex_eqs, n_r;
                                                     show_progress = show_progress)
         catch err
             verbose && println("    F[$fi] hexagon failed: $err")
@@ -217,7 +217,7 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
 
             local rib_max
             try
-                rib = Phase4.ribbon_residuals(R, T_complex, Nijk)
+                rib = ribbon_residuals(R, T_complex, Nijk)
                 rib_max = maximum(rib)
             catch err
                 verbose && println("      R[$ri] ribbon failed: $err")
@@ -227,7 +227,7 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
             if rib_max < ribbon_atol
                 best = (; best..., n_matches = best.n_matches + 1)
                 if rib_max < best.ribbon_max
-                    rep = Phase4.verify_mtc(F, R, Nijk; T = T_complex)
+                    rep = verify_mtc(F, R, Nijk; T = T_complex)
                     best = (; best...,
                             F = F, R = R, report = rep,
                             f_idx = fi, r_idx = ri,
@@ -344,7 +344,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     # -------- Phase 4 input: lift (S, T) to ℂ --------
     rep = first(values(group))
     zeta_Fp = find_zeta_in_Fp(N, rep.p)
-    S_ℂ, T_ℂ, Nijk = Phase4.lift_mtc_candidate(rep, recon_S;
+    S_ℂ, T_ℂ, Nijk = lift_mtc_candidate(rep, recon_S;
                                                 d = scale_d,
                                                 N = N,
                                                 zeta_Fp = zeta_Fp,

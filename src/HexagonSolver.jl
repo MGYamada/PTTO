@@ -15,14 +15,12 @@ HC requires ComplexF64 coefficients, so conversion goes through
 
 Depends on: Oscar, HomotopyContinuation.
 """
-module HexagonSolver
 
 using Oscar
 import HomotopyContinuation
-const HC = HomotopyContinuation
+# `const HC = HomotopyContinuation` is defined in PentagonSolver.jl; it is
+# shared across ACMG after flattening and we do not re-declare it here.
 
-export oscar_poly_to_hc_complex, build_hc_system_complex
-export solve_hexagon_homotopy
 
 """
     oscar_poly_to_hc_complex(f, hc_vars) -> HC.Expression
@@ -111,4 +109,3 @@ function solve_hexagon_homotopy(eqs, n::Int;
     return [ComplexF64.(s) for s in sols_raw]
 end
 
-end # module HexagonSolver

@@ -22,19 +22,12 @@ HomotopyContinuation or KrylovKit. Only Oscar (for polynomial evaluation
 using `eval_poly_complex`) and TensorCategories (for rebuilding a
 category with numerical F and R to extract block structure).
 """
-module Verify
 
 using Oscar
 using TensorCategories
 
 # Reach into sibling modules
-using ..PentagonEquations: get_pentagon_system
-using ..PentagonSolver: eval_poly_complex
-using ..HexagonEquations: get_hexagon_system, _number_of_variables_in_hexagon_equations
 
-export pentagon_residuals, hexagon_residuals
-export extract_R_block, block_positions_R
-export ribbon_residuals, VerifyReport, verify_mtc
 
 # ============================================================
 #  Polynomial evaluation helpers (for AcbField coefficients)
@@ -311,4 +304,3 @@ function verify_mtc(F_values::Vector{ComplexF64},
     )
 end
 
-end # module Verify

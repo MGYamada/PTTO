@@ -1,6 +1,5 @@
 using Test
 using ACMG
-using ACMG.Phase4
 
 """
 Fibonacci Phase 4 smoke test.
@@ -30,7 +29,7 @@ to Q(ζ_20)) and gauge equivalence classification are deferred.
     Nijk[2, 2, 2] = 1
 
     @testset "Pentagon system setup" begin
-        R, eqs, n = Phase4.get_pentagon_system(Nijk, 2)
+        R, eqs, n = get_pentagon_system(Nijk, 2)
         @test n > 0                       # non-trivial (not pointed)
         @test length(eqs) > 0
         @test all(!iszero, eqs)
@@ -38,11 +37,11 @@ to Q(ζ_20)) and gauge equivalence classification are deferred.
     end
 
     @testset "Pentagon HC solve" begin
-        R, eqs, n = Phase4.get_pentagon_system(Nijk, 2)
+        R, eqs, n = get_pentagon_system(Nijk, 2)
 
         # Pentagon has gauge freedom; slice=1 typically reduces to a
         # zero-dimensional variety for Fibonacci.
-        F_sols = Phase4.solve_pentagon_homotopy(eqs, n;
+        F_sols = solve_pentagon_homotopy(eqs, n;
                                                 slice = 1,
                                                 include_singular = false,
                                                 show_progress = false)
@@ -52,7 +51,7 @@ to Q(ζ_20)) and gauge equivalence classification are deferred.
 
         # Sanity: each solution should numerically satisfy all equations
         for (k, s) in enumerate(F_sols)
-            residuals = [abs(Phase4.PentagonSolver.eval_poly_complex(eq, s)) for eq in eqs]
+            residuals = [abs(eval_poly_complex(eq, s)) for eq in eqs]
             maxres = maximum(residuals)
             @test maxres < 1e-8
             if maxres >= 1e-10
@@ -62,24 +61,24 @@ to Q(ζ_20)) and gauge equivalence classification are deferred.
     end
 
     @testset "Hexagon for one pentagon solution" begin
-        R, eqs, n = Phase4.get_pentagon_system(Nijk, 2)
-        F_sols = Phase4.solve_pentagon_homotopy(eqs, n;
+        R, eqs, n = get_pentagon_system(Nijk, 2)
+        F_sols = solve_pentagon_homotopy(eqs, n;
                                                 slice = 1,
                                                 show_progress = false)
         @test !isempty(F_sols)
 
         # Polish before feeding to hexagon
-        F_sol_polished = Phase4.refine_solution_newton(eqs, F_sols[1]; tol = 1e-14)
+        F_sol_polished = refine_solution_newton(eqs, F_sols[1]; tol = 1e-14)
         @test length(F_sol_polished) == n
 
         # Build hexagon system with F fixed
-        R_ring, hex_eqs, n_r = Phase4.get_hexagon_system(Nijk, 2, F_sol_polished)
+        R_ring, hex_eqs, n_r = get_hexagon_system(Nijk, 2, F_sol_polished)
         @test n_r > 0
         @test length(hex_eqs) > 0
         println("  Fibonacci hexagon: $n_r R-variables, $(length(hex_eqs)) equations")
 
         # Solve hexagon
-        R_sols = Phase4.solve_hexagon_homotopy(hex_eqs, n_r;
+        R_sols = solve_hexagon_homotopy(hex_eqs, n_r;
                                                show_progress = false)
         @test !isempty(R_sols)
         println("  Hexagon HC returned $(length(R_sols)) braidings")

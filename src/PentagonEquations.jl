@@ -21,12 +21,10 @@ solutions from the pentagon can be injected back into a category object.
 
 Depends on: TensorCategories.jl (>= 0.1), Oscar.jl
 """
-module PentagonEquations
 
 using Oscar
 using TensorCategories
 
-export get_pentagon_system
 
 """
     get_pentagon_system(Nijk::Array{Int,3}, r::Int) -> (R, eqs, n)
@@ -74,4 +72,3 @@ function get_pentagon_system(Nijk::Array{Int,3}, r::Int)
     return R, eqs, n
 end
 
-end # module PentagonEquations

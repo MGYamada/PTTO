@@ -247,7 +247,7 @@ implemented.
 
 ### Phase 4 — Pentagon + Hexagon + Ribbon verify
 
-`Phase4/` submodule.
+Six files, all at `src/` top level:
 
 - `PentagonEquations.jl`: thin wrapper over
   `TensorCategories.pentagon_equations`.
@@ -390,14 +390,12 @@ src/
   StratumEnum.jl          — Phase 1: (m_λ) enumeration
   BlockU.jl               — Phase 2: O(n) Cayley + single-prime driver
   CRT.jl                  — Phase 3: CRT + Galois-aware grouping
-  Phase4/                 — Phase 4 submodule
-    Phase4.jl             — submodule root + re-exports
-    PentagonEquations.jl  — TensorCategories wrapper
-    PentagonSolver.jl     — HC + damped Newton
-    HexagonEquations.jl   — custom generator with F fixed
-    HexagonSolver.jl      — HC for R-system
-    ModularDataLift.jl    — F_p / ℤ[√d] → ℂ
-    Verify.jl             — pentagon/hexagon/ribbon residuals, VerifyReport
+  PentagonEquations.jl    — Phase 4: TensorCategories wrapper
+  PentagonSolver.jl       — Phase 4: HC + damped Newton
+  HexagonEquations.jl     — Phase 4: custom generator with F fixed
+  HexagonSolver.jl        — Phase 4: HC for R-system
+  ModularDataLift.jl      — Phase 4: F_p / ℤ[√d] → ℂ
+  Verify.jl               — Phase 4: residuals, VerifyReport
   Phase5.jl               — Phase 5: classify_mtcs_at_conductor and friends
 
 test/

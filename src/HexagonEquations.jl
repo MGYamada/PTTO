@@ -27,15 +27,10 @@ HomotopyContinuation.
 
 Depends on: Oscar, TensorCategories.
 """
-module HexagonEquations
 
 using Oscar
 using TensorCategories
 
-export _coerce_complex
-export invert_associator_numeric, assign_F_to_associator!
-export _number_of_variables_in_hexagon_equations
-export hexagon_equations, get_hexagon_system
 
 """
     _coerce_complex(c, K) -> K element
@@ -428,4 +423,3 @@ function get_hexagon_system(Nijk::Array{Int,3}, r::Int, F_values::Vector{<:Numbe
     return R_ring, eqs_filt, n_vars
 end
 
-end # module HexagonEquations

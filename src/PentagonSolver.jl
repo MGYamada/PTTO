@@ -17,7 +17,6 @@ rational coefficients (as produced by `get_pentagon_system`).
 
 Depends on: Oscar, SparseArrays, KrylovKit, HomotopyContinuation.
 """
-module PentagonSolver
 
 using Oscar
 using SparseArrays
@@ -25,9 +24,6 @@ using KrylovKit
 import HomotopyContinuation
 const HC = HomotopyContinuation
 
-export eval_poly_complex, sparse_jacobian
-export solve_pentagon_newton, solve_pentagon_homotopy, refine_solution_newton
-export oscar_poly_to_hc, build_hc_system
 
 # ============================================================
 #  Polynomial evaluation (QQ coefficients)
@@ -282,4 +278,3 @@ function refine_solution_newton(eqs, x0::Vector{ComplexF64};
     return x
 end
 
-end # module PentagonSolver
