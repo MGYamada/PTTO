@@ -555,7 +555,7 @@ function classify_mtcs_at_conductor(N::Int;
             continue
         end
 
-        verbose && println("  stratum (rank $(st.rank)): " *
+        verbose && println("  stratum (rank $(st.total_dim)): " *
                            "$(length(groups)) Galois sectors")
 
         # used/fresh split: first half / second half of primes in this group

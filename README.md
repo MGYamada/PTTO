@@ -7,15 +7,21 @@ including their pentagon / hexagon `(F, R)` symbols.
 ```julia
 using ACMG
 
-classified = classify_mtcs_at_conductor(24;
-                                         max_rank = 5,
-                                         primes = [73, 97, 193, 241,
-                                                   313, 337, 409],
-                                         skip_FR = true)   # rank-5 HC infeasible
-# → 2 ClassifiedMTCs, one per Galois sector of SU(2)_4.
+# Fibonacci fusion ring
+Nijk = zeros(Int, 2, 2, 2)
+Nijk[1,1,1] = Nijk[1,2,2] = Nijk[2,1,2] = Nijk[2,2,1] = Nijk[2,2,2] = 1
+
+# Fibonacci T
+T = ComplexF64[1.0, exp(4π * im / 5)]
+
+result = compute_FR_from_ST(Nijk, T)
+# result.F :: Vector{ComplexF64}  pentagon F-symbols
+# result.R :: Vector{ComplexF64}  hexagon R-symbols
+# result.report :: VerifyReport   pentagon/hexagon/ribbon residuals < 1e-14
 ```
 
-The single call above runs all five phases of the pipeline:
+At the top level, `classify_mtcs_at_conductor(N; ...)` runs all five
+phases of the pipeline:
 
 ```
  N ─┬─ Phase 0:  Atomic SL(2, ℤ/N)-irreps  (Oscar + GAP/SL2Reps)
@@ -29,7 +35,7 @@ The single call above runs all five phases of the pipeline:
     └─ Phase 4:  Pentagon + Hexagon + Ribbon over ℂ
                                            (TensorCategories + HC)
   ↓
-  List[ClassifiedMTC]
+  Vector{ClassifiedMTC}
 ```
 
 Each `ClassifiedMTC` carries the stratum decomposition, the exact
@@ -55,51 +61,45 @@ ACMG depends on:
 
 Julia ≥ 1.9 required.
 
-## Quick start
+## Worked example: Fibonacci
 
-### 1. Fibonacci: `(S, T) → (F, R)` in 30 seconds
+The Fibonacci category has rank 2, conductor `N = 5`, fusion ring
+`τ ⊗ τ = 1 ⊕ τ`, and twists `θ_1 = 1`, `θ_τ = exp(4πi/5)`. The pentagon
+system has 5 F-variables and 12 equations; the hexagon system has 2
+variables once F is fixed.
+
+`compute_FR_from_ST` takes a fusion tensor and complex T-eigenvalues
+and performs:
+
+1. Pentagon HC on `Nijk` — returns 4 F-solutions, split into 2
+   gauge classes.
+2. For each F: hexagon HC — each pentagon solution yields 2 R-solutions.
+3. Ribbon match `(R^{ij}_k)² = θ_i θ_j / θ_k` against the input `T`
+   picks the `(F, R)` pair(s) realising that specific modular datum.
 
 ```julia
-using ACMG
+result = compute_FR_from_ST(Nijk, T_fib; ribbon_atol = 1e-8, verbose = true)
 
-# Fibonacci fusion ring
-Nijk = zeros(Int, 2, 2, 2)
-Nijk[1,1,1] = Nijk[1,2,2] = Nijk[2,1,2] = Nijk[2,2,1] = Nijk[2,2,2] = 1
-
-# Fibonacci T
-T = ComplexF64[1.0, exp(4π * im / 5)]
-
-result = compute_FR_from_ST(Nijk, T)
-# result.F :: Vector{ComplexF64}  pentagon F-symbol values
-# result.R :: Vector{ComplexF64}  hexagon R-symbol values
-# result.report :: VerifyReport   pentagon/hexagon/ribbon residuals < 1e-14
+# Result
+#   pentagon HC: 4 solutions
+#   ribbon matches: 2 of 8 (F,R) pairs
+#   chosen pair: F[2] × R[2]
+#   VerifyReport(rank=2,
+#                pentagon_max = 3.96e-16 over 12 eqs,
+#                hexagon_max  = 1.37e-15 over 29 eqs,
+#                ribbon_max   = 2.25e-15)
 ```
 
-### 2. SU(2)_4: full `N → MTCs` pipeline
+The returned `(F, R)` pair can be handed to `verify_mtc(F, R, Nijk; T)`
+independently for re-verification, or fed into downstream algebraic
+recognition.
+
+As a sanity check, running the same fusion ring against a bogus
+`T = (1, i)` — a semion-like twist not consistent with the Fibonacci
+pentagon class — returns zero ribbon matches:
 
 ```julia
-classified = classify_mtcs_at_conductor(24;
-                                         max_rank = 5,
-                                         primes = [73, 97, 193, 241,
-                                                   313, 337, 409],
-                                         skip_FR = true)
-
-for c in classified
-    println(c)
-    # Exact arithmetic S-matrix:
-    println(describe_matrix(c.S_Zsqrtd, c.scale_d))
-end
-```
-
-`skip_FR = true` is required here because rank-5 pentagon systems have
-~238 F-variables and HC is not currently feasible at that scale
-(see "Complexity frontier" below).
-
-### 3. Verify a candidate `(F, R)` pair
-
-```julia
-report = verify_mtc(F_values, R_values, Nijk; T = T_complex)
-# report.pentagon_max, report.hexagon_max, report.ribbon_max
+compute_FR_from_ST(Nijk, ComplexF64[1.0, im]).n_matches    # == 0
 ```
 
 ## Conceptual framework
@@ -151,11 +151,6 @@ of the block-U parameter. The MTC locus is the subset where every
 `N_{ij}^k` is a non-negative integer — generically a 0-dimensional
 algebraic set inside the continuous family.
 
-For SU(2)_4 at rank 5, `N = 24`, one T-eigenspace has `n_θ = 2`, the
-continuous family is `O(2) = P^1`, and integrality picks out two
-points corresponding to a rotation-reflection pair
-(φ = π/4; derivable analytically from Kac–Peterson).
-
 ### Galois-aware F_p validation
 
 Computing over `ℤ[ζ_N]` directly is expensive. Instead ACMG reduces to
@@ -188,8 +183,8 @@ Phase 4 takes `(S, T)` in ℂ and a fusion tensor `Nijk`, and returns
   `(R^{ij}_k)² = θ_i · θ_j / θ_k`
   is a necessary condition pinning down which `(F, R)` realises the
   target T. Different pentagon F-classes on the same fusion ring
-  give different MTCs (e.g. Fibonacci vs Yang-Lee); the ribbon check
-  selects the one matching the input T.
+  give different MTCs; the ribbon check selects the one matching the
+  input T.
 
 ## Pipeline anatomy
 
@@ -308,20 +303,24 @@ was passed (or Phase 4 couldn't find a match).
 
 ## Complexity frontier
 
-| rank | conductor | pentagon F-vars | pentagon HC | notes                      |
-|------|-----------|-----------------|-------------|----------------------------|
-| 2    | 5         | 5               | ~30 s       | Fibonacci ✓                |
-| 3    | 16        | 14              | ~hours      | Ising, mixed volume ~5·10⁵ |
-| 5    | 24        | 238             | infeasible  | SU(2)_4 — use `skip_FR`    |
+Pentagon HC scales with the number of F-variables via the mixed volume
+of the polynomial system; this is the current bottleneck of the
+pipeline.
 
-| n_θ | O(n_θ)(F_p) at p ≈ 100 | wall clock   | status      |
-|-----|-------------------------|--------------|-------------|
-| 2   | ~150                   | instant      | ✓           |
-| 3   | ~7·10⁵                 | ~20 s        | ✓           |
-| 4   | ~10¹¹                  | infeasible   | needs Gröbner over F_p |
+At rank 2 (5 F-vars) pentagon HC finishes in tens of seconds and has
+been validated end-to-end on Fibonacci and its sign-conjugate
+Yang-Lee. Rank-3 systems (~14 F-vars) have mixed volume above `10⁵`
+and push HC to the practical edge. At rank 5 (~238 F-vars) the
+mixed volume blows up further; running Phase 4 at this scale requires
+a gauge-fixed pentagon formulation that is on the roadmap but not yet
+implemented. When this is the case, `classify_mtcs_at_conductor` can
+be called with `skip_FR = true` to produce modular data (Phases 0–3
+plus the ℂ-lift) without attempting the pentagon/hexagon stage.
 
-Both frontiers motivate future work on a gauge-fixed pentagon
-formulation and an algebraic `O(n)` solver.
+The F_p block-U sweep has its own frontier: `|O(n_θ)(F_p)| ~ p^{n_θ(n_θ-1)/2}`,
+so `n_θ = 3` is the practical limit of the current naive enumeration.
+`n_θ = 4` requires a polynomial solver over F_p (Cayley parametrisation
++ Gröbner).
 
 ## Validation
 
@@ -336,25 +335,9 @@ Test suite (`julia --project=. -e 'using Pkg; Pkg.test()'`) covers:
   fresh-prime cross-validation.
 - Pentagon HC + hexagon HC on Fibonacci (end-to-end ribbon match).
 - `DiscreteLogTable`, T and S complex lifts.
-- **Phase 5**: `compute_FR_from_ST` on Fibonacci (including a negative
-  test with wrong T), and `classify_mtcs_at_conductor` on SU(2)_4 at
-  `N=24` in `skip_FR` mode.
-
-## Prime selection
-
-For conductor `N`, primes `p` with `N | p-1`:
-
-| N  | Example primes                        |
-|----|---------------------------------------|
-| 5  | 11, 31, 41, 61, 71                    |
-| 8  | 17, 41, 73, 89, 97                    |
-| 12 | 13, 37, 61, 73, 97                    |
-| 24 | 73, 97, 193, 241, 313, 337, 409       |
-
-A prime is admissible for a particular candidate if additionally
-`√d ∈ F_p` for every quadratic irrationality appearing in the MTC
-(Chebotarev density guarantees positive-density sets). In practice 4–7
-good primes are enough for CRT + cross-validation.
+- **Phase 5**: `compute_FR_from_ST` on Fibonacci — including a negative
+  test with wrong T — plus a multi-prime integration smoke test of the
+  Phase 0 → 3 driver at larger conductor with `skip_FR = true`.
 
 ## Design principles
 
@@ -411,15 +394,13 @@ test/
   test_phase4_fibonacci.jl  — pentagon + hexagon HC
   test_phase4_lift.jl       — DiscreteLogTable, T and S lifts
   test_phase4_verify.jl     — residuals, ribbon match, VerifyReport
-  test_phase5.jl            — Phase 5 pipeline: compute_FR_from_ST,
-                              classify_mtcs_at_conductor (SU(2)_4, skip_FR)
+  test_phase5.jl            — Phase 5 pipeline: compute_FR_from_ST
+                              + classify_mtcs_at_conductor smoke test
 
 scripts/
-  su24_integration.jl     — Phase 2 end-to-end for SU(2)_4
-  su24_crt.jl             — Phase 3 end-to-end (multi-prime CRT)
-  phase5_demo.jl          — Phase 5 end-to-end: Fibonacci (F,R)
-                            + SU(2)_4 full pipeline. Pass
-                            --full-enumerate to sweep all strata.
+  phase5_demo.jl          — Phase 5 end-to-end demo (Fibonacci)
+  su24_integration.jl     — Phase 2 multi-prime driver (legacy)
+  su24_crt.jl             — Phase 3 end-to-end CRT (legacy)
   diagnose_crt.jl         — per-prime candidate inspection
 ```
 
@@ -427,52 +408,43 @@ scripts/
 
 **Near-term**
 
-- Rank 5 classification at N ∈ {5, 7, 11, 15, 20} to verify the expected
-  empty set.
 - T-spectrum pre-filter `enumerate_strata_by_T(catalog, target_spins)`
-  to collapse the ~25k rank-5 N=24 strata to O(1) candidates.
+  to collapse large strata enumerations to O(1) candidates.
 - BNRW admissibility layer (Cauchy / Galois norm of D² and
   Frobenius-Schur indicators) as a pre-Verlinde filter.
 
 **Medium-term**
 
-- Gauge-fixed pentagon formulation to bring rank-3 (Ising, 14 F-vars)
-  and ideally rank-5 (SU(2)_4, 238 F-vars) into reach.
+- Gauge-fixed pentagon formulation to bring rank-3 and rank-5 systems
+  into HC range.
 - Multiple degenerate eigenspaces handled simultaneously (Cartesian
   product of O(n_θ) sweeps).
-- NsdGOL6 parsing and the first `n_θ = 3` target from the NRW catalogue.
-- Rank 6+ D(ℤ_n) Drinfeld centres: the `n_θ = n` at rank `n²` case.
 
 **Long-term**
 
 - Algebraic solver for `O(n)` sweeps at `n ≥ 4` (Cayley + Gröbner over F_p).
 - Algebraic recognition of `ComplexF64` F-symbols as elements of ℚ(ζ_N)
   (PSLQ / LLL).
-- Haagerup `Z(H_3)` at rank 12, N = 39.
 
 ## References
 
-- Bruillard–Ng–Rowell–Wang, *Rank-finiteness for modular categories*,
+- Bruillard–Ng–Rowell–Wang, *On classification of modular categories by rank*,
   arXiv:1507.05139 (admissibility).
-- Ng–Rowell–Wang–Wen, *Reconstruction of modular data from SL(2, ℤ)
+- Ng–Rowell–Wang–Wen, *Reconstruction of modular data from SL_2(ℤ)
   representations*, arXiv:2203.14829 (the irrep-sum + block-U
   framework).
 - Ng–Rowell–Wen, *Classification of modular data up to rank 12*,
   arXiv:2308.09670 (ground-truth catalog, `NsdGOL*.g` ancillary files).
-- Gannon–Morrison, arXiv:1606.07165 (algorithmic template).
-- Evans–Gannon, arXiv:1006.1326 (Haagerup family).
-- Kitaev, unpublished notes on topological phases (tangent cohomology,
-  Eq. 244–252).
 
 ## Status
 
-| Phase | What it does                           | Status | Notes                                  |
-|-------|-----------------------------------------|--------|----------------------------------------|
-| 0     | SL(2, ℤ/N) atomic catalog               | ✅     | N=24: 178 irreps, max_rank≤5           |
-| 1     | Stratum enumeration                     | ✅     | 25k strata at rank 5 N=24              |
-| 2     | Block-U sweep + Verlinde (F_p)          | ✅     | O(n) for n ≤ 3; SU(2)_4 verified       |
-| 3     | CRT + Galois-aware reconstruction       | ✅     | 7/7 primes on SU(2)_4                  |
-| 4     | Pentagon + Hexagon + Ribbon (ℂ)         | ✅     | Fibonacci verified; rank-5 skip        |
-| 5     | End-to-end `classify_mtcs_at_conductor` | ✅     | N=24 SU(2)_4 end-to-end (skip_FR)      |
+| Phase | What it does                           | Status |
+|-------|-----------------------------------------|--------|
+| 0     | SL(2, ℤ/N) atomic catalog               | ✅     |
+| 1     | Stratum enumeration                     | ✅     |
+| 2     | Block-U sweep + Verlinde (F_p)          | ✅     |
+| 3     | CRT + Galois-aware reconstruction       | ✅     |
+| 4     | Pentagon + Hexagon + Ribbon (ℂ)         | ✅     |
+| 5     | End-to-end `classify_mtcs_at_conductor` | ✅     |
 
 Version: **v0.4-prototype** (April 2026).
