@@ -159,7 +159,9 @@ end
 
 """
     group_mtcs_galois_aware(results_by_prime::Dict{Int, Vector{MTCCandidate}},
-                             anchor_prime::Int)
+                             anchor_prime::Int;
+                             scale_d::Int = 3,
+                             sqrtd_fn = (d, p) -> compute_sqrt3_cyclotomic_mod_p(p))
         -> Vector{Dict{Int, MTCCandidate}}
 
 Group MTC candidates across primes such that each group has a CONSISTENT
@@ -168,61 +170,36 @@ same element of Z[ζ_N] (not just up to Galois conjugation).
 
 Method: for each candidate at `anchor_prime`, seed a new group; then at
 each other prime, pick the candidate whose S_Fp (together with T_Fp)
-lifts consistently — detected by using a few small entries as canonical
-signatures modulo the sign of √d choices.
+lifts consistently — detected by attempting a 2-prime reconstruction of
+`scale_factor · √d · S_Fp` in Z[√d].
 
-Concretely: we use the FIRST FEW DIAGONAL ENTRIES of S_Fp as a fingerprint.
-Those entries are Galois-variant (flip under √d → -√d), so we align
-Galois sector by matching the cyclotomic-reduced value of one or more
-sample entries.
-
-Simple implementation: use `2·√3·S[1,1]` cyclotomic; this should be a
-prime-independent integer (part of the Z-basis coefficient). Ties are
-broken by more entries.
+The `sqrtd_fn(d, p)` callback supplies a specific cyclotomic branch of
+`√d mod p` — it MUST match the `d` / branch convention used by
+downstream `reconstruct_S_matrix` or the final CRT reconstruction will
+disagree with the Galois alignment performed here. The caller should
+pass the same `sqrtd_fn` as `classify_from_group` / `reconstruct_S_matrix`.
 """
 function group_mtcs_galois_aware(results_by_prime::Dict{Int, Vector{MTCCandidate}},
-                                  anchor_prime::Int; scale_d::Int = 3)
+                                  anchor_prime::Int;
+                                  scale_d::Int = 3,
+                                  sqrtd_fn = (d, p) -> compute_sqrt3_cyclotomic_mod_p(p))
     haskey(results_by_prime, anchor_prime) || error("anchor_prime $anchor_prime not in results")
     anchor_cands = results_by_prime[anchor_prime]
 
-    # Anchor fingerprint: for each anchor candidate, compute a fingerprint
-    # = the set of Z-coefficients of 2·√scale_d · S_Fp in Z[√scale_d].
-    # But we don't know how to extract Z part directly from a single prime
-    # (needs CRT at least).
-    #
-    # Simpler approach: pick one entry S[i,j] and compute (2·√scale_d · S[i,j])
-    # mod p for each prime. The "Z part" of this is what the anchor tells us.
-    # For Galois alignment we require each candidate to have matching:
-    #   ENTRY a_ij := 2·√scale_d(cyc) · S[i,j] mod p
-    # viewed as (a, b) ∈ Z² with a + b·√scale_d.
-    # Since we don't yet know (a, b), we use the following proxy:
-    #   At anchor_prime compute anchor_signature = (2·√d_cyc · S[1,1]) mod anchor_prime
-    #   At other primes choose the candidate whose (2·√d_cyc · S[1,1]) mod p
-    #   gives a consistent (a, b) with a, b ∈ small Z together with the anchor.
+    # For each anchor candidate, seed a group. For each other prime's
+    # candidate, accept it if `2·√scale_d · S_Fp` from {anchor, p} can be
+    # reconstructed as Z[√scale_d] with small bounded coefficients. This
+    # is the same test `verify_reconstruction` does, just truncated to
+    # two primes.
 
-    function sig_at(c::MTCCandidate)
-        # Fingerprint using a small selection of matrix entries
-        p = c.p
-        s3 = compute_sqrt3_cyclotomic_mod_p(p)
-        two_s3 = mod(2 * s3, p)
-        # Take a handful of entries (flattened)
-        nrow = size(c.S_Fp, 1)
-        return [mod(two_s3 * c.S_Fp[i, j], p) for i in 1:nrow for j in 1:nrow]
-    end
-
-    # Try every pair (anchor_candidate, other_candidate) and check if a
-    # common Z[√scale_d] reconstruction works on just those two primes
     groups = Vector{Dict{Int, MTCCandidate}}()
 
     for anchor_c in anchor_cands
-        # Only process anchor candidates that haven't been absorbed
-        # (just put them all; duplicates will be filtered later)
         group = Dict{Int, MTCCandidate}(anchor_prime => anchor_c)
 
         for (p, cands) in results_by_prime
             p == anchor_prime && continue
 
-            # For each candidate at p, check Galois compatibility with anchor
             best_match = nothing
             for c in cands
                 # Different fusion tensor → skip
@@ -230,19 +207,18 @@ function group_mtcs_galois_aware(results_by_prime::Dict{Int, Vector{MTCCandidate
 
                 # Check: can we reconstruct 2·√d·S as Z[√d] from just {anchor, p}?
                 try
-                    s3_anchor = compute_sqrt3_cyclotomic_mod_p(anchor_prime)
-                    s3_p = compute_sqrt3_cyclotomic_mod_p(p)
-                    two_s3_anchor = mod(2 * s3_anchor, anchor_prime)
-                    two_s3_p = mod(2 * s3_p, p)
+                    s_anchor = sqrtd_fn(scale_d, anchor_prime)
+                    s_p = sqrtd_fn(scale_d, p)
+                    two_s_anchor = mod(2 * s_anchor, anchor_prime)
+                    two_s_p = mod(2 * s_p, p)
                     nrow = size(anchor_c.S_Fp, 1)
                     matrix_by_prime = Dict{Int, Matrix{Int}}()
                     matrix_by_prime[anchor_prime] = [
-                        mod(two_s3_anchor * anchor_c.S_Fp[i, j], anchor_prime)
+                        mod(two_s_anchor * anchor_c.S_Fp[i, j], anchor_prime)
                         for i in 1:nrow, j in 1:nrow]
                     matrix_by_prime[p] = [
-                        mod(two_s3_p * c.S_Fp[i, j], p)
+                        mod(two_s_p * c.S_Fp[i, j], p)
                         for i in 1:nrow, j in 1:nrow]
-                    sqrtd_fn = (d, q) -> compute_sqrt3_cyclotomic_mod_p(q)
                     recon = reconstruct_matrix_in_Z_sqrt_d(
                         matrix_by_prime, scale_d; bound = 5, sqrtd_fn = sqrtd_fn)
                     # Success!
@@ -375,6 +351,19 @@ Galois-consistent across primes with 24 | p - 1.
 function compute_sqrt2_cyclotomic_mod_p(p::Int)
     zeta24 = find_zeta_in_Fp(24, p)
     return mod(powermod(zeta24, 3, p) + powermod(zeta24, 21, p), p)
+end
+
+"""
+    compute_sqrt5_cyclotomic_mod_p(p::Int) -> Int
+
+Compute √5 mod p using the quadratic Gauss-sum identity
+`√5 = 1 + 2·(ζ_5 + ζ_5^4)`. Galois-consistent across primes satisfying
+`5 | p - 1` (which is required for ζ_5 ∈ F_p).
+"""
+function compute_sqrt5_cyclotomic_mod_p(p::Int)
+    zeta5 = find_zeta_in_Fp(5, p)
+    # √5 = 1 + 2·(ζ_5 + ζ_5^4)
+    return mod(1 + 2 * (zeta5 + powermod(zeta5, 4, p)), p)
 end
 
 """

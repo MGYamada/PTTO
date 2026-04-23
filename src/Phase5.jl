@@ -171,8 +171,36 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
     length(T_complex) == r || error(
         "T_complex length $(length(T_complex)) does not match rank $r")
 
+    # Rank-1 (trivial) MTC: the only fusion category structure is the
+    # unit object with F = R = [1]. Pentagon / hexagon / ribbon hold
+    # vacuously. `TensorCategories.pentagon_equations` emits no non-
+    # trivial polynomials at rank 1, so we short-circuit here rather
+    # than let `get_pentagon_system` error.
+    if r == 1
+        F_trivial = ComplexF64[1.0]
+        R_trivial = ComplexF64[1.0]
+        # Fields in order: pentagon_max, hexagon_max, ribbon_max,
+        # n_pentagon_eqs, n_hexagon_eqs, rank
+        report = VerifyReport(0.0, 0.0, 0.0, 0, 0, 1)
+        return (F = F_trivial, R = R_trivial, report = report,
+                n_pentagon = 1, n_tried = 1, n_matches = 1,
+                f_idx = 1, r_idx = 1)
+    end
+
     # Pentagon system
-    _R, eqs, n = get_pentagon_system(Nijk, r)
+    local _R, eqs, n
+    try
+        _R, eqs, n = get_pentagon_system(Nijk, r)
+    catch err
+        # Pointed / trivially-pentagon fusion rings at r ≥ 2 can also
+        # emit no non-trivial equations. Treat this as "no pentagon
+        # constraint; fall through with trivial F" rather than error.
+        verbose && println("  get_pentagon_system threw ($err); " *
+                           "treating as trivially pointed")
+        return (F = nothing, R = nothing, report = nothing,
+                n_pentagon = 0, n_tried = 0, n_matches = 0,
+                f_idx = 0, r_idx = 0)
+    end
     verbose && println("  Pentagon: $n variables, $(length(eqs)) equations")
 
     F_sols = solve_pentagon_homotopy(eqs, n;
@@ -413,6 +441,16 @@ Returns one `ClassifiedMTC` per Galois sector per stratum that yields a
 valid MTC. If `skip_FR = true`, Phase 4 is skipped and `(F, R)` is left
 as `nothing` (useful for large ranks where pentagon HC is infeasible).
 
+Note on conductor: `N` here is the SL(2, ℤ/N)-rep conductor —
+equivalently, the order of `T` as a matrix. An MTC's S-matrix may live
+in a larger cyclotomic field than ℚ(ζ_N); in NRWW's convention the
+full MTC conductor is `max(cond(S), cond(T))`. Fibonacci, for example,
+has `cond(T) = 5` but its S involves `D = √(2+φ)` which is NOT in ℚ(ζ_5).
+Calling this function with the T-only conductor will miss such MTCs —
+they only appear when `N` is large enough to accommodate `S` too.
+SU(2)_4 (conductor 24) is reachable; Fibonacci is typically reached
+at a larger conductor.
+
 Arguments:
 - `N::Int`:                        conductor
 - `max_rank::Int`:                 maximum rank to consider
@@ -428,17 +466,27 @@ Arguments:
                                    the given strata directly (faster for
                                    targeted re-runs).
 - `scale_d::Int = 3`:              ℤ[√d] the S-matrix is expected to
-                                   live in. Default 3 (SU(2)_4 / Ising).
+                                   live in. Must be chosen to match the
+                                   MTC's quadratic field: e.g. 3 for
+                                   SU(2)_4 / Ising, 5 for MTCs involving
+                                   the golden ratio, 2 for √2-pointed
+                                   MTCs. A wrong `scale_d` will silently
+                                   return 0 classified MTCs.
 - `scale_factor::Int = 2`:         scalar multiplying `S` at
                                    reconstruction (matches
                                    `reconstruct_S_matrix` convention).
 - `sqrtd_fn`:                      custom √d-in-F_p function. If
-                                   `nothing` (default), uses
+                                   `nothing` (default), chooses the
+                                   cyclotomic variant:
                                    `compute_sqrt3_cyclotomic_mod_p`
-                                   for `scale_d = 3`,
+                                   (needs 24 | p-1) for `scale_d = 3`,
                                    `compute_sqrt2_cyclotomic_mod_p`
-                                   for `scale_d = 2`, else
-                                   `compute_sqrt_d_mod_p`.
+                                   (needs 24 | p-1) for `scale_d = 2`,
+                                   `compute_sqrt5_cyclotomic_mod_p`
+                                   (needs 5 | p-1) for `scale_d = 5`,
+                                   else the non-cyclotomic
+                                   `compute_sqrt_d_mod_p` (Tonelli-
+                                   Shanks, NOT Galois-consistent).
 - `verlinde_threshold::Int = 3`:   max absolute fusion coefficient
                                    allowed (beyond which the candidate
                                    is rejected). See
@@ -476,13 +524,21 @@ function classify_mtcs_at_conductor(N::Int;
     length(primes) >= 2 || error(
         "need at least 2 primes (got $(length(primes)))")
 
-    # Default sqrtd_fn for the common cases.
+    # Default sqrtd_fn for the common cases. Cyclotomic variants are
+    # Galois-consistent across primes; Tonelli-Shanks is not.
     if sqrtd_fn === nothing
         sqrtd_fn = if scale_d == 3
             (d, p) -> compute_sqrt3_cyclotomic_mod_p(p)
         elseif scale_d == 2
             (d, p) -> compute_sqrt2_cyclotomic_mod_p(p)
+        elseif scale_d == 5
+            (d, p) -> compute_sqrt5_cyclotomic_mod_p(p)
         else
+            # Generic Tonelli-Shanks fallback. NOT Galois-consistent —
+            # CRT reconstruction may pick the wrong sector.
+            verbose && @warn "Using generic (Tonelli-Shanks) √d for scale_d=$scale_d; " *
+                             "this is not Galois-consistent. Consider supplying an " *
+                             "explicit cyclotomic `sqrtd_fn` if the result looks wrong."
             compute_sqrt_d_mod_p
         end
     end
@@ -505,9 +561,12 @@ function classify_mtcs_at_conductor(N::Int;
     # Collect (stratum, Dict{p => candidates}) only for strata that yield
     # something at at least one prime.
     stratum_results = Vector{Tuple{Stratum, Dict{Int, Vector{MTCCandidate}}}}()
+    skipped_reasons = Dict{String, Int}()
     for (si, st) in enumerate(strata_list)
         results_by_prime = Dict{Int, Vector{MTCCandidate}}()
         any_found = false
+        any_prime_errored = false
+        last_err = ""
         for p in primes
             local cands
             try
@@ -516,7 +575,10 @@ function classify_mtcs_at_conductor(N::Int;
                                             max_block_dim = max_block_dim)
             catch err
                 # e.g. max_block_dim exceeded, or p not admissible
-                # for this stratum. Silent skip.
+                # for this stratum. Record the first such error for
+                # a terse verbose summary at end.
+                any_prime_errored = true
+                last_err = sprint(showerror, err)
                 continue
             end
             if !isempty(cands)
@@ -526,10 +588,23 @@ function classify_mtcs_at_conductor(N::Int;
         end
         if any_found
             push!(stratum_results, (st, results_by_prime))
-            verbose && println("  stratum $si: MTCs at $(length(results_by_prime)) primes")
+            verbose && println("  stratum $si ($(describe_stratum(st, catalog))): " *
+                               "MTCs at $(length(results_by_prime)) primes")
+        elseif any_prime_errored && verbose
+            # Summarise the error kind (first 80 chars) to help diagnose
+            # repeated patterns without flooding output.
+            key = first(last_err, 80)
+            skipped_reasons[key] = get(skipped_reasons, key, 0) + 1
         end
     end
-    verbose && println("  $(length(stratum_results)) strata yielded candidates")
+    verbose && println("  $(length(stratum_results)) strata yielded candidates; " *
+                       "$(length(strata_list) - length(stratum_results)) skipped")
+    if verbose && !isempty(skipped_reasons)
+        println("  skip reasons (first 80 chars of error × count):")
+        for (reason, count) in sort(collect(skipped_reasons), by = x -> -x[2])
+            println("    [$count×] $reason")
+        end
+    end
 
     # ------- Phase 3 + 4: per-stratum, per-sector -------
     verbose && println("\n=== Phase 3 + 4: CRT + (F, R) classification ===")
@@ -549,7 +624,8 @@ function classify_mtcs_at_conductor(N::Int;
         local groups
         try
             groups = group_mtcs_galois_aware(results_by_prime, anchor;
-                                              scale_d = scale_d)
+                                              scale_d = scale_d,
+                                              sqrtd_fn = sqrtd_fn)
         catch err
             verbose && println("  stratum: galois grouping failed: $err")
             continue
@@ -561,7 +637,11 @@ function classify_mtcs_at_conductor(N::Int;
         # used/fresh split: first half / second half of primes in this group
         for (gi, group) in enumerate(groups)
             group_primes = sort(collect(keys(group)))
-            length(group_primes) >= 2 || continue
+            if length(group_primes) < 2
+                verbose && println("    sector $gi: only $(length(group_primes)) " *
+                                   "prime(s) — Galois-aligned CRT needs ≥ 2. skip")
+                continue
+            end
             half = max(2, length(group_primes) ÷ 2)
             used = group_primes[1:half]
             cur_ribbon_atol = ribbon_atol
