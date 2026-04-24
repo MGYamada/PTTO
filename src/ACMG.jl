@@ -95,7 +95,12 @@ export MTCCandidate, build_block_diagonal, reduce_matrix_to_Fp, reduce_vector_to
 export find_zeta_in_Fp, cyclotomic_to_Fp
 export t_eigenspace_decomposition, parameter_dim
 export o2_circle_points, apply_o2_block, verlinde_find_unit
-export cayley_so_n, inverse_mod_p, enumerate_so_n_Fp, enumerate_o_n_Fp, apply_block_U
+export cayley_so_n, inverse_mod_p, enumerate_so_n_Fp, enumerate_o_n_Fp
+export enumerate_o_n_Fp_groebner, enumerate_block_candidates, apply_block_U
+export build_verlinde_unit_equations
+export build_cayley_link_equations
+export is_orthogonal_mod_p
+export validate_search_mode
 export find_mtcs_at_prime, signed_Fp
 
 # Phase 3: CRT reconstruction

@@ -78,6 +78,47 @@ det_2x2(M) = M[1, 1] * M[2, 2] - M[1, 2] * M[2, 1]
         @test det_neg == length(so2)
     end
 
+    @testset "search backend mode parity" begin
+        p = 11
+        for n in (2, 3)
+            cands_exhaustive = enumerate_block_candidates(n, p, :exhaustive)
+            cands_groebner = enumerate_block_candidates(n, p, :groebner)
+            @test !isempty(cands_groebner)
+            @test length(cands_groebner) >= length(cands_exhaustive)
+            # Determinism check across repeated calls.
+            cands_groebner2 = enumerate_block_candidates(n, p, :groebner)
+            @test cands_groebner2 == cands_groebner
+        end
+        @test_throws ErrorException enumerate_block_candidates(2, p, :unknown_mode)
+    end
+
+    @testset "validate_search_mode" begin
+        @test validate_search_mode(:exhaustive) === nothing
+        @test validate_search_mode(:groebner) === nothing
+        @test_throws ErrorException validate_search_mode(:bad_mode)
+    end
+
+    @testset "verlinde groebner equation builder shape" begin
+        # Pure shape/count sanity using numeric placeholders.
+        # n_block=2 => orthogonality equations: 3
+        # r=2 => inverse witness equations: 2
+        # r=2 => unit axiom equations: 4
+        # total expected = 9
+        varsU = [1, 0, 0, 1]
+        varsW = [1, 1]
+        S = [1 0; 0 1]
+        eqs = build_verlinde_unit_equations(varsU, varsW, S, [1, 2], 11, 1)
+        @test length(eqs) == 9
+    end
+
+    @testset "cayley link equation builder shape" begin
+        # n=2 => one Cayley parameter and 2x2 U variables.
+        varsA = [0]
+        varsU = [1, 0, 0, 1]
+        eqs = build_cayley_link_equations(varsA, varsU, 2)
+        @test length(eqs) == 4
+    end
+
     @testset "apply_block_U sanity" begin
         # Note: apply_block_U reduces entries mod p. For identity-block test,
         # keep all S entries already in [0, p) so that S and apply_block_U(S,...,I,...)
@@ -105,5 +146,13 @@ det_2x2(M) = M[1, 1] * M[2, 2] - M[1, 2] * M[2, 1]
         @test S_rot[3, 3] == S[3, 3]
         @test S_rot[3, 4] == S[3, 4]
         @test S_rot[4, 4] == S[4, 4]
+    end
+
+    @testset "is_orthogonal_mod_p" begin
+        p = 13
+        @test is_orthogonal_mod_p([1 0; 0 1], p)
+        @test is_orthogonal_mod_p([0 p-1; 1 0], p)  # 90-degree rotation
+        @test !is_orthogonal_mod_p([1 1; 0 1], p)
+        @test !is_orthogonal_mod_p([1 0 0; 0 1 0], p)  # non-square
     end
 end
