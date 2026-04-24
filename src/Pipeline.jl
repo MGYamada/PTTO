@@ -364,7 +364,7 @@ function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCand
     isempty(anchor_cands) && return Int[]
     contradictory = Int[]
 
-    function has_compatible_pair(cands::Vector{MTCCandidate}, p::Int, trial_signs)
+    function has_compatible_pair(cands::Vector{MTCCandidate}, p::Int, trial_signs, orig_sign)
         for anchor_c in anchor_cands
             nrow = size(anchor_c.S_Fp, 1)
             ncol = size(anchor_c.S_Fp, 2)
@@ -391,6 +391,10 @@ function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCand
                         return true
                     catch
                         continue
+                    finally
+                        if branch_sign_setter !== nothing && orig_sign !== nothing
+                            branch_sign_setter(p, orig_sign)
+                        end
                     end
                 end
             end
@@ -401,11 +405,12 @@ function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCand
     for (p, cands) in sort(collect(results_by_prime), by = x -> x[1])
         p == anchor_prime && continue
         trial_signs = [nothing]
+        orig_sign = nothing
         if branch_sign_getter !== nothing && branch_sign_setter !== nothing
-            cur = branch_sign_getter(p)
-            trial_signs = cur == 1 ? [1, -1] : [-1, 1]
+            orig_sign = branch_sign_getter(p)
+            trial_signs = orig_sign == 1 ? [1, -1] : [-1, 1]
         end
-        compatible = has_compatible_pair(cands, p, trial_signs)
+        compatible = has_compatible_pair(cands, p, trial_signs, orig_sign)
         if !compatible
             push!(contradictory, p)
         end

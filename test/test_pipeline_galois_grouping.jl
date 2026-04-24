@@ -7,6 +7,8 @@ using ACMG
         p_anchor = 29
         p_other = 53
         selector = ACMG.build_sqrtd_selector(d, [p_anchor, p_other], p_anchor; verbose = false)
+        selector.branch_sign_setter(p_other, -1)
+        orig_sign = selector.branch_sign_getter(p_other)
 
         N1 = zeros(Int, 1, 1, 1)
         N1[1, 1, 1] = 1
@@ -29,7 +31,7 @@ using ACMG
                                                            branch_sign_setter = selector.branch_sign_setter,
                                                            verbose = false)
         @test isempty(contradictions)
-        @test selector.branch_sign_getter(p_other) in (-1, 1)
+        @test selector.branch_sign_getter(p_other) == orig_sign
     end
 
     @testset "_branch_consistency_precheck explores all anchor candidates (rank-2, d=5, p=41/61)" begin
