@@ -889,8 +889,11 @@ function classify_mtcs_at_conductor(N::Int;
         "need at least 2 primes (got $(length(primes)))")
 
     # ------- Phase 0: atomic catalog -------
-    verbose && println("=== Phase 0: atomic SL(2, ℤ/$N_effective) irrep catalog ===")
-    catalog = build_atomic_catalog(N_effective; max_rank = max_rank, verbose = false)
+    # Enumerate atomic SL(2, Z/N)-irreps at the user-specified base conductor N.
+    # The field-extension effect is handled later via N_effective in arithmetic
+    # checks (prime admissibility, sqrt(d)-dependent reconstruction).
+    verbose && println("=== Phase 0: atomic SL(2, ℤ/$N) irrep catalog ===")
+    catalog = build_atomic_catalog(N; max_rank = max_rank, verbose = false)
     verbose && println("  $(length(catalog)) atomic irreps (≤ rank $max_rank)")
 
     # ------- Phase 1: strata -------
