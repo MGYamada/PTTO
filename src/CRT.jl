@@ -208,7 +208,10 @@ function group_mtcs_galois_aware(results_by_prime::Dict{Int, Vector{MTCCandidate
             best_sign = nothing
             for c in cands
                 # Different fusion tensor → skip
-                (c.N == anchor_c.N && c.unit_index == anchor_c.unit_index) || continue
+                # unit_index may legitimately differ across primes for
+                # equivalent candidates; use fusion-tensor equality as the
+                # compatibility guard here.
+                c.N == anchor_c.N || continue
 
                 # Check: can we reconstruct 2·√d·S as Z[√d] from just {anchor, p}?
                 trial_signs = [nothing]

@@ -370,7 +370,13 @@ function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCand
             nrow = size(anchor_c.S_Fp, 1)
             ncol = size(anchor_c.S_Fp, 2)
             for c in cands
-                (c.N == anchor_c.N && c.unit_index == anchor_c.unit_index) || continue
+                # NOTE:
+                # unit_index can differ across primes for the same fusion
+                # ring candidate (ordering conventions / finite-field
+                # normalization). Requiring exact unit_index equality here
+                # over-filters compatible pairs and causes false
+                # "branch contradiction" reports.
+                c.N == anchor_c.N || continue
                 size(c.S_Fp, 1) == nrow || continue
                 size(c.S_Fp, 2) == ncol || continue
                 for sgn in trial_signs
