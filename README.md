@@ -43,6 +43,13 @@ arithmetic S-matrix in ℤ[√d], its complex-lifted `(S, T)`, the
 `(F, R)` symbols solving pentagon/hexagon over ℂ, and a `VerifyReport`
 with pentagon, hexagon and ribbon residuals.
 
+## Migration note: `conductor_mode`
+
+- 旧挙動（互換モード）: `conductor_mode = :T_only`
+- 新デフォルト: `conductor_mode = :full_mtc`
+  - 内部探索は `N_effective = lcm(N, 4 * scale_d)` を使用
+- `:T_only` は後方互換のため残していますが、**v0.5.0 で削除予定**です。
+
 ## Installation
 
 ```julia

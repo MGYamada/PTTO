@@ -151,7 +151,7 @@ Test strategy:
         end
     end
 
-    @testset "classify_mtcs_at_conductor full_mtc finds Fibonacci from N=5" begin
+    @testset "classify_mtcs_at_conductor default(full_mtc) finds Fibonacci from N=5" begin
         test_primes = [41, 61, 101, 181]
         N_input = 5
         N_effective = 20
@@ -199,11 +199,10 @@ Test strategy:
                                                          strata = [first(fib_strata)],
                                                          scale_d = 5,
                                                          scale_factor = 2,
-                                                         conductor_mode = :full_mtc,
                                                          skip_FR = true,
                                                          verbose = false)
 
-            println("  classify_mtcs_at_conductor(5, conductor_mode=:full_mtc) ⇒ " *
+            println("  classify_mtcs_at_conductor(5) [default full_mtc] ⇒ " *
                     "$(length(classified)) ClassifiedMTC(s)")
 
             # full_mtc mode applies the conservative expansion N_eff=lcm(N, 4*scale_d)
@@ -212,5 +211,36 @@ Test strategy:
 
             @test any(c -> c.rank == 2 && c.Nijk == fib_N, classified)
         end
+    end
+
+    @testset "conductor_mode default uses N_effective in prime validity check" begin
+        err = try
+            ACMG.classify_mtcs_at_conductor(1;
+                                            max_rank = 1,
+                                            primes = [5, 13],
+                                            scale_d = 2,
+                                            skip_FR = true,
+                                            verbose = false)
+            nothing
+        catch e
+            e
+        end
+
+        @test err isa ErrorException
+        msg = sprint(showerror, err)
+        @test occursin("N_effective | p-1", msg)
+        @test occursin("input N=1", msg)
+        @test occursin("N_effective=4", msg)
+    end
+
+    @testset "conductor_mode=:T_only keeps behavior and emits deprecation warning" begin
+        result = @test_logs (:warn, r"conductor_mode=:T_only.*removed in v0\\.5\\.0") ACMG.classify_mtcs_at_conductor(1;
+                                                                                                                          max_rank = 1,
+                                                                                                                          primes = [5, 13],
+                                                                                                                          scale_d = 2,
+                                                                                                                          conductor_mode = :T_only,
+                                                                                                                          skip_FR = true,
+                                                                                                                          verbose = false)
+        @test result isa Vector{ACMG.ClassifiedMTC}
     end
 end
