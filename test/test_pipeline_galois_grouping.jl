@@ -31,4 +31,48 @@ using ACMG
         @test isempty(contradictions)
         @test selector.branch_sign_getter(p_other) in (-1, 1)
     end
+
+    @testset "_branch_consistency_precheck explores all anchor candidates (rank-2, d=5, p=41/61)" begin
+        d = 5
+        p_anchor = 41
+        p_other = 61
+
+        N2 = zeros(Int, 2, 2, 2)
+        for i in 1:2
+            N2[i, i, i] = 1
+        end
+
+        s_anchor = ACMG.compute_sqrt_d_mod_p(d, p_anchor)
+        s_other = ACMG.compute_sqrt_d_mod_p(d, p_other)
+        two_s_anchor_inv = invmod(mod(2 * s_anchor, p_anchor), p_anchor)
+        two_s_other_inv = invmod(mod(2 * s_other, p_other), p_other)
+
+        # Entries are encoded as x = a + b*√d so that 2*√d*S = x mod p.
+        good_x = [
+            (3, 1) (0, 1)
+            (0, 1) (2, -1)
+        ]
+        bad_x = [
+            (11, 4) (7, -3)
+            (5, 2) (9, 1)
+        ]
+
+        encode_entry(pair, s, p, two_s_inv) = mod((pair[1] + pair[2] * s) * two_s_inv, p)
+        good_anchor_S = [encode_entry(good_x[i, j], s_anchor, p_anchor, two_s_anchor_inv) for i in 1:2, j in 1:2]
+        good_other_S = [encode_entry(good_x[i, j], s_other, p_other, two_s_other_inv) for i in 1:2, j in 1:2]
+        bad_anchor_S = [encode_entry(bad_x[i, j], s_anchor, p_anchor, two_s_anchor_inv) for i in 1:2, j in 1:2]
+
+        # Put an incompatible anchor candidate first to reproduce the regression.
+        c_anchor_bad = ACMG.MTCCandidate(p_anchor, :dummy_bad, bad_anchor_S,
+                                         [1, 1], 1, N2, [1, 1], 2)
+        c_anchor_good = ACMG.MTCCandidate(p_anchor, :dummy_good, good_anchor_S,
+                                          [1, 1], 1, N2, [1, 1], 2)
+        c_other = ACMG.MTCCandidate(p_other, :dummy_other, good_other_S,
+                                    [1, 1], 1, N2, [1, 1], 2)
+
+        results = Dict(p_anchor => [c_anchor_bad, c_anchor_good], p_other => [c_other])
+        contradictions = ACMG._branch_consistency_precheck(results, p_anchor, d, ACMG.compute_sqrt_d_mod_p;
+                                                           verbose = false)
+        @test isempty(contradictions)
+    end
 end

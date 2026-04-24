@@ -362,43 +362,50 @@ function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCand
     haskey(results_by_prime, anchor_prime) || return Int[]
     anchor_cands = results_by_prime[anchor_prime]
     isempty(anchor_cands) && return Int[]
-    anchor_c = anchor_cands[1]
     contradictory = Int[]
+
+    function has_compatible_pair(cands::Vector{MTCCandidate}, p::Int, trial_signs)
+        for anchor_c in anchor_cands
+            nrow = size(anchor_c.S_Fp, 1)
+            ncol = size(anchor_c.S_Fp, 2)
+            for c in cands
+                (c.N == anchor_c.N && c.unit_index == anchor_c.unit_index) || continue
+                size(c.S_Fp, 1) == nrow || continue
+                size(c.S_Fp, 2) == ncol || continue
+                for sgn in trial_signs
+                    if branch_sign_setter !== nothing && sgn !== nothing
+                        branch_sign_setter(p, sgn)
+                    end
+                    try
+                        s_anchor = sqrtd_fn(scale_d, anchor_prime)
+                        s_p = sqrtd_fn(scale_d, p)
+                        two_s_anchor = mod(2 * s_anchor, anchor_prime)
+                        two_s_p = mod(2 * s_p, p)
+                        matrix_by_prime = Dict(
+                            anchor_prime => [mod(two_s_anchor * anchor_c.S_Fp[i, j], anchor_prime)
+                                             for i in 1:nrow, j in 1:ncol],
+                            p => [mod(two_s_p * c.S_Fp[i, j], p)
+                                  for i in 1:nrow, j in 1:ncol])
+                        reconstruct_matrix_in_Z_sqrt_d(matrix_by_prime, scale_d;
+                                                       bound = 5, sqrtd_fn = sqrtd_fn)
+                        return true
+                    catch
+                        continue
+                    end
+                end
+            end
+        end
+        return false
+    end
+
     for (p, cands) in sort(collect(results_by_prime), by = x -> x[1])
         p == anchor_prime && continue
-        compatible = false
         trial_signs = [nothing]
         if branch_sign_getter !== nothing && branch_sign_setter !== nothing
             cur = branch_sign_getter(p)
             trial_signs = cur == 1 ? [1, -1] : [-1, 1]
         end
-        for sgn in trial_signs
-            if branch_sign_setter !== nothing && sgn !== nothing
-                branch_sign_setter(p, sgn)
-            end
-            for c in cands
-                (c.N == anchor_c.N && c.unit_index == anchor_c.unit_index) || continue
-                try
-                    s_anchor = sqrtd_fn(scale_d, anchor_prime)
-                    s_p = sqrtd_fn(scale_d, p)
-                    two_s_anchor = mod(2 * s_anchor, anchor_prime)
-                    two_s_p = mod(2 * s_p, p)
-                    nrow = size(anchor_c.S_Fp, 1)
-                    matrix_by_prime = Dict(
-                        anchor_prime => [mod(two_s_anchor * anchor_c.S_Fp[i, j], anchor_prime)
-                                         for i in 1:nrow, j in 1:nrow],
-                        p => [mod(two_s_p * c.S_Fp[i, j], p)
-                              for i in 1:nrow, j in 1:nrow])
-                    reconstruct_matrix_in_Z_sqrt_d(matrix_by_prime, scale_d;
-                                                   bound = 5, sqrtd_fn = sqrtd_fn)
-                    compatible = true
-                    break
-                catch
-                    continue
-                end
-            end
-            compatible && break
-        end
+        compatible = has_compatible_pair(cands, p, trial_signs)
         if !compatible
             push!(contradictory, p)
         end
