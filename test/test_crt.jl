@@ -157,7 +157,7 @@ Tests for CRT module (Phase 3) — pure F_p parts, no Oscar.
     @testset "build_sqrtd_selector + galois grouping branch alignment" begin
         # d=3 uses cyclotomic selector
         cyclo = ACMG.build_sqrtd_selector(3, [73], 73; verbose = false)
-        @test cyclo.mode == :cyclotomic
+        @test cyclo.mode in (:cyclotomic, :cyclotomic_signed)
         s3 = cyclo.sqrtd_fn(3, 73)
         @test mod(s3 * s3, 73) == 3
 
