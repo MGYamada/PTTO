@@ -84,6 +84,9 @@ include("HexagonSolver.jl")
 include("ModularDataLift.jl")
 include("Verify.jl")
 
+# Prime selection helpers
+include("PrimeSelection.jl")
+
 # Phase 5: end-to-end pipeline driver
 include("Phase5.jl")
 
@@ -141,6 +144,7 @@ export ribbon_residuals, VerifyReport, verify_mtc
 
 # Phase 5: end-to-end pipeline
 export ClassifiedMTC
+export select_admissible_primes
 export compute_FR_from_ST, classify_from_group
 export classify_mtcs_at_conductor, classify_mtcs_auto
 

@@ -268,4 +268,52 @@ Test strategy:
         @test length(auto.primes) == 2
         @test auto.attempts == 1
     end
+
+    @testset "select_admissible_primes picks valid primes" begin
+        ps = ACMG.select_admissible_primes(24;
+                                           min_count = 3,
+                                           start_from = 29,
+                                           window = 200)
+        @test length(ps) == 3
+        @test all(p -> (p - 1) % 24 == 0, ps)
+        @test issorted(ps)
+    end
+
+    @testset "select_admissible_primes reports searched range on shortage" begin
+        err = try
+            ACMG.select_admissible_primes(24;
+                                          min_count = 2,
+                                          start_from = 29,
+                                          window = 10)
+            nothing
+        catch e
+            e
+        end
+
+        @test err isa ErrorException
+        msg = sprint(showerror, err)
+        @test occursin("insufficient admissible primes", msg)
+        @test occursin("(29, 39]", msg)
+        @test occursin("found", msg)
+    end
+
+    @testset "classify_mtcs_auto records prime-search shortage reason" begin
+        auto = ACMG.classify_mtcs_auto(1;
+                                       max_rank_candidates = [1],
+                                       scale_d_candidates = [2],
+                                       conductor_modes = [:T_only],
+                                       min_primes = 2,
+                                       prime_start = 29,
+                                       prime_max = 39,
+                                       max_attempts = 1,
+                                       skip_FR = true,
+                                       verbose = false)
+
+        @test isempty(auto.classified)
+        @test length(auto.history) == 1
+        @test auto.history[1].executed
+        @test !auto.history[1].success
+        @test occursin("insufficient admissible primes", auto.history[1].reason)
+        @test occursin("(29, 39]", auto.history[1].reason)
+    end
 end

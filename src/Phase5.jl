@@ -263,16 +263,14 @@ function classify_mtcs_auto(N::Int;
                 end
                 req = lcm(N_eff_candidate, cyclo_req)
 
-                chosen_primes = Int[]
-                p = nextprime(prime_start)
-                while p <= prime_max && length(chosen_primes) < min_primes
-                    if (p - 1) % req == 0
-                        push!(chosen_primes, p)
-                    end
-                    p = nextprime(p + 1)
-                end
-                if length(chosen_primes) < min_primes
-                    stage_reason = "insufficient_primes(req=$req)"
+                local chosen_primes
+                try
+                    chosen_primes = select_admissible_primes(req;
+                                                             min_count = min_primes,
+                                                             window = prime_max - prime_start,
+                                                             start_from = prime_start)
+                catch err
+                    stage_reason = sprint(showerror, err)
                     continue
                 end
 
@@ -353,6 +351,15 @@ function classify_mtcs_auto(N::Int;
             max_rank = last_meta.max_rank,
             attempts = last_meta.attempts,
             history = history)
+end
+
+
+_is_reconstruction_unstable_message(msg::AbstractString) = begin
+    low = lowercase(msg)
+    return occursin("reconstruct", low) ||
+           occursin("inconsistent", low) ||
+           occursin("fresh-prime", low) ||
+           occursin("crt", low)
 end
 
 function Base.show(io::IO, m::ClassifiedMTC)
@@ -936,24 +943,44 @@ function classify_mtcs_at_conductor(N::Int;
                 continue
             end
             half = max(2, length(group_primes) ÷ 2)
-            used = group_primes[1:half]
+            used = copy(group_primes[1:half])
+            extra_idx = half + 1
             cur_ribbon_atol = ribbon_atol
 
             local cmtc
-            try
-                cmtc = classify_from_group(group, N_effective, st, group_primes;
-                                            N_input = N,
-                                            scale_d = scale_d,
-                                            scale_factor = scale_factor,
-                                            sqrtd_fn = sqrtd_fn,
-                                            reconstruction_bound = reconstruction_bound,
-                                            galois_sector = gi,
-                                            test_primes = used,
-                                            ribbon_atol = cur_ribbon_atol,
-                                            skip_FR = skip_FR,
-                                            verbose = verbose)
-            catch err
-                verbose && println("    sector $gi: classify_from_group failed: $err")
+            local sector_ok = false
+            local last_err_msg = ""
+            while true
+                try
+                    cmtc = classify_from_group(group, N_effective, st, group_primes;
+                                                N_input = N,
+                                                scale_d = scale_d,
+                                                scale_factor = scale_factor,
+                                                sqrtd_fn = sqrtd_fn,
+                                                reconstruction_bound = reconstruction_bound,
+                                                galois_sector = gi,
+                                                test_primes = used,
+                                                ribbon_atol = cur_ribbon_atol,
+                                                skip_FR = skip_FR,
+                                                verbose = verbose)
+                    sector_ok = true
+                    break
+                catch err
+                    last_err_msg = sprint(showerror, err)
+                    unstable = _is_reconstruction_unstable_message(last_err_msg)
+                    if unstable && extra_idx <= length(group_primes)
+                        p_new = group_primes[extra_idx]
+                        push!(used, p_new)
+                        extra_idx += 1
+                        verbose && println("    sector $gi: reconstruction unstable; " *
+                                           "retry with additional prime $p_new (used=$used)")
+                        continue
+                    end
+                    break
+                end
+            end
+            if !sector_ok
+                verbose && println("    sector $gi: classify_from_group failed: $last_err_msg")
                 continue
             end
             push!(out, cmtc)
