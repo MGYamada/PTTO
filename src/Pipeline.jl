@@ -197,6 +197,7 @@ function classify_mtcs_auto(N::Int;
                             max_block_dim::Int = 3,
                             reconstruction_bound::Int = 50,
                             ribbon_atol::Float64 = 1e-8,
+                            require_ribbon_match::Bool = false,
                             skip_FR::Bool = false,
                             verbose::Bool = true)
     N >= 1 || error("N must be positive, got $N")
@@ -290,6 +291,7 @@ function classify_mtcs_auto(N::Int;
                                                             max_block_dim = max_block_dim,
                                                             reconstruction_bound = reconstruction_bound,
                                                             ribbon_atol = ribbon_atol,
+                                                            require_ribbon_match = require_ribbon_match,
                                                             skip_FR = skip_FR,
                                                             verbose = verbose)
 
@@ -515,6 +517,7 @@ end
 
 """
     compute_FR_from_ST(Nijk, T_complex; ribbon_atol = 1e-8,
+                        require_ribbon_match = true,
                         pentagon_slice = 1, show_progress = false,
                         verbose = false)
         -> NamedTuple{(:F, :R, :report, :n_pentagon, :n_tried, :n_matches,
@@ -559,6 +562,7 @@ Returns a NamedTuple with:
 function compute_FR_from_ST(Nijk::Array{Int, 3},
                             T_complex::Vector{ComplexF64};
                             ribbon_atol::Float64 = 1e-8,
+                            require_ribbon_match::Bool = true,
                             pentagon_slice::Int = 1,
                             show_progress::Bool = false,
                             verbose::Bool = false)
@@ -657,6 +661,11 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
         end
     end
 
+    if require_ribbon_match && best.n_matches == 0
+        best = (; best..., F = nothing, R = nothing, report = nothing,
+                f_idx = 0, r_idx = 0)
+    end
+
     # Drop the internal ribbon_max field from the public return
     return (F = best.F, R = best.R, report = best.report,
             n_pentagon = best.n_pentagon, n_tried = best.n_tried,
@@ -676,6 +685,7 @@ end
                         galois_sector = 1,
                         test_primes = nothing,
                         ribbon_atol = 1e-8,
+                        require_ribbon_match = false,
                         skip_FR = false,
                         verbose = false)
         -> ClassifiedMTC
@@ -704,6 +714,10 @@ Arguments:
                                      primes; remaining are fresh.
 - `ribbon_atol::Float64 = 1e-8`:     tolerance for the Phase 4 ribbon
                                      match.
+- `require_ribbon_match::Bool=false`: if true, reject candidates with
+                                     no ribbon match below
+                                     `ribbon_atol`; if false, accept
+                                     minimum-ribbon-residual `(F,R)`.
 - `skip_FR::Bool = false`:           if true, only do Phase 0–3 and leave
                                      (F, R) as `nothing`. Useful for
                                      rank/complexity beyond the pentagon
@@ -722,6 +736,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                              galois_sector::Int = 1,
                              test_primes::Union{Vector{Int}, Nothing} = nothing,
                              ribbon_atol::Float64 = 1e-8,
+                             require_ribbon_match::Bool = false,
                              skip_FR::Bool = false,
                              verbose::Bool = false)
     group_primes = sort(collect(keys(group)))
@@ -829,6 +844,7 @@ end
                                 max_block_dim = 3,
                                 reconstruction_bound = 50,
                                 ribbon_atol = 1e-8,
+                                require_ribbon_match = false,
                                 skip_FR = false,
                                 verbose = true)
         -> Vector{ClassifiedMTC}
@@ -948,6 +964,7 @@ function classify_mtcs_at_conductor(N::Int;
                                     max_block_dim::Int = 3,
                                     reconstruction_bound::Int = 50,
                                     ribbon_atol::Float64 = 1e-8,
+                                    require_ribbon_match::Bool = false,
                                     skip_FR::Bool = false,
                                     verbose::Bool = true)
     user_sqrtd_fn = sqrtd_fn
@@ -1150,6 +1167,7 @@ function classify_mtcs_at_conductor(N::Int;
                                                 galois_sector = gi,
                                                 test_primes = used,
                                                 ribbon_atol = cur_ribbon_atol,
+                                                require_ribbon_match = require_ribbon_match,
                                                 skip_FR = skip_FR,
                                                 verbose = verbose)
                     sector_ok = true
