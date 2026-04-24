@@ -172,7 +172,7 @@ function _permutations(v)
     return result
 end
 
-# ===== Integrated legacy modules =====
+# ===== Finite-field arithmetic helpers =====
 
 """
 Finite field arithmetic over F_p.
@@ -303,17 +303,6 @@ function roots_of_unity(n::Integer, p::Integer)
     return result
 end
 
-"""
-    primitive_roots_of_unity(n, p) -> Vector{Int}
-
-Return all *primitive* n-th roots of unity in F_p.
-These are ζ_n^k for gcd(k, n) = 1.
-"""
-function primitive_roots_of_unity(n::Integer, p::Integer)
-    all_roots = roots_of_unity(n, p)
-    return [all_roots[k+1] for k in 1:(n-1) if gcd(k, n) == 1]
-end
-
 # ----- Matrix helpers over F_p -----
 """
     matmul_mod(A, B, p) -> Matrix{Int}
@@ -408,12 +397,15 @@ A modular datum (S, T) must satisfy:
 - (ST)³ = α · S² for some α ∈ μ_{8N}(F_p) (central charge phase)
 - S[i, 0] ≠ 0 for all i (so quantum dimensions are well-defined)
 
-This module provides:
+This section provides:
 - `validate_modular_data`: check all axioms given (S, T, p, N)
 - `build_modular_datum`: construct ModularDatumFp from (S, T, p, N) with validation
 - `compute_alpha`: compute α from (ST)³ and S²
 - `compute_charge_conjugation`: extract C from S²
 """
+
+@inline _invalid_modular_data(reason::String; α::Int = 0, C::Vector{Int} = Int[]) =
+    (valid=false, reason=reason, α=α, C=C, D_squared=0, D=0)
 
 """
     compute_charge_conjugation(S::Matrix{Int}, p::Int) -> Union{Vector{Int}, Nothing}
@@ -493,28 +485,28 @@ Perform all modular datum axiom checks. Returns a NamedTuple:
 function validate_modular_data(S::AbstractMatrix{Int}, T::AbstractVector{Int}, p::Int, N::Int)
     r = size(S, 1)
     # Shape checks
-    size(S) == (r, r) || return (valid=false, reason="S not square", α=0, C=Int[], D_squared=0, D=0)
-    length(T) == r || return (valid=false, reason="T wrong length", α=0, C=Int[], D_squared=0, D=0)
+    size(S) == (r, r) || return _invalid_modular_data("S not square")
+    length(T) == r || return _invalid_modular_data("T wrong length")
     # Symmetry
     for i in 1:r, j in (i+1):r
-        S[i, j] == S[j, i] || return (valid=false, reason="S not symmetric at ($i,$j)", α=0, C=Int[], D_squared=0, D=0)
+        S[i, j] == S[j, i] || return _invalid_modular_data("S not symmetric at ($i,$j)")
     end
     # T[1] = 1 (unit)
-    T[1] == 1 || return (valid=false, reason="T[1] ≠ 1", α=0, C=Int[], D_squared=0, D=0)
+    T[1] == 1 || return _invalid_modular_data("T[1] ≠ 1")
     # T entries are N-th roots of unity
     for i in 1:r
-        powermod(T[i], N, p) == 1 || return (valid=false, reason="T[$i] is not an N-th root of unity", α=0, C=Int[], D_squared=0, D=0)
+        powermod(T[i], N, p) == 1 || return _invalid_modular_data("T[$i] is not an N-th root of unity")
     end
     # S[1, i] ≠ 0 (quantum dimensions well-defined)
     for i in 1:r
-        S[1, i] != 0 || return (valid=false, reason="S[1,$i] = 0", α=0, C=Int[], D_squared=0, D=0)
+        S[1, i] != 0 || return _invalid_modular_data("S[1,$i] = 0")
     end
     # S² = C (permutation matrix, involution)
     C = compute_charge_conjugation(S, p)
-    C === nothing && return (valid=false, reason="S² is not a permutation matrix", α=0, C=Int[], D_squared=0, D=0)
+    C === nothing && return _invalid_modular_data("S² is not a permutation matrix")
     # (ST)³ = α · S²
     α = compute_alpha(S, T, p)
-    α === nothing && return (valid=false, reason="(ST)³ not proportional to S²", α=0, C=C, D_squared=0, D=0)
+    α === nothing && return _invalid_modular_data("(ST)³ not proportional to S²"; C=C)
     # Compute D² from quantum dimensions
     # d_i = S[i, 1] / S[1, 1], D² = Σ d_i²
     S00_inv = invmod(S[1, 1], p)
