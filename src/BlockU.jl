@@ -434,6 +434,42 @@ function enumerate_o_n_Fp(n::Int, p::Int)
     return vcat(so_part, refl_part)
 end
 
+
+"""
+    enumerate_o_n_Fp_groebner(n::Int, p::Int) -> Vector{Matrix{Int}}
+
+MVP algebraic-search entry point for O(n)(F_p) block candidates.
+
+Current implementation reuses the Cayley/reflection enumeration used by
+`enumerate_o_n_Fp` while exposing a dedicated hook for solver-based modes.
+This keeps API stable and enables drop-in replacement by a true Gröbner/F4
+backend without changing downstream Phase-2 logic.
+"""
+function enumerate_o_n_Fp_groebner(n::Int, p::Int)
+    return enumerate_o_n_Fp(n, p)
+end
+
+"""
+    enumerate_block_candidates(n_block::Int, p::Int, search_mode::Symbol)
+        -> Vector{Matrix{Int}}
+
+Choose the Phase-2 block-U search backend.
+
+Supported modes:
+- `:exhaustive` (default): Cayley + reflection sweep.
+- `:groebner`: algebraic-solver hook (MVP currently aliases exhaustive
+  generator while preserving the external mode contract).
+"""
+function enumerate_block_candidates(n_block::Int, p::Int, search_mode::Symbol)
+    if search_mode == :exhaustive
+        return enumerate_o_n_Fp(n_block, p)
+    elseif search_mode == :groebner
+        return enumerate_o_n_Fp_groebner(n_block, p)
+    else
+        error("Unknown search_mode=$(search_mode). Expected :exhaustive or :groebner")
+    end
+end
+
 """
     apply_block_U(S::Matrix{Int}, indices::Vector{Int},
                   U_block::Matrix{Int}, p::Int) -> Matrix{Int}
@@ -599,7 +635,8 @@ end
 """
     find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
                        p::Int; verlinde_threshold::Int = 3,
-                       max_block_dim::Int = 3)
+                       max_block_dim::Int = 3,
+                       search_mode::Symbol = :exhaustive)
         -> Vector{MTCCandidate}
 
 Top-level Phase 2 driver at a single prime.
@@ -619,10 +656,15 @@ Steps:
 `max_block_dim` is a safety guard against runaway enumeration: if any
 degenerate eigenspace has n_θ > max_block_dim, an error is raised.
 Default 3 is feasible at p = 73-100; raising to 4 would take hours.
+
+`search_mode` selects the block-U candidate backend:
+- `:exhaustive` (default): Cayley+reflection sweep
+- `:groebner`: algebraic solver mode (MVP hook)
 """
 function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
                             p::Int; verlinde_threshold::Int = 3,
-                            max_block_dim::Int = 3)
+                            max_block_dim::Int = 3,
+                            search_mode::Symbol = :exhaustive)
     # Common N
     N = catalog[first(keys(stratum.multiplicities))].N
 
@@ -667,8 +709,8 @@ function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
         "Naive enumeration would be O(p^$(div(n_block*(n_block-1), 2))). " *
         "Increase max_block_dim if you really want to proceed.")
 
-    # Enumerate U_blocks in O(n)(F_p) via Cayley + reflection
-    U_blocks = enumerate_o_n_Fp(n_block, p)
+    # Enumerate U_blocks via selected search backend
+    U_blocks = enumerate_block_candidates(n_block, p, search_mode)
 
     candidates = MTCCandidate[]
     for U_block in U_blocks
