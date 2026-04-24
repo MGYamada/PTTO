@@ -2,7 +2,7 @@ using Test
 using ACMG
 
 @testset "Pipeline prime selection and modes" begin
-    @testset "conductor_mode default uses N_effective in prime validity check" begin
+    @testset "conductor_mode default uses auto N_effective in prime validity check" begin
         err = try
             ACMG.classify_mtcs_at_conductor(1;
                                             max_rank = 1,
@@ -19,7 +19,28 @@ using ACMG
         msg = sprint(showerror, err)
         @test occursin("N_effective | p-1", msg)
         @test occursin("input N=1", msg)
-        @test occursin("N_effective=8", msg)
+        @test occursin("N_effective=24", msg)
+    end
+
+    @testset "classify_mtcs_at_conductor auto-selects primes when omitted" begin
+        err = try
+            ACMG.classify_mtcs_at_conductor(24;
+                                            max_rank = 1,
+                                            primes = nothing,
+                                            min_primes = 2,
+                                            prime_start = 29,
+                                            prime_window = 10,
+                                            skip_FR = true,
+                                            verbose = false)
+            nothing
+        catch e
+            e
+        end
+
+        @test err isa ErrorException
+        msg = sprint(showerror, err)
+        @test occursin("insufficient admissible primes", msg)
+        @test occursin("N_eff=24", msg)
     end
 
     @testset "conductor_mode=:T_only is removed in v0.5.0" begin
@@ -58,7 +79,7 @@ using ACMG
         @test haskey(auto, :primes)
         @test haskey(auto, :max_rank)
         @test auto.N_input == 1
-        @test auto.N_effective == 8
+        @test auto.N_effective == 24
         @test auto.scale_d == 2
         @test auto.conductor_mode == :full_mtc
         @test auto.max_rank == 1

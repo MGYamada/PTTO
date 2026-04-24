@@ -20,19 +20,13 @@ result = compute_FR_from_ST(Nijk, T)
 # result.report :: VerifyReport   pentagon/hexagon/ribbon residuals < 1e-14
 ```
 
-At the top level, the recommended entry point is
-`classify_mtcs_auto(N; ...)`, which runs all five phases and
-auto-selects `conductor_mode`, `scale_d`, `primes`, and `max_rank`
-from built-in candidate lists:
+At the top level, the recommended entry point is now
+`classify_mtcs_at_conductor(N; ...)`. You can call it with only `N`,
+and the pipeline auto-selects `N_effective`, `primes`, and default
+search parameters:
 
 ```julia
-auto = classify_mtcs_auto(24; skip_FR = true)
-classified = auto.classified
-
-# reproducibility metadata chosen by the auto loop
-auto.N_effective
-auto.scale_d
-auto.primes
+mtcs = classify_mtcs_at_conductor(24; skip_FR = true)
 ```
 
 Under the hood this calls `classify_mtcs_at_conductor(N; ...)`:
@@ -60,7 +54,10 @@ with pentagon, hexagon and ribbon residuals.
 ## `conductor_mode` (v0.5.0)
 
 - `conductor_mode = :full_mtc` is the only supported mode.
-- Internal search uses `N_effective = lcm(N, 4 * scale_d)`.
+- Internal search uses
+  `N_effective = lcm(N, cyclotomic_requirement(scale_d))`, where
+  `cyclotomic_requirement(2|3)=24`, `cyclotomic_requirement(5)=5`,
+  else `1` (so in many cases `N_effective = N`).
 - `conductor_mode = :T_only` was removed in v0.5.0.
 
 ## Installation
@@ -138,15 +135,21 @@ compute_FR_from_ST(Nijk, ComplexF64[1.0, im]).n_matches    # == 0
 - On the `classify_mtcs_at_conductor(N; ...)` side:
   - You are searching candidates that satisfy consistency conditions for the **full MTC (including the S-field)** starting from `N`.
   - Under `conductor_mode = :full_mtc`, the internal search uses
-    `N_effective = lcm(N, 4 * scale_d)`, so the search conductor may differ
+    `N_effective = lcm(N, cyclotomic_requirement(scale_d))`, so the search conductor may differ
     from the conductor seen from `T` alone.
+  - In practice for Fibonacci, the pipeline-side base conductor should be taken as `N = 20`
+    (while the input twist conductor is still `N_T = 5`).
 
 If you want explicit control, a typical call that reaches Fibonacci from
-`N = 5` is:
+`N = 20` is:
 
 ```julia
-mtcs = classify_mtcs_at_conductor(
-    5;
+# Fully automatic from base conductor N
+mtcs = classify_mtcs_at_conductor(20; scale_d = 5)
+
+# Or explicit control (optional):
+mtcs_explicit = classify_mtcs_at_conductor(
+    20;
     max_rank = 2,
     primes = [41, 61],
     conductor_mode = :full_mtc,
@@ -327,10 +330,10 @@ scores < 1e-10 across all three.
   and a `VerifyReport`.
 - `classify_from_group(group, N, stratum, primes; ...)`: CRT + ℂ-lift
   + Phase 4, producing one `ClassifiedMTC`.
-- `classify_mtcs_at_conductor(N; max_rank, primes, ...)`: full driver,
+- `classify_mtcs_at_conductor(N; max_rank = 5, primes = nothing, ...)`: full driver,
   iterating over strata and Galois sectors.
   - Note: using an incorrect `scale_d` can produce **zero candidates**.
-    For Fibonacci (`N = 5`), we recommend `scale_d = 5`.
+    For Fibonacci conductor search (`N = 20`), we recommend `scale_d = 5`.
 
 ## Output type
 
