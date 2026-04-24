@@ -268,7 +268,8 @@ end
 
 Build a per-`d` square-root selector that is consistent across primes.
 
-- `d ∈ {2,3,5}`: use cyclotomic branch (`mode = :cyclotomic`).
+- `d ∈ {2,3,5}`: use cyclotomic branch with per-prime sign cache
+  (`mode = :cyclotomic_signed`).
 - otherwise: use anchored mode (`mode = :anchored`) with a sign cache
   relative to `anchor_prime`. The returned `sqrtd_fn` is a transform
   layer on top of raw Tonelli-style roots, so callers can align branches
@@ -276,27 +277,36 @@ Build a per-`d` square-root selector that is consistent across primes.
 """
 function build_sqrtd_selector(scale_d::Int, primes::Vector{Int}, anchor_prime::Int;
                               verbose::Bool = false)
-    if scale_d == 2
-        verbose && println("  √d selector: d=$scale_d, branch=cyclotomic")
-        return (sqrtd_fn = (d, p) -> compute_sqrt2_cyclotomic_mod_p(p),
-                mode = :cyclotomic,
+    if scale_d in (2, 3, 5)
+        sign_by_prime = Dict{Int, Int}(anchor_prime => 1)
+        function cyclotomic_base(p::Int)
+            if scale_d == 2
+                return compute_sqrt2_cyclotomic_mod_p(p)
+            elseif scale_d == 3
+                return compute_sqrt3_cyclotomic_mod_p(p)
+            else
+                return compute_sqrt5_cyclotomic_mod_p(p)
+            end
+        end
+        function branch_sign_getter(p::Int)
+            return get(sign_by_prime, p, 1)
+        end
+        function branch_sign_setter(p::Int, sgn::Int)
+            sign_by_prime[p] = sgn >= 0 ? 1 : -1
+            return nothing
+        end
+        function sqrtd_fn(d::Int, p::Int)
+            d == scale_d || error("cyclotomic selector was built for d=$scale_d, got d=$d")
+            base = cyclotomic_base(p)
+            sgn = branch_sign_getter(p)
+            return sgn == 1 ? base : mod(-base, p)
+        end
+        verbose && println("  √d selector: d=$scale_d, branch=cyclotomic-signed (anchor prime=$anchor_prime)")
+        return (sqrtd_fn = sqrtd_fn,
+                mode = :cyclotomic_signed,
                 anchor_prime = anchor_prime,
-                branch_sign_getter = (_p -> 1),
-                branch_sign_setter = (_p, _sgn) -> nothing)
-    elseif scale_d == 3
-        verbose && println("  √d selector: d=$scale_d, branch=cyclotomic")
-        return (sqrtd_fn = (d, p) -> compute_sqrt3_cyclotomic_mod_p(p),
-                mode = :cyclotomic,
-                anchor_prime = anchor_prime,
-                branch_sign_getter = (_p -> 1),
-                branch_sign_setter = (_p, _sgn) -> nothing)
-    elseif scale_d == 5
-        verbose && println("  √d selector: d=$scale_d, branch=cyclotomic")
-        return (sqrtd_fn = (d, p) -> compute_sqrt5_cyclotomic_mod_p(p),
-                mode = :cyclotomic,
-                anchor_prime = anchor_prime,
-                branch_sign_getter = (_p -> 1),
-                branch_sign_setter = (_p, _sgn) -> nothing)
+                branch_sign_getter = branch_sign_getter,
+                branch_sign_setter = branch_sign_setter)
     end
 
     sign_by_prime = Dict{Int, Int}(anchor_prime => 1)
