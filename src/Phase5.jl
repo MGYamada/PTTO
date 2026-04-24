@@ -112,10 +112,14 @@ end
     classify_mtcs_auto(N::Int;
                        max_rank_candidates = [2, 3, 4, 5],
                        scale_d_candidates = [3, 5, 2],
+                       d_candidates = [1, 2, 3, 5, 6, 7, 10],
                        conductor_modes = [:full_mtc],
                        min_primes = 4,
                        prime_start = 29,
                        prime_max = 2000,
+                       N_eff_max = typemax(Int),
+                       stagnation_k = 3,
+                       max_attempts = typemax(Int),
                        strata = nothing,
                        scale_factor = 2,
                        sqrtd_fn = nothing,
@@ -131,23 +135,36 @@ Auto-select wrapper around `classify_mtcs_at_conductor`.
 
 This function is intended as the recommended public entry point for
 users who do not want to manually specify `max_rank`, `primes`,
-`scale_d`, and `conductor_mode`. It performs a deterministic search over
-the candidate lists, and returns both:
+`scale_d`, and `conductor_mode`. It now performs a stage-wise search
+over `d_candidates`, where each stage sets:
 
-1. `classified`: `Vector{ClassifiedMTC}` from the first successful run
-   (or from the final attempted run if no MTC is found),
+`N_eff_candidate = lcm(N, 4d)`.
+
+For each previously unseen `N_eff_candidate`, the driver tries
+`(conductor_mode, scale_d, max_rank)` combinations (with
+`classify_mtcs_at_conductor` forced to that effective conductor via
+`N = N_eff_candidate, conductor_mode = :T_only`) and records stage
+metadata. Search stops when any of:
+
+- no new MTCs for `stagnation_k` consecutive executed stages,
+- `N_eff_candidate > N_eff_max`,
+- total attempted runs reaches `max_attempts`.
+
+Returns:
+
+1. `classified`: deduplicated union of MTCs found across all stages.
 2. reproducibility metadata:
    - `N_input`
    - `N_effective`
+   - `d`
    - `scale_d`
    - `conductor_mode`
    - `primes`
    - `max_rank`
    - `attempts`
+   - `history`
 
 Prime selection rule for each attempted `(conductor_mode, scale_d)`:
-- `N_effective = N` for `:T_only`, else `lcm(N, 4*scale_d)` for
-  `:full_mtc`.
 - Let `req = lcm(N_effective, cyclotomic_requirement(scale_d))`, where
   `cyclotomic_requirement(2|3)=24`, `cyclotomic_requirement(5)=5`, else
   `1`.
@@ -157,10 +174,14 @@ Prime selection rule for each attempted `(conductor_mode, scale_d)`:
 function classify_mtcs_auto(N::Int;
                             max_rank_candidates::Vector{Int} = [2, 3, 4, 5],
                             scale_d_candidates::Vector{Int} = [3, 5, 2],
+                            d_candidates::Vector{Int} = [1, 2, 3, 5, 6, 7, 10],
                             conductor_modes::Vector{Symbol} = [:full_mtc],
                             min_primes::Int = 4,
                             prime_start::Int = 29,
                             prime_max::Int = 2000,
+                            N_eff_max::Int = typemax(Int),
+                            stagnation_k::Int = 3,
+                            max_attempts::Int = typemax(Int),
                             strata::Union{Nothing, Vector{Stratum}} = nothing,
                             scale_factor::Int = 2,
                             sqrtd_fn = nothing,
@@ -174,98 +195,158 @@ function classify_mtcs_auto(N::Int;
     min_primes >= 2 || error("min_primes must be ≥ 2, got $min_primes")
     !isempty(max_rank_candidates) || error("max_rank_candidates must be non-empty")
     !isempty(scale_d_candidates) || error("scale_d_candidates must be non-empty")
+    !isempty(d_candidates) || error("d_candidates must be non-empty")
     !isempty(conductor_modes) || error("conductor_modes must be non-empty")
+    stagnation_k >= 1 || error("stagnation_k must be ≥ 1, got $stagnation_k")
+    max_attempts >= 1 || error("max_attempts must be ≥ 1, got $max_attempts")
 
-    local last_result = ClassifiedMTC[]
-    local last_meta = (N_input = N, N_effective = N, scale_d = 0,
-                       conductor_mode = :full_mtc, primes = Int[],
-                       max_rank = 0, attempts = 0)
+    last_result = ClassifiedMTC[]
+    last_meta = (N_input = N, N_effective = N, d = 1, scale_d = 0,
+                 conductor_mode = :full_mtc, primes = Int[],
+                 max_rank = 0, attempts = 0)
     attempts = 0
+    n_stagnant = 0
 
-    for conductor_mode in conductor_modes
-        for scale_d in scale_d_candidates
-            N_effective = if conductor_mode == :T_only
-                N
-            elseif conductor_mode == :full_mtc
-                lcm(N, 4 * scale_d)
-            else
-                error("unknown conductor_mode=$conductor_mode. Use :T_only or :full_mtc.")
-            end
+    seen_N_eff = Set{Int}()
+    seen_signatures = Set{String}()
+    history = NamedTuple[]
 
-            cyclo_req = if scale_d == 2 || scale_d == 3
-                24
-            elseif scale_d == 5
-                5
-            else
-                1
-            end
-            req = lcm(N_effective, cyclo_req)
+    mtc_signature(m::ClassifiedMTC) = begin
+        nijk_key = join(vec(m.Nijk), ",")
+        t_key = join(["$(round(real(t), digits = 10)):$(round(imag(t), digits = 10))"
+                      for t in m.T_complex], ",")
+        string(m.rank, "|", m.galois_sector, "|", nijk_key, "|", t_key)
+    end
 
-            chosen_primes = Int[]
-            p = nextprime(prime_start)
-            while p <= prime_max && length(chosen_primes) < min_primes
-                if (p - 1) % req == 0
-                    push!(chosen_primes, p)
+    for d in d_candidates
+        N_eff_candidate = lcm(N, 4 * d)
+
+        if N_eff_candidate > N_eff_max
+            push!(history, (d = d, N_effective = N_eff_candidate, executed = false,
+                            success = false, reason = "N_eff_max_exceeded",
+                            attempts = 0, new_mtcs = 0))
+            break
+        end
+        if N_eff_candidate in seen_N_eff
+            push!(history, (d = d, N_effective = N_eff_candidate, executed = false,
+                            success = false, reason = "duplicate_N_effective",
+                            attempts = 0, new_mtcs = 0))
+            continue
+        end
+        push!(seen_N_eff, N_eff_candidate)
+
+        stage_attempts = 0
+        stage_success = false
+        stage_reason = "no_attempts"
+        stage_new_mtcs = 0
+        stage_result = ClassifiedMTC[]
+
+        for conductor_mode in conductor_modes
+            attempts >= max_attempts && break
+            conductor_mode == :T_only || conductor_mode == :full_mtc || error(
+                "unknown conductor_mode=$conductor_mode. Use :T_only or :full_mtc.")
+
+            for scale_d in scale_d_candidates
+                attempts >= max_attempts && break
+
+                cyclo_req = if scale_d == 2 || scale_d == 3
+                    24
+                elseif scale_d == 5
+                    5
+                else
+                    1
                 end
-                p = nextprime(p + 1)
+                req = lcm(N_eff_candidate, cyclo_req)
+
+                chosen_primes = Int[]
+                p = nextprime(prime_start)
+                while p <= prime_max && length(chosen_primes) < min_primes
+                    if (p - 1) % req == 0
+                        push!(chosen_primes, p)
+                    end
+                    p = nextprime(p + 1)
+                end
+                if length(chosen_primes) < min_primes
+                    stage_reason = "insufficient_primes(req=$req)"
+                    continue
+                end
+
+                for max_rank in max_rank_candidates
+                    attempts >= max_attempts && break
+                    attempts += 1
+                    stage_attempts += 1
+                    verbose && println("AUTO attempt #$attempts: " *
+                                       "d=$d N_eff=$N_eff_candidate " *
+                                       "mode=$conductor_mode scale_d=$scale_d " *
+                                       "max_rank=$max_rank primes=$chosen_primes")
+
+                    classified = classify_mtcs_at_conductor(N_eff_candidate;
+                                                            max_rank = max_rank,
+                                                            primes = chosen_primes,
+                                                            strata = strata,
+                                                            scale_d = scale_d,
+                                                            scale_factor = scale_factor,
+                                                            conductor_mode = :T_only,
+                                                            sqrtd_fn = sqrtd_fn,
+                                                            verlinde_threshold = verlinde_threshold,
+                                                            max_block_dim = max_block_dim,
+                                                            reconstruction_bound = reconstruction_bound,
+                                                            ribbon_atol = ribbon_atol,
+                                                            skip_FR = skip_FR,
+                                                            verbose = verbose)
+
+                    last_meta = (N_input = N, N_effective = N_eff_candidate, d = d,
+                                 scale_d = scale_d, conductor_mode = :T_only,
+                                 primes = copy(chosen_primes), max_rank = max_rank,
+                                 attempts = attempts)
+                    if !isempty(classified)
+                        stage_success = true
+                        stage_reason = "ok"
+                        stage_result = classified
+                        break
+                    end
+                    stage_reason = "no_classified"
+                end
+                stage_success && break
             end
-            if length(chosen_primes) < min_primes
-                error("unable to find $min_primes primes with p-1 divisible by $req " *
-                      "(N_input=$N, N_effective=$N_effective, scale_d=$scale_d, " *
-                      "search range ($prime_start, $prime_max])")
-            end
+            stage_success && break
+        end
 
-            for max_rank in max_rank_candidates
-                attempts += 1
-                verbose && println("AUTO attempt #$attempts: " *
-                                   "mode=$conductor_mode scale_d=$scale_d " *
-                                   "max_rank=$max_rank primes=$chosen_primes")
+        if attempts >= max_attempts && !stage_success
+            stage_reason = "budget_reached"
+        end
 
-                classified = classify_mtcs_at_conductor(N;
-                                                        max_rank = max_rank,
-                                                        primes = chosen_primes,
-                                                        strata = strata,
-                                                        scale_d = scale_d,
-                                                        scale_factor = scale_factor,
-                                                        conductor_mode = conductor_mode,
-                                                        sqrtd_fn = sqrtd_fn,
-                                                        verlinde_threshold = verlinde_threshold,
-                                                        max_block_dim = max_block_dim,
-                                                        reconstruction_bound = reconstruction_bound,
-                                                        ribbon_atol = ribbon_atol,
-                                                        skip_FR = skip_FR,
-                                                        verbose = verbose)
-
-                last_result = classified
-                last_meta = (N_input = N,
-                             N_effective = N_effective,
-                             scale_d = scale_d,
-                             conductor_mode = conductor_mode,
-                             primes = copy(chosen_primes),
-                             max_rank = max_rank,
-                             attempts = attempts)
-                if !isempty(classified)
-                    return (classified = classified,
-                            N_input = N,
-                            N_effective = N_effective,
-                            scale_d = scale_d,
-                            conductor_mode = conductor_mode,
-                            primes = copy(chosen_primes),
-                            max_rank = max_rank,
-                            attempts = attempts)
+        if stage_success
+            for m in stage_result
+                sig = mtc_signature(m)
+                if !(sig in seen_signatures)
+                    push!(seen_signatures, sig)
+                    push!(last_result, m)
+                    stage_new_mtcs += 1
                 end
             end
+        end
+
+        n_stagnant = stage_new_mtcs == 0 ? n_stagnant + 1 : 0
+        push!(history, (d = d, N_effective = N_eff_candidate, executed = true,
+                        success = stage_success, reason = stage_reason,
+                        attempts = stage_attempts, new_mtcs = stage_new_mtcs))
+
+        if n_stagnant >= stagnation_k || attempts >= max_attempts
+            break
         end
     end
 
     return (classified = last_result,
             N_input = last_meta.N_input,
             N_effective = last_meta.N_effective,
+            d = last_meta.d,
             scale_d = last_meta.scale_d,
             conductor_mode = last_meta.conductor_mode,
             primes = last_meta.primes,
             max_rank = last_meta.max_rank,
-            attempts = last_meta.attempts)
+            attempts = last_meta.attempts,
+            history = history)
 end
 
 function Base.show(io::IO, m::ClassifiedMTC)
