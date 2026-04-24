@@ -302,6 +302,9 @@ Six files, all at `src/` top level:
   (`solve_pentagon_newton` / `refine_solution_newton`).
 - `HexagonEquations.jl`: custom generator that bakes numerical F-values
   into the coefficient ring (`AcbField`), adds the `R · S = I` constraint.
+  Public helper functions are `coerce_complex` and
+  `number_of_variables_in_hexagon_equations` (internal `_`-prefixed
+  variants are no longer exported).
 - `HexagonSolver.jl`: HC for the R-system.
 - `ModularDataLift.jl`: discrete-log table `DiscreteLogTable(N, p, ζ_Fp)`
   to lift T from F_p back to ℂ; `ℤ[√d] → ℂ` for S.

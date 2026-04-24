@@ -113,8 +113,8 @@ export solve_pentagon_newton, solve_pentagon_homotopy, refine_solution_newton
 export eval_poly_complex, sparse_jacobian
 export oscar_poly_to_hc, build_hc_system
 export hexagon_equations, get_hexagon_system
-export _number_of_variables_in_hexagon_equations
-export _coerce_complex, invert_associator_numeric, assign_F_to_associator!
+export number_of_variables_in_hexagon_equations
+export coerce_complex, invert_associator_numeric, assign_F_to_associator!
 export solve_hexagon_homotopy
 export oscar_poly_to_hc_complex, build_hc_system_complex
 export DiscreteLogTable, lift_T_Fp_to_complex, lift_S_sqrtd_to_complex

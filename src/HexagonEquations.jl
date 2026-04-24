@@ -50,6 +50,13 @@ function _coerce_complex(c::Number, K)
 end
 
 """
+    coerce_complex(c, K) -> K element
+
+Public wrapper around `_coerce_complex`.
+"""
+coerce_complex(c::Number, K) = _coerce_complex(c, K)
+
+"""
     invert_associator_numeric(F_values, mult, one) -> Vector{ComplexF64}
 
 Compute the inverse F-symbol values. Given `F_values` that would produce the
@@ -173,6 +180,14 @@ function _number_of_variables_in_hexagon_equations(poly_C)
     end
     return n_r
 end
+
+"""
+    number_of_variables_in_hexagon_equations(poly_C) -> Int
+
+Public wrapper around `_number_of_variables_in_hexagon_equations`.
+"""
+number_of_variables_in_hexagon_equations(poly_C) =
+    _number_of_variables_in_hexagon_equations(poly_C)
 
 """
     hexagon_equations(mult, one, F_values) -> (poly_C_fwd, poly_C_rev, eqs)
@@ -422,4 +437,3 @@ function get_hexagon_system(Nijk::Array{Int,3}, r::Int, F_values::Vector{<:Numbe
     n_vars = nvars(R_ring)
     return R_ring, eqs_filt, n_vars
 end
-
