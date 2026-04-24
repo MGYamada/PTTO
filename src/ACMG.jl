@@ -100,6 +100,7 @@ export enumerate_o_n_Fp_groebner, enumerate_block_candidates, apply_block_U
 export build_verlinde_unit_equations
 export build_cayley_link_equations
 export is_orthogonal_mod_p
+export validate_search_mode
 export find_mtcs_at_prime, signed_Fp
 
 # Phase 3: CRT reconstruction

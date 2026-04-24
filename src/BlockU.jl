@@ -575,6 +575,10 @@ function _dedupe_matrices(mats::Vector{Matrix{Int}})
     return out
 end
 
+function _sort_matrices_lex(mats::Vector{Matrix{Int}})
+    return sort(mats; by = M -> join(vec(M), ","))
+end
+
 """
     is_orthogonal_mod_p(U::Matrix{Int}, p::Int) -> Bool
 
@@ -632,7 +636,7 @@ function _extract_orthogonality_points(gb_data, n::Int, p::Int)
     mats = _dedupe_matrices(mats)
     mats = _filter_orthogonal_mats(mats, p)
     isempty(mats) && return nothing
-    return mats
+    return _sort_matrices_lex(mats)
 end
 
 function _collect_points_from_ideal(I)
@@ -699,7 +703,7 @@ function _extract_U_blocks_from_verlinde_system(sys, p::Int)
     mats = _dedupe_matrices(mats)
     mats = _filter_orthogonal_mats(mats, p)
     isempty(mats) && return nothing
-    return mats
+    return _sort_matrices_lex(mats)
 end
 
 function _block_var_index(n_block::Int, i::Int, j::Int)
@@ -891,7 +895,7 @@ function _extract_U_blocks_via_verlinde_groebner(S_atomic::Matrix{Int},
     end
 
     isempty(all_blocks) && return nothing
-    return _dedupe_matrices(all_blocks)
+    return _sort_matrices_lex(_dedupe_matrices(all_blocks))
 end
 
 """
@@ -906,13 +910,23 @@ Supported modes:
   generator while preserving the external mode contract).
 """
 function enumerate_block_candidates(n_block::Int, p::Int, search_mode::Symbol)
+    validate_search_mode(search_mode)
     if search_mode == :exhaustive
         return enumerate_o_n_Fp(n_block, p)
     elseif search_mode == :groebner
         return enumerate_o_n_Fp_groebner(n_block, p)
-    else
-        error("Unknown search_mode=$(search_mode). Expected :exhaustive or :groebner")
     end
+end
+
+"""
+    validate_search_mode(search_mode::Symbol)
+
+Validate Phase-2 search backend selector.
+"""
+function validate_search_mode(search_mode::Symbol)
+    search_mode in (:exhaustive, :groebner) ||
+        error("Unknown search_mode=$(search_mode). Expected :exhaustive or :groebner")
+    return nothing
 end
 
 """
@@ -1082,7 +1096,8 @@ end
                        p::Int; verlinde_threshold::Int = 3,
                        max_block_dim::Int = 3,
                        search_mode::Symbol = :groebner,
-                       max_units_for_groebner::Int = typemax(Int))
+                       max_units_for_groebner::Int = typemax(Int),
+                       groebner_allow_fallback::Bool = true)
         -> Vector{MTCCandidate}
 
 Top-level Phase 2 driver at a single prime.
@@ -1113,12 +1128,18 @@ extraction before falling back to enumeration.
 
 `max_units_for_groebner` can cap how many unit indices are used for
 fixed-unit Gröbner extraction (default: all).
+
+`groebner_allow_fallback` controls whether `:groebner` mode falls back
+to enumeration when solver extraction returns no candidates.
 """
 function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
                             p::Int; verlinde_threshold::Int = 3,
                             max_block_dim::Int = 3,
                             search_mode::Symbol = :groebner,
-                            max_units_for_groebner::Int = typemax(Int))
+                            max_units_for_groebner::Int = typemax(Int),
+                            groebner_allow_fallback::Bool = true)
+    validate_search_mode(search_mode)
+    max_units_for_groebner >= 1 || error("max_units_for_groebner must be ≥ 1")
     # Common N
     N = catalog[first(keys(stratum.multiplicities))].N
 
@@ -1177,7 +1198,7 @@ function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
     end
 
     # Enumerate U_blocks via selected search backend if solver extraction was empty
-    if isempty(U_blocks)
+    if isempty(U_blocks) && !(search_mode == :groebner && !groebner_allow_fallback)
         U_blocks = enumerate_block_candidates(n_block, p, search_mode)
     end
 

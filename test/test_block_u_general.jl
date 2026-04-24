@@ -85,8 +85,17 @@ det_2x2(M) = M[1, 1] * M[2, 2] - M[1, 2] * M[2, 1]
             cands_groebner = enumerate_block_candidates(n, p, :groebner)
             @test !isempty(cands_groebner)
             @test length(cands_groebner) >= length(cands_exhaustive)
+            # Determinism check across repeated calls.
+            cands_groebner2 = enumerate_block_candidates(n, p, :groebner)
+            @test cands_groebner2 == cands_groebner
         end
         @test_throws ErrorException enumerate_block_candidates(2, p, :unknown_mode)
+    end
+
+    @testset "validate_search_mode" begin
+        @test validate_search_mode(:exhaustive) === nothing
+        @test validate_search_mode(:groebner) === nothing
+        @test_throws ErrorException validate_search_mode(:bad_mode)
     end
 
     @testset "verlinde groebner equation builder shape" begin
