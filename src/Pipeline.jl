@@ -751,6 +751,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
         Nijk = Nijk[perm, perm, perm]
         recon_S_phase4 = recon_S[perm, perm]
     end
+    T_for_phase4 = T_ℂ
 
     # -------- Phase 4: (F, R) solve + verify --------
     rank = size(Nijk, 1)
@@ -759,12 +760,12 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
         return ClassifiedMTC(N, N_input, rank, stratum, Nijk,
                              recon_S_phase4, scale_d, scale_factor,
                              used, fresh, verify_fresh,
-                             S_ℂ, T_ℂ, nothing, nothing, nothing,
+                             S_ℂ, T_for_phase4, nothing, nothing, nothing,
                              galois_sector)
     end
     verbose && println("  running pentagon/hexagon on rank=$rank...")
 
-    fr_result = compute_FR_from_ST(Nijk, T_ℂ;
+    fr_result = compute_FR_from_ST(Nijk, T_for_phase4;
                                    ribbon_atol = ribbon_atol,
                                    require_ribbon_match = require_ribbon_match,
                                    verbose = verbose)
