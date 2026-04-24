@@ -423,7 +423,7 @@ end
 """
     classify_mtcs_at_conductor(N; max_rank, primes, strata = nothing,
                                 scale_d = 3, scale_factor = 2,
-                                conductor_mode = :T_only,
+                                conductor_mode = :full_mtc,
                                 sqrtd_fn = nothing,
                                 verlinde_threshold = 3,
                                 max_block_dim = 3,
@@ -433,7 +433,7 @@ end
                                 verbose = true)
         -> Vector{ClassifiedMTC}
 
-Fully automated MTC classification for a given conductor `N`.
+Fully automated MTC classification for a given conductor input `N`.
 
 Pipeline:
   Phase 0: build SL(2, ℤ/N) atomic irrep catalog (≤ max_rank)
@@ -446,18 +446,20 @@ Returns one `ClassifiedMTC` per Galois sector per stratum that yields a
 valid MTC. If `skip_FR = true`, Phase 4 is skipped and `(F, R)` is left
 as `nothing` (useful for large ranks where pentagon HC is infeasible).
 
-Note on conductor: `N` here is the SL(2, ℤ/N)-rep conductor —
-equivalently, the order of `T` as a matrix. An MTC's S-matrix may live
-in a larger cyclotomic field than ℚ(ζ_N); in NRWW's convention the
+Note on conductor: `N` is an input indicator (typically the T-order
+conductor). Internally, the pipeline searches at `N_effective`
+determined by `conductor_mode`; by default this is
+`N_effective = lcm(N, 4*scale_d)` (`:full_mtc`). In `:T_only` mode,
+`N_effective = N` for backward compatibility. An MTC's S-matrix may
+live in a larger cyclotomic field than ℚ(ζ_N); in NRWW's convention the
 full MTC conductor is `max(cond(S), cond(T))`. Fibonacci, for example,
 has `cond(T) = 5` but its S involves `D = √(2+φ)` which is NOT in ℚ(ζ_5).
-Calling this function with the T-only conductor will miss such MTCs —
-they only appear when `N` is large enough to accommodate `S` too.
-SU(2)_4 (conductor 24) is reachable; Fibonacci is typically reached
-at a larger conductor.
+Using only the T-order conductor can miss such MTCs — they often appear
+only when `N_effective` is large enough to accommodate `S` too.
 
 Arguments:
-- `N::Int`:                        conductor
+- `N::Int`:                        input conductor indicator. Internal
+                                   search runs at `N_effective`.
 - `max_rank::Int`:                 maximum rank to consider
 - `primes::Vector{Int}`:           good primes (must satisfy `N | p-1`).
                                    Split automatically into "used" (first
@@ -480,14 +482,16 @@ Arguments:
 - `scale_factor::Int = 2`:         scalar multiplying `S` at
                                    reconstruction (matches
                                    `reconstruct_S_matrix` convention).
-- `conductor_mode::Symbol = :T_only`:
+- `conductor_mode::Symbol = :full_mtc`:
                                    interpretation of `N`.
-                                   `:T_only` keeps existing behavior
-                                   (`N` is the T-order conductor).
-                                   `:full_mtc` expands internally to
+                                   `:full_mtc` (default) expands to
                                    `N_effective = lcm(N, 4*scale_d)` so
                                    the S-side field constraints are
                                    conservatively included.
+                                   `:T_only` keeps legacy behavior
+                                   (`N_effective = N`) and is
+                                   deprecated (scheduled for removal in
+                                   v0.5.0).
 - `sqrtd_fn`:                      custom √d-in-F_p function. If
                                    `nothing` (default), chooses the
                                    cyclotomic variant:
@@ -522,7 +526,7 @@ function classify_mtcs_at_conductor(N::Int;
                                     strata::Union{Nothing, Vector{Stratum}} = nothing,
                                     scale_d::Int = 3,
                                     scale_factor::Int = 2,
-                                    conductor_mode::Symbol = :T_only,
+                                    conductor_mode::Symbol = :full_mtc,
                                     sqrtd_fn = nothing,
                                     verlinde_threshold::Int = 3,
                                     max_block_dim::Int = 3,
@@ -537,15 +541,19 @@ function classify_mtcs_at_conductor(N::Int;
     else
         error("unknown conductor_mode=$conductor_mode. Use :T_only or :full_mtc.")
     end
+    if conductor_mode == :T_only
+        @warn "conductor_mode=:T_only is deprecated and will be removed in v0.5.0. " *
+              "Use the new default conductor_mode=:full_mtc."
+    end
 
     verbose && println("Conductor mode: $conductor_mode " *
-                       "(input N=$N, effective N=$N_effective)")
+                       "(input N=$N, N_effective=$N_effective)")
 
     # Prime validity check
     for p in primes
         (p - 1) % N_effective == 0 || error(
             "prime $p does not satisfy N_effective | p-1 " *
-            "(N_effective=$N_effective; input N=$N)")
+            "(input N=$N; N_effective=$N_effective)")
     end
     length(primes) >= 2 || error(
         "need at least 2 primes (got $(length(primes)))")
