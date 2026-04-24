@@ -535,14 +535,11 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
     try
         _R, eqs, n = get_pentagon_system(Nijk, r)
     catch err
-        # Pointed / trivially-pentagon fusion rings at r ≥ 2 can also
-        # emit no non-trivial equations. Treat this as "no pentagon
-        # constraint; fall through with trivial F" rather than error.
-        verbose && println("  get_pentagon_system threw ($err); " *
-                           "treating as trivially pointed")
-        return (F = nothing, R = nothing, report = nothing,
-                n_pentagon = 0, n_tried = 0, n_matches = 0,
-                f_idx = 0, r_idx = 0)
+        msg = sprint(showerror, err)
+        if occursin("Object not rigid", msg)
+            error("fusion ring is not rigid at rank $r; rejecting candidate")
+        end
+        rethrow(err)
     end
     verbose && println("  Pentagon: $n variables, $(length(eqs)) equations")
 
@@ -734,19 +731,12 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     end
     verbose && println("  running pentagon/hexagon on rank=$rank...")
 
-    local fr_result
-    try
-        fr_result = compute_FR_from_ST(Nijk, T_ℂ;
-                                        ribbon_atol = ribbon_atol,
-                                        verbose = verbose)
-    catch err
-        verbose && println("  Phase 4 failed: $err")
-        return ClassifiedMTC(N, N_input, rank, stratum, Nijk, recon_S,
-                             scale_d, scale_factor,
-                             used, fresh, verify_fresh,
-                             S_ℂ, T_ℂ, nothing, nothing, nothing,
-                             galois_sector)
-    end
+    fr_result = compute_FR_from_ST(Nijk, T_ℂ;
+                                    ribbon_atol = ribbon_atol,
+                                    verbose = verbose)
+
+    fr_result.F === nothing && error(
+        "Phase 4 found no ribbon-matching (F,R) solution for this candidate")
 
     return ClassifiedMTC(N, N_input, rank, stratum, Nijk, recon_S,
                          scale_d, scale_factor,
