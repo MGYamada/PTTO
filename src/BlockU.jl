@@ -434,6 +434,501 @@ function enumerate_o_n_Fp(n::Int, p::Int)
     return vcat(so_part, refl_part)
 end
 
+
+"""
+    enumerate_o_n_Fp_groebner(n::Int, p::Int) -> Vector{Matrix{Int}}
+
+MVP algebraic-search entry point for O(n)(F_p) block candidates.
+
+Current implementation reuses the Cayley/reflection enumeration used by
+`enumerate_o_n_Fp` while exposing a dedicated hook for solver-based modes.
+It now also computes/caches a Gröbner basis for the O(n) orthogonality
+ideal as groundwork for a true F4/FGLM point-solving backend, while
+keeping downstream Phase-2 logic unchanged.
+"""
+function enumerate_o_n_Fp_groebner(n::Int, p::Int)
+    # Kick off/refresh Gröbner-basis preprocessing for O(n) constraints.
+    # The resulting basis is cached and intended for future algebraic
+    # point extraction (F4/FGLM pipeline). Candidate extraction is still
+    # delegated to the stable Cayley enumerator in this first step.
+    gb_data = _ensure_orthogonality_groebner_cache!(n, p)
+    gb_data !== nothing || return enumerate_o_n_Fp(n, p)
+
+    gb_points = _extract_orthogonality_points(gb_data, n, p)
+    if gb_points !== nothing && !isempty(gb_points)
+        return gb_points
+    end
+    return enumerate_o_n_Fp(n, p)
+end
+
+const _ORTHOGONALITY_GB_CACHE = Dict{Tuple{Int, Int}, Any}()
+const _VERLINDE_GB_CACHE = Dict{Tuple{Int, Int, UInt, Tuple{Vararg{Int}}}, Any}()
+
+"""
+    build_orthogonality_equations(vars, n::Int, p::Int)
+        -> Vector
+
+Build polynomial equations for `U^T U = I` over `F_p`, where `vars`
+encodes an `n×n` matrix in row-major order.
+"""
+function build_orthogonality_equations(vars, n::Int, p::Int)
+    eqs = Any[]
+    idx(i, j) = (i - 1) * n + j
+    for i in 1:n
+        for j in i:n
+            acc = zero(vars[1])
+            for k in 1:n
+                acc += vars[idx(k, i)] * vars[idx(k, j)]
+            end
+            rhs = (i == j) ? one(vars[1]) : zero(vars[1])
+            push!(eqs, acc - rhs)
+        end
+    end
+    return eqs
+end
+
+"""
+    _ensure_orthogonality_groebner_cache!(n::Int, p::Int)
+
+Attempt to compute and cache a Gröbner basis for the orthogonality ideal
+of `O(n)` over `F_p`. This is the first building block for a future
+F4/FGLM-style solver backend.
+"""
+function _ensure_orthogonality_groebner_cache!(n::Int, p::Int)
+    key = (n, p)
+    haskey(_ORTHOGONALITY_GB_CACHE, key) && return _ORTHOGONALITY_GB_CACHE[key]
+
+    gb_data = nothing
+    try
+        F = GF(p)
+        R, vars = polynomial_ring(F, n * n, :u)
+        eqs = build_orthogonality_equations(vars, n, p)
+        I = ideal(R, eqs)
+        G = groebner_basis(I)
+        gb_data = (ring = R, vars = vars, equations = eqs, ideal = I, gb = G)
+    catch err
+        @warn "Groebner preprocessing failed for O($n)(F_$p); falling back to enumeration" exception = (err, catch_backtrace())
+    end
+
+    _ORTHOGONALITY_GB_CACHE[key] = gb_data
+    return gb_data
+end
+
+function _point_entry(point, var)
+    # Common container styles returned by algebra systems:
+    # 1) associative map keyed by variable object
+    # 2) keyed by Symbol/String of the variable name
+    # 3) custom object supporting getindex(point, var)
+    try
+        return point[var]
+    catch
+    end
+
+    vname = string(var)
+    try
+        return point[vname]
+    catch
+    end
+    try
+        return point[Symbol(vname)]
+    catch
+    end
+
+    return nothing
+end
+
+function _coerce_point_to_matrix(point, vars, n::Int, p::Int)
+    vals = Int[]
+    for v in vars
+        entry = _point_entry(point, v)
+        entry === nothing && return nothing
+        local intval
+        try
+            intval = Int(entry)
+        catch
+            return nothing
+        end
+        push!(vals, mod(intval, p))
+    end
+
+    M = zeros(Int, n, n)
+    t = 1
+    for i in 1:n
+        for j in 1:n
+            M[i, j] = vals[t]
+            t += 1
+        end
+    end
+    return M
+end
+
+function _dedupe_matrices(mats::Vector{Matrix{Int}})
+    seen = Set{String}()
+    out = Matrix{Int}[]
+    for M in mats
+        key = join(vec(M), ",")
+        if !(key in seen)
+            push!(seen, key)
+            push!(out, M)
+        end
+    end
+    return out
+end
+
+function _sort_matrices_lex(mats::Vector{Matrix{Int}})
+    return sort(mats; by = M -> join(vec(M), ","))
+end
+
+"""
+    is_orthogonal_mod_p(U::Matrix{Int}, p::Int) -> Bool
+
+Check `U^T U ≡ I (mod p)`.
+"""
+function is_orthogonal_mod_p(U::Matrix{Int}, p::Int)
+    n, m = size(U)
+    n == m || return false
+    for i in 1:n
+        for j in 1:n
+            acc = 0
+            for k in 1:n
+                acc = mod(acc + U[k, i] * U[k, j], p)
+            end
+            if i == j
+                acc == 1 || return false
+            else
+                acc == 0 || return false
+            end
+        end
+    end
+    return true
+end
+
+function _filter_orthogonal_mats(mats::Vector{Matrix{Int}}, p::Int)
+    return [M for M in mats if is_orthogonal_mod_p(M, p)]
+end
+
+"""
+    _extract_orthogonality_points(gb_data, n::Int, p::Int)
+        -> Union{Nothing, Vector{Matrix{Int}}}
+
+Best-effort extraction of F_p-rational O(n) points from a Gröbner ideal.
+If Oscar point extraction APIs are unavailable, returns `nothing`.
+"""
+function _extract_orthogonality_points(gb_data, n::Int, p::Int)
+    I = gb_data.ideal
+    vars = gb_data.vars
+
+    # Try several Oscar entry points (version-dependent).
+    candidates = _collect_points_from_ideal(I)
+    isempty(candidates) && return nothing
+
+    mats = Matrix{Int}[]
+    for pts in candidates
+        if pts isa AbstractVector
+            for pt in pts
+                M = _coerce_point_to_matrix(pt, vars, n, p)
+                M === nothing || push!(mats, M)
+            end
+        end
+    end
+
+    isempty(mats) && return nothing
+    mats = _dedupe_matrices(mats)
+    mats = _filter_orthogonal_mats(mats, p)
+    isempty(mats) && return nothing
+    return _sort_matrices_lex(mats)
+end
+
+function _collect_points_from_ideal(I)
+    candidates = Any[]
+    for fname in (:rational_points, :variety, :points)
+        if isdefined(Oscar, fname)
+            f = getproperty(Oscar, fname)
+            try
+                pts = f(I)
+                pts === nothing || push!(candidates, pts)
+            catch
+            end
+        end
+    end
+    return candidates
+end
+
+function _coerce_point_to_block_matrix(point, varsU, n_block::Int, p::Int)
+    vals = Int[]
+    for v in varsU
+        entry = _point_entry(point, v)
+        entry === nothing && return nothing
+        local intval
+        try
+            intval = Int(entry)
+        catch
+            return nothing
+        end
+        push!(vals, mod(intval, p))
+    end
+
+    M = zeros(Int, n_block, n_block)
+    t = 1
+    for i in 1:n_block
+        for j in 1:n_block
+            M[i, j] = vals[t]
+            t += 1
+        end
+    end
+    return M
+end
+
+function _extract_U_blocks_from_verlinde_system(sys, p::Int)
+    candidates = Any[]
+    if haskey(sys, :gb) && sys.gb !== nothing
+        append!(candidates, _collect_points_from_ideal(sys.gb))
+    end
+    append!(candidates, _collect_points_from_ideal(sys.ideal))
+    isempty(candidates) && return nothing
+
+    nvars_u = length(sys.varsU)
+    n_block = isqrt(nvars_u)
+    n_block * n_block == nvars_u || return nothing
+    mats = Matrix{Int}[]
+    for pts in candidates
+        if pts isa AbstractVector
+            for pt in pts
+                M = _coerce_point_to_block_matrix(pt, sys.varsU, n_block, p)
+                M === nothing || push!(mats, M)
+            end
+        end
+    end
+    isempty(mats) && return nothing
+    mats = _dedupe_matrices(mats)
+    mats = _filter_orthogonal_mats(mats, p)
+    isempty(mats) && return nothing
+    return _sort_matrices_lex(mats)
+end
+
+function _block_var_index(n_block::Int, i::Int, j::Int)
+    return (i - 1) * n_block + j
+end
+
+function _cayley_param_index(n::Int, i::Int, j::Int)
+    i < j || error("require i < j")
+    k = 0
+    for a in 1:(i-1)
+        k += n - a
+    end
+    k += j - i
+    return k
+end
+
+function _A_entry_from_params(varsA, n::Int, i::Int, j::Int)
+    if i == j
+        return zero(varsA[1])
+    elseif i < j
+        return varsA[_cayley_param_index(n, i, j)]
+    else
+        return -varsA[_cayley_param_index(n, j, i)]
+    end
+end
+
+"""
+    build_cayley_link_equations(varsA, varsU, n_block::Int)
+        -> Vector
+
+Build equations encoding `(I + A)U = I - A`, where `A` is the antisymmetric
+matrix parameterized by `varsA` (Cayley parameters) and `U` is an `n_block×n_block`
+matrix represented by `varsU` in row-major order.
+"""
+function build_cayley_link_equations(varsA, varsU, n_block::Int)
+    length(varsA) == div(n_block * (n_block - 1), 2) || error("varsA length mismatch")
+    length(varsU) == n_block * n_block || error("varsU length mismatch")
+
+    eqs = Any[]
+    U(i, j) = varsU[_block_var_index(n_block, i, j)]
+    for i in 1:n_block
+        for j in 1:n_block
+            lhs = zero(varsU[1])
+            for k in 1:n_block
+                Ipk = (i == k) ? one(varsU[1]) : zero(varsU[1])
+                lhs += (Ipk + _A_entry_from_params(varsA, n_block, i, k)) * U(k, j)
+            end
+            rhs = (i == j ? one(varsU[1]) : zero(varsU[1])) - _A_entry_from_params(varsA, n_block, i, j)
+            push!(eqs, lhs - rhs)
+        end
+    end
+    return eqs
+end
+
+function _u_full_entry(varsU, indices_deg::Vector{Int}, i::Int, j::Int, p::Int)
+    bi = findfirst(==(i), indices_deg)
+    bj = findfirst(==(j), indices_deg)
+    if bi !== nothing && bj !== nothing
+        n_block = length(indices_deg)
+        return varsU[_block_var_index(n_block, bi, bj)]
+    end
+    return i == j ? one(varsU[1]) : zero(varsU[1])
+end
+
+"""
+    build_verlinde_unit_equations(varsU, varsW, S_atomic, indices_deg, p, unit_idx)
+        -> Vector
+
+Build polynomial equations for a fixed candidate unit `unit_idx`:
+- orthogonality on the active block U
+- invertibility witnesses `w_m * S′[unit_idx,m] - 1 = 0`
+- unit axiom `N_{unit_idx,i}^k = δ_{i,k}`
+
+where `S′ = U^T S U` and `U` acts only on `indices_deg`.
+"""
+function build_verlinde_unit_equations(varsU, varsW,
+                                       S_atomic::Matrix{Int},
+                                       indices_deg::Vector{Int},
+                                       p::Int, unit_idx::Int)
+    r = size(S_atomic, 1)
+    n_block = length(indices_deg)
+    size(S_atomic, 2) == r || error("S_atomic must be square")
+    length(varsU) == n_block * n_block || error("varsU length mismatch")
+    length(varsW) == r || error("varsW length mismatch")
+
+    eqs = Any[]
+
+    # O(n_block): U^T U = I
+    append!(eqs, build_orthogonality_equations(varsU, n_block, p))
+
+    # Build symbolic S' = U^T S U
+    Sprime = Matrix{Any}(undef, r, r)
+    for i in 1:r
+        for j in 1:r
+            acc = zero(varsU[1])
+            for a in 1:r
+                Uai = _u_full_entry(varsU, indices_deg, a, i, p)
+                # Split second contraction for better readability:
+                for b in 1:r
+                    Ubj = _u_full_entry(varsU, indices_deg, b, j, p)
+                    acc += Uai * S_atomic[a, b] * Ubj
+                end
+            end
+            Sprime[i, j] = acc
+        end
+    end
+
+    # Witness inverse entries for S'[u,m]
+    for m in 1:r
+        push!(eqs, varsW[m] * Sprime[unit_idx, m] - one(varsU[1]))
+    end
+
+    # Unit axiom only: N_{u,i}^k = δ_{i,k}
+    for i in 1:r
+        for k in 1:r
+            acc = zero(varsU[1])
+            for m in 1:r
+                acc += Sprime[unit_idx, m] * Sprime[i, m] * Sprime[k, m] * varsW[m]
+            end
+            push!(eqs, acc - ((i == k) ? one(varsU[1]) : zero(varsU[1])))
+        end
+    end
+
+    return eqs
+end
+
+"""
+    _build_verlinde_groebner_system(S_atomic, indices_deg, p, unit_idx)
+
+Create Gröbner-ready polynomial data for fixed `unit_idx` over variables
+`U_block` and inverse witnesses `w_m`.
+"""
+function _build_verlinde_groebner_system(S_atomic::Matrix{Int},
+                                         indices_deg::Vector{Int},
+                                         p::Int, unit_idx::Int)
+    n_block = length(indices_deg)
+    r = size(S_atomic, 1)
+    F = GF(p)
+    nA = div(n_block * (n_block - 1), 2)
+    R, vars = polynomial_ring(F, nA + n_block * n_block + r, :z)
+    varsA = vars[1:nA]
+    varsU = vars[(nA + 1):(nA + n_block * n_block)]
+    varsW = vars[(nA + n_block * n_block + 1):end]
+    eqs = build_verlinde_unit_equations(varsU, varsW, S_atomic, indices_deg, p, unit_idx)
+    append!(eqs, build_cayley_link_equations(varsA, varsU, n_block))
+    I = ideal(R, eqs)
+    G = nothing
+    try
+        G = groebner_basis(I)
+    catch
+    end
+    return (ring = R, vars = vars, varsA = varsA, varsU = varsU, varsW = varsW,
+            equations = eqs, ideal = I, gb = G)
+end
+
+function _warmup_verlinde_groebner!(S_atomic::Matrix{Int}, indices_deg::Vector{Int},
+                                    p::Int, unit_idx::Int)
+    key = (p, unit_idx, hash(S_atomic), Tuple(indices_deg))
+    haskey(_VERLINDE_GB_CACHE, key) && return _VERLINDE_GB_CACHE[key]
+    sys = _build_verlinde_groebner_system(S_atomic, indices_deg, p, unit_idx)
+    _VERLINDE_GB_CACHE[key] = sys
+    return sys
+end
+
+"""
+    _extract_U_blocks_via_verlinde_groebner(S_atomic, indices_deg, p)
+        -> Union{Nothing, Vector{Matrix{Int}}}
+
+Try fixed-unit Gröbner systems for all possible unit indices and collect
+all recovered `U_block` candidates.
+"""
+function _extract_U_blocks_via_verlinde_groebner(S_atomic::Matrix{Int},
+                                                 indices_deg::Vector{Int},
+                                                 p::Int;
+                                                 max_units::Int = typemax(Int))
+    r = size(S_atomic, 1)
+    all_blocks = Matrix{Int}[]
+    for unit_idx in 1:min(r, max_units)
+        local sys
+        try
+            sys = _warmup_verlinde_groebner!(S_atomic, indices_deg, p, unit_idx)
+        catch
+            continue
+        end
+        blocks = _extract_U_blocks_from_verlinde_system(sys, p)
+        if blocks !== nothing && !isempty(blocks)
+            append!(all_blocks, blocks)
+        end
+    end
+
+    isempty(all_blocks) && return nothing
+    return _sort_matrices_lex(_dedupe_matrices(all_blocks))
+end
+
+"""
+    enumerate_block_candidates(n_block::Int, p::Int, search_mode::Symbol)
+        -> Vector{Matrix{Int}}
+
+Choose the Phase-2 block-U search backend.
+
+Supported modes:
+- `:exhaustive`: Cayley + reflection sweep.
+- `:groebner`: algebraic-solver hook (MVP currently aliases exhaustive
+  generator while preserving the external mode contract).
+"""
+function enumerate_block_candidates(n_block::Int, p::Int, search_mode::Symbol)
+    validate_search_mode(search_mode)
+    if search_mode == :exhaustive
+        return enumerate_o_n_Fp(n_block, p)
+    elseif search_mode == :groebner
+        return enumerate_o_n_Fp_groebner(n_block, p)
+    end
+end
+
+"""
+    validate_search_mode(search_mode::Symbol)
+
+Validate Phase-2 search backend selector.
+"""
+function validate_search_mode(search_mode::Symbol)
+    search_mode in (:exhaustive, :groebner) ||
+        error("Unknown search_mode=$(search_mode). Expected :exhaustive or :groebner")
+    return nothing
+end
+
 """
     apply_block_U(S::Matrix{Int}, indices::Vector{Int},
                   U_block::Matrix{Int}, p::Int) -> Matrix{Int}
@@ -552,6 +1047,89 @@ function verlinde_find_unit(S_Fp::Matrix{Int}, p::Int; threshold::Int = 5)
     return nothing
 end
 
+"""
+    passes_unit_axiom(S_Fp::Matrix{Int}, p::Int, u::Int) -> Bool
+
+Fast check of unit axiom only:
+`N_{u,i}^k = δ_{i,k}` using the Verlinde formula over `F_p`.
+"""
+function passes_unit_axiom(S_Fp::Matrix{Int}, p::Int, u::Int)
+    r = size(S_Fp, 1)
+    S_u_row = [S_Fp[u, m] for m in 1:r]
+    any(x -> x == 0, S_u_row) && return false
+
+    local S_u_inv
+    try
+        S_u_inv = [invmod(x, p) for x in S_u_row]
+    catch
+        return false
+    end
+
+    for i in 1:r
+        for k in 1:r
+            val = 0
+            for m in 1:r
+                term = mod(S_Fp[u, m] * S_Fp[i, m], p)
+                term = mod(term * S_Fp[k, m], p)
+                term = mod(term * S_u_inv[m], p)
+                val = mod(val + term, p)
+            end
+            expected = (i == k) ? 1 : 0
+            val == expected || return false
+        end
+    end
+    return true
+end
+
+"""
+    solve_cayley_unit_filtered_blocks(S_atomic, indices_deg, p; max_units)
+        -> Vector{Matrix{Int}}
+
+Enumerate Cayley-parametrized O(n)(F_p) blocks, but retain only those whose
+transformed `S'` satisfies the unit axiom for at least one candidate unit
+index in `1:min(r, max_units)`.
+
+This is a deterministic algebraic filter stage used by `:groebner` mode
+when direct Gröbner point extraction is unavailable.
+"""
+function solve_cayley_unit_filtered_blocks(S_atomic::Matrix{Int},
+                                           indices_deg::Vector{Int},
+                                           p::Int;
+                                           max_units::Int = typemax(Int))
+    n_block = length(indices_deg)
+    d = div(n_block * (n_block - 1), 2)
+    if n_block == 1
+        return [reshape([1], 1, 1)]
+    end
+
+    so_blocks = Matrix{Int}[]
+    for params_tuple in Iterators.product(ntuple(_ -> 0:(p-1), d)...)
+        U = cayley_so_n(collect(params_tuple), n_block, p)
+        U === nothing || push!(so_blocks, U)
+    end
+
+    # Include reflection coset as in enumerate_o_n_Fp
+    R = I_n(n_block)
+    R[1, 1] = p - 1
+    all_blocks = vcat(so_blocks, [matmul_mod(R, U, p) for U in so_blocks])
+
+    r = size(S_atomic, 1)
+    unit_max = min(r, max_units)
+    kept = Matrix{Int}[]
+    for U_block in all_blocks
+        S_prime = apply_block_U(S_atomic, indices_deg, U_block, p)
+        ok = false
+        for u in 1:unit_max
+            if passes_unit_axiom(S_prime, p, u)
+                ok = true
+                break
+            end
+        end
+        ok && push!(kept, U_block)
+    end
+    return _sort_matrices_lex(_dedupe_matrices(kept))
+end
+
 # ============================================================
 #  Step 6: Top-level single-prime driver
 # ============================================================
@@ -599,7 +1177,11 @@ end
 """
     find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
                        p::Int; verlinde_threshold::Int = 3,
-                       max_block_dim::Int = 3)
+                       max_block_dim::Int = 3,
+                       search_mode::Symbol = :groebner,
+                       max_units_for_groebner::Int = typemax(Int),
+                       groebner_allow_fallback::Bool = true,
+                       precheck_unit_axiom::Bool = true)
         -> Vector{MTCCandidate}
 
 Top-level Phase 2 driver at a single prime.
@@ -619,10 +1201,33 @@ Steps:
 `max_block_dim` is a safety guard against runaway enumeration: if any
 degenerate eigenspace has n_θ > max_block_dim, an error is raised.
 Default 3 is feasible at p = 73-100; raising to 4 would take hours.
+
+`search_mode` selects the block-U candidate backend:
+- `:groebner` (default): algebraic solver mode (MVP hook)
+- `:exhaustive`: Cayley+reflection sweep
+
+In `:groebner` mode, the driver performs best-effort Gröbner system
+construction for fixed-unit variants and attempts direct U-block point
+extraction before falling back to enumeration.
+
+`max_units_for_groebner` can cap how many unit indices are used for
+fixed-unit Gröbner extraction (default: all).
+
+`groebner_allow_fallback` controls whether `:groebner` mode falls back
+to enumeration when solver extraction returns no candidates.
+
+`precheck_unit_axiom` enables a fast unit-axiom prefilter before full
+`verlinde_find_unit` tensor construction.
 """
 function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
                             p::Int; verlinde_threshold::Int = 3,
-                            max_block_dim::Int = 3)
+                            max_block_dim::Int = 3,
+                            search_mode::Symbol = :groebner,
+                            max_units_for_groebner::Int = typemax(Int),
+                            groebner_allow_fallback::Bool = true,
+                            precheck_unit_axiom::Bool = true)
+    validate_search_mode(search_mode)
+    max_units_for_groebner >= 1 || error("max_units_for_groebner must be ≥ 1")
     # Common N
     N = catalog[first(keys(stratum.multiplicities))].N
 
@@ -667,16 +1272,42 @@ function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
         "Naive enumeration would be O(p^$(div(n_block*(n_block-1), 2))). " *
         "Increase max_block_dim if you really want to proceed.")
 
-    # Enumerate U_blocks in O(n)(F_p) via Cayley + reflection
-    U_blocks = enumerate_o_n_Fp(n_block, p)
+    U_blocks = Matrix{Int}[]
+    if search_mode == :groebner
+        try
+            gb_u_blocks = _extract_U_blocks_via_verlinde_groebner(S_atomic, indices_deg, p;
+                                                                   max_units = max_units_for_groebner)
+            if gb_u_blocks !== nothing && !isempty(gb_u_blocks)
+                U_blocks = gb_u_blocks
+            end
+        catch err
+            @warn "Verlinde Gröbner warmup failed; continuing with candidate enumeration" exception = (err, catch_backtrace())
+        end
+
+        # Deterministic algebraic fallback inside :groebner mode:
+        # Cayley-parametrized O(n) filtered by unit-axiom constraints.
+        if isempty(U_blocks)
+            U_blocks = solve_cayley_unit_filtered_blocks(S_atomic, indices_deg, p;
+                                                         max_units = max_units_for_groebner)
+        end
+    end
+
+    # Enumerate U_blocks via selected search backend if solver extraction was empty
+    if isempty(U_blocks) && !(search_mode == :groebner && !groebner_allow_fallback)
+        U_blocks = enumerate_block_candidates(n_block, p, search_mode)
+    end
 
     candidates = MTCCandidate[]
+    r = size(S_atomic, 1)
     for U_block in U_blocks
         S_prime = apply_block_U(S_atomic, indices_deg, U_block, p)
+        if precheck_unit_axiom
+            any_unit = any(u -> passes_unit_axiom(S_prime, p, u), 1:r)
+            any_unit || continue
+        end
         result = verlinde_find_unit(S_prime, p; threshold = verlinde_threshold)
         if result !== nothing
             (u_idx, N_tensor) = result
-            r = size(S_prime, 1)
             Suu_inv = invmod(S_prime[u_idx, u_idx], p)
             d = [mod(S_prime[u_idx, i] * Suu_inv, p) for i in 1:r]
             D2 = sum(mod(d[m] * d[m], p) for m in 1:r) % p

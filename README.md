@@ -263,7 +263,7 @@ not as a separate 1d_1 summand.
 
 ### Phase 2 — Block-U sweep at a single prime
 
-`BlockU.jl`. `find_mtcs_at_prime(catalog, stratum, p)` returns
+`BlockU.jl`. `find_mtcs_at_prime(catalog, stratum, p; ...)` returns
 `Vector{MTCCandidate}`. Steps:
 
 1. Assemble block-diagonal atomic `(S, T)` in `ℤ[ζ_N]` from
@@ -271,14 +271,27 @@ not as a separate 1d_1 summand.
 2. Reduce to F_p at a chosen primitive N-th root of unity
    `find_zeta_in_Fp(N, p)`.
 3. Decompose T into eigenspaces; compute `parameter_dim`.
-4. For each degenerate eigenspace `V_θ` with `n_θ ≥ 2`, sweep over
-   `O(n_θ)(F_p)` via the Cayley parametrisation.
+4. For each degenerate eigenspace `V_θ` with `n_θ ≥ 2`, run Phase-2
+   block search backend:
+   - `search_mode = :groebner` (default): best-effort Gröbner system
+     build + point extraction (`O(n)` orthogonality and fixed-unit
+     Verlinde/Cayley-linked systems), then Cayley unit-axiom filtered
+     search, with optional final fallback to enumeration.
+   - `search_mode = :exhaustive`: direct Cayley/reflection sweep over
+     `O(n_θ)(F_p)`.
 5. For each block-U, apply to S, check Verlinde integrality with
    `verlinde_find_unit`, build `MTCCandidate`.
 
-Feasibility: `|O(n)(F_p)| ~ p^{n(n-1)/2}`. At p ≈ 100, `n = 3` finishes
-in ~20 s; `n ≥ 4` requires an algebraic solver and is not yet
-implemented.
+Useful knobs:
+- `max_units_for_groebner`: cap number of fixed-unit systems attempted.
+- `groebner_allow_fallback=true`: if set `false`, solver mode does not
+  fall back to exhaustive enumeration when extraction is empty.
+- `precheck_unit_axiom=true`: run a fast unit-axiom prefilter before
+  full Verlinde tensor construction.
+
+Feasibility: `|O(n)(F_p)| ~ p^{n(n-1)/2}`. At p ≈ 100, exhaustive
+`n = 3` is still expensive; `n ≥ 4` generally needs solver-assisted
+search to be practical.
 
 ### Phase 3 — CRT reconstruction and Galois alignment
 
