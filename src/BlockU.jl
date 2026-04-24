@@ -456,7 +456,7 @@ end
 Choose the Phase-2 block-U search backend.
 
 Supported modes:
-- `:exhaustive` (default): Cayley + reflection sweep.
+- `:exhaustive`: Cayley + reflection sweep.
 - `:groebner`: algebraic-solver hook (MVP currently aliases exhaustive
   generator while preserving the external mode contract).
 """
@@ -636,7 +636,7 @@ end
     find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
                        p::Int; verlinde_threshold::Int = 3,
                        max_block_dim::Int = 3,
-                       search_mode::Symbol = :exhaustive)
+                       search_mode::Symbol = :groebner)
         -> Vector{MTCCandidate}
 
 Top-level Phase 2 driver at a single prime.
@@ -658,13 +658,13 @@ degenerate eigenspace has n_θ > max_block_dim, an error is raised.
 Default 3 is feasible at p = 73-100; raising to 4 would take hours.
 
 `search_mode` selects the block-U candidate backend:
-- `:exhaustive` (default): Cayley+reflection sweep
-- `:groebner`: algebraic solver mode (MVP hook)
+- `:groebner` (default): algebraic solver mode (MVP hook)
+- `:exhaustive`: Cayley+reflection sweep
 """
 function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
                             p::Int; verlinde_threshold::Int = 3,
                             max_block_dim::Int = 3,
-                            search_mode::Symbol = :exhaustive)
+                            search_mode::Symbol = :groebner)
     # Common N
     N = catalog[first(keys(stratum.multiplicities))].N
 
