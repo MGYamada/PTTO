@@ -614,6 +614,107 @@ function _extract_orthogonality_points(gb_data, n::Int, p::Int)
     return _dedupe_matrices(mats)
 end
 
+function _block_var_index(n_block::Int, i::Int, j::Int)
+    return (i - 1) * n_block + j
+end
+
+function _u_full_entry(varsU, indices_deg::Vector{Int}, i::Int, j::Int, p::Int)
+    bi = findfirst(==(i), indices_deg)
+    bj = findfirst(==(j), indices_deg)
+    if bi !== nothing && bj !== nothing
+        n_block = length(indices_deg)
+        return varsU[_block_var_index(n_block, bi, bj)]
+    end
+    return i == j ? one(varsU[1]) : zero(varsU[1])
+end
+
+"""
+    build_verlinde_unit_equations(varsU, varsW, S_atomic, indices_deg, p, unit_idx)
+        -> Vector
+
+Build polynomial equations for a fixed candidate unit `unit_idx`:
+- orthogonality on the active block U
+- invertibility witnesses `w_m * S′[unit_idx,m] - 1 = 0`
+- unit axiom `N_{unit_idx,i}^k = δ_{i,k}`
+
+where `S′ = U^T S U` and `U` acts only on `indices_deg`.
+"""
+function build_verlinde_unit_equations(varsU, varsW,
+                                       S_atomic::Matrix{Int},
+                                       indices_deg::Vector{Int},
+                                       p::Int, unit_idx::Int)
+    r = size(S_atomic, 1)
+    n_block = length(indices_deg)
+    size(S_atomic, 2) == r || error("S_atomic must be square")
+    length(varsU) == n_block * n_block || error("varsU length mismatch")
+    length(varsW) == r || error("varsW length mismatch")
+
+    eqs = Any[]
+
+    # O(n_block): U^T U = I
+    append!(eqs, build_orthogonality_equations(varsU, n_block, p))
+
+    # Build symbolic S' = U^T S U
+    Sprime = Matrix{Any}(undef, r, r)
+    for i in 1:r
+        for j in 1:r
+            acc = zero(varsU[1])
+            for a in 1:r
+                Uai = _u_full_entry(varsU, indices_deg, a, i, p)
+                # Split second contraction for better readability:
+                for b in 1:r
+                    Ubj = _u_full_entry(varsU, indices_deg, b, j, p)
+                    acc += Uai * S_atomic[a, b] * Ubj
+                end
+            end
+            Sprime[i, j] = acc
+        end
+    end
+
+    # Witness inverse entries for S'[u,m]
+    for m in 1:r
+        push!(eqs, varsW[m] * Sprime[unit_idx, m] - one(varsU[1]))
+    end
+
+    # Unit axiom only: N_{u,i}^k = δ_{i,k}
+    for i in 1:r
+        for k in 1:r
+            acc = zero(varsU[1])
+            for m in 1:r
+                acc += Sprime[unit_idx, m] * Sprime[i, m] * Sprime[k, m] * varsW[m]
+            end
+            push!(eqs, acc - ((i == k) ? one(varsU[1]) : zero(varsU[1])))
+        end
+    end
+
+    return eqs
+end
+
+"""
+    _build_verlinde_groebner_system(S_atomic, indices_deg, p, unit_idx)
+
+Create Gröbner-ready polynomial data for fixed `unit_idx` over variables
+`U_block` and inverse witnesses `w_m`.
+"""
+function _build_verlinde_groebner_system(S_atomic::Matrix{Int},
+                                         indices_deg::Vector{Int},
+                                         p::Int, unit_idx::Int)
+    n_block = length(indices_deg)
+    r = size(S_atomic, 1)
+    F = GF(p)
+    R, vars = polynomial_ring(F, n_block * n_block + r, :z)
+    varsU = vars[1:(n_block * n_block)]
+    varsW = vars[(n_block * n_block + 1):end]
+    eqs = build_verlinde_unit_equations(varsU, varsW, S_atomic, indices_deg, p, unit_idx)
+    I = ideal(R, eqs)
+    return (ring = R, vars = vars, varsU = varsU, varsW = varsW, equations = eqs, ideal = I)
+end
+
+function _warmup_verlinde_groebner!(S_atomic::Matrix{Int}, indices_deg::Vector{Int}, p::Int)
+    # Start with one unit index to keep startup bounded while integrating the pipeline.
+    return _build_verlinde_groebner_system(S_atomic, indices_deg, p, 1)
+end
+
 """
     enumerate_block_candidates(n_block::Int, p::Int, search_mode::Symbol)
         -> Vector{Matrix{Int}}
@@ -825,6 +926,9 @@ Default 3 is feasible at p = 73-100; raising to 4 would take hours.
 `search_mode` selects the block-U candidate backend:
 - `:groebner` (default): algebraic solver mode (MVP hook)
 - `:exhaustive`: Cayley+reflection sweep
+
+In `:groebner` mode, the driver also performs a best-effort Gröbner
+system warmup for block-U + unit-axiom constraints before enumeration.
 """
 function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
                             p::Int; verlinde_threshold::Int = 3,
@@ -873,6 +977,14 @@ function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
         "Degenerate eigenspace dim n=$n_block exceeds max_block_dim=$max_block_dim. " *
         "Naive enumeration would be O(p^$(div(n_block*(n_block-1), 2))). " *
         "Increase max_block_dim if you really want to proceed.")
+
+    if search_mode == :groebner
+        try
+            _warmup_verlinde_groebner!(S_atomic, indices_deg, p)
+        catch err
+            @warn "Verlinde Gröbner warmup failed; continuing with candidate enumeration" exception = (err, catch_backtrace())
+        end
+    end
 
     # Enumerate U_blocks via selected search backend
     U_blocks = enumerate_block_candidates(n_block, p, search_mode)
