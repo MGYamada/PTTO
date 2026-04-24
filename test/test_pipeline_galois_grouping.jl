@@ -77,4 +77,67 @@ using ACMG
                                                            verbose = false)
         @test isempty(contradictions)
     end
+
+    @testset "cyclotomic-signed selector flips branch in precheck/grouping (d=5)" begin
+        d = 5
+        p_anchor = 41
+        p_other = 61
+        selector = ACMG.build_sqrtd_selector(d, [p_anchor, p_other], p_anchor; verbose = false)
+        @test selector.mode in (:cyclotomic, :cyclotomic_signed)
+
+        N1 = zeros(Int, 1, 1, 1)
+        N1[1, 1, 1] = 1
+        x = (a = 4, b = 1)
+        s_anchor = selector.sqrtd_fn(d, p_anchor)
+        s_other_true = mod(-selector.sqrtd_fn(d, p_other), p_other) # force opposite branch
+
+        S_anchor = mod((x.a + x.b * s_anchor) * invmod(mod(2 * s_anchor, p_anchor), p_anchor), p_anchor)
+        S_other = mod((x.a + x.b * s_other_true) * invmod(mod(2 * s_other_true, p_other), p_other), p_other)
+
+        c_anchor = ACMG.MTCCandidate(p_anchor, :dummy, reshape([S_anchor], 1, 1),
+                                     [1], 1, N1, [1], 1)
+        c_other = ACMG.MTCCandidate(p_other, :dummy, reshape([S_other], 1, 1),
+                                    [1], 1, N1, [1], 1)
+        results = Dict(p_anchor => [c_anchor], p_other => [c_other])
+
+        selector.branch_sign_setter(p_other, 1)
+        sign_trials = Int[]
+        wrapped_setter = (p, sgn) -> begin
+            push!(sign_trials, sgn >= 0 ? 1 : -1)
+            selector.branch_sign_setter(p, sgn)
+        end
+
+        contradictions = ACMG._branch_consistency_precheck(results, p_anchor, d, selector.sqrtd_fn;
+                                                           branch_sign_getter = selector.branch_sign_getter,
+                                                           branch_sign_setter = wrapped_setter,
+                                                           verbose = false)
+        @test isempty(contradictions)
+        @test 1 in sign_trials && -1 in sign_trials
+        @test selector.branch_sign_getter(p_other) == 1
+
+        groups = ACMG.group_mtcs_galois_aware(results, p_anchor;
+                                              scale_d = d,
+                                              sqrtd_fn = selector.sqrtd_fn,
+                                              branch_sign_getter = selector.branch_sign_getter,
+                                              branch_sign_setter = selector.branch_sign_setter)
+        @test length(groups) == 1
+        @test haskey(groups[1], p_other)
+        @test selector.branch_sign_getter(p_other) == -1
+    end
+
+    @testset "regression: N=5, scale_d=5, primes=[41,61], rank-2 is not dropped as single-prime sector" begin
+        io = IOBuffer()
+        classified = redirect_stdout(io) do
+            ACMG.classify_mtcs_at_conductor(5;
+                                            max_rank = 2,
+                                            primes = [41, 61],
+                                            scale_d = 5,
+                                            skip_FR = true,
+                                            verbose = true)
+        end
+        log = String(take!(io))
+
+        @test any(c -> c.rank == 2 && length(c.used_primes) >= 2, classified)
+        @test !occursin("sector 1: only 1 prime(s)", log)
+    end
 end
