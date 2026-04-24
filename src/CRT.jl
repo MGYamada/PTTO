@@ -279,7 +279,7 @@ function build_sqrtd_selector(scale_d::Int, primes::Vector{Int}, anchor_prime::I
                               verbose::Bool = false)
     if scale_d in (2, 3, 5)
         sign_by_prime = Dict{Int, Int}(anchor_prime => 1)
-        function cyclotomic_base(p::Int)
+        cyclotomic_base = function (p::Int)
             if scale_d == 2
                 return compute_sqrt2_cyclotomic_mod_p(p)
             elseif scale_d == 3
@@ -288,14 +288,14 @@ function build_sqrtd_selector(scale_d::Int, primes::Vector{Int}, anchor_prime::I
                 return compute_sqrt5_cyclotomic_mod_p(p)
             end
         end
-        function branch_sign_getter(p::Int)
+        branch_sign_getter = function (p::Int)
             return get(sign_by_prime, p, 1)
         end
-        function branch_sign_setter(p::Int, sgn::Int)
+        branch_sign_setter = function (p::Int, sgn::Int)
             sign_by_prime[p] = sgn >= 0 ? 1 : -1
             return nothing
         end
-        function sqrtd_fn(d::Int, p::Int)
+        sqrtd_fn = function (d::Int, p::Int)
             d == scale_d || error("cyclotomic selector was built for d=$scale_d, got d=$d")
             base = cyclotomic_base(p)
             sgn = branch_sign_getter(p)
@@ -311,7 +311,7 @@ function build_sqrtd_selector(scale_d::Int, primes::Vector{Int}, anchor_prime::I
 
     sign_by_prime = Dict{Int, Int}(anchor_prime => 1)
     raw_cache = Dict{Int, Int}()
-    function raw_root(p::Int)
+    raw_root = function (p::Int)
         if !haskey(raw_cache, p)
             s = compute_sqrt_d_mod_p(scale_d, p)
             s === nothing && error("$scale_d is not a QR mod $p")
@@ -319,14 +319,14 @@ function build_sqrtd_selector(scale_d::Int, primes::Vector{Int}, anchor_prime::I
         end
         return raw_cache[p]
     end
-    function branch_sign_getter(p::Int)
+    branch_sign_getter = function (p::Int)
         return get(sign_by_prime, p, 1)
     end
-    function branch_sign_setter(p::Int, sgn::Int)
+    branch_sign_setter = function (p::Int, sgn::Int)
         sign_by_prime[p] = sgn >= 0 ? 1 : -1
         return nothing
     end
-    function sqrtd_fn(d::Int, p::Int)
+    sqrtd_fn = function (d::Int, p::Int)
         d == scale_d || error("anchored selector was built for d=$scale_d, got d=$d")
         s = raw_root(p)
         sgn = branch_sign_getter(p)

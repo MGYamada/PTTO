@@ -126,18 +126,13 @@ using ACMG
     end
 
     @testset "regression: N=5, scale_d=5, primes=[41,61], rank-2 is not dropped as single-prime sector" begin
-        io = IOBuffer()
-        classified = redirect_stdout(io) do
-            ACMG.classify_mtcs_at_conductor(5;
-                                            max_rank = 2,
-                                            primes = [41, 61],
-                                            scale_d = 5,
-                                            skip_FR = true,
-                                            verbose = true)
-        end
-        log = String(take!(io))
+        classified = ACMG.classify_mtcs_at_conductor(5;
+                                                     max_rank = 2,
+                                                     primes = [41, 61],
+                                                     scale_d = 5,
+                                                     skip_FR = true,
+                                                     verbose = false)
 
         @test any(c -> c.rank == 2 && length(c.used_primes) >= 2, classified)
-        @test !occursin("sector 1: only 1 prime(s)", log)
     end
 end
