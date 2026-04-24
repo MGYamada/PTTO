@@ -161,7 +161,7 @@ end
     group_mtcs_galois_aware(results_by_prime::Dict{Int, Vector{MTCCandidate}},
                              anchor_prime::Int;
                              scale_d::Int = 3,
-                             reconstruction_bound::Int = 5,
+                             reconstruction_bound::Int = 50,
                              sqrtd_fn = (d, p) -> compute_sqrt3_cyclotomic_mod_p(p))
         -> Vector{Dict{Int, MTCCandidate}}
 
@@ -183,7 +183,7 @@ pass the same `sqrtd_fn` as `classify_from_group` / `reconstruct_S_matrix`.
 function group_mtcs_galois_aware(results_by_prime::Dict{Int, Vector{MTCCandidate}},
                                   anchor_prime::Int;
                                   scale_d::Int = 3,
-                                  reconstruction_bound::Int = 5,
+                                  reconstruction_bound::Int = 50,
                                   sqrtd_fn = (d, p) -> compute_sqrt3_cyclotomic_mod_p(p),
                                   branch_sign_getter = nothing,
                                   branch_sign_setter = nothing)
@@ -208,7 +208,10 @@ function group_mtcs_galois_aware(results_by_prime::Dict{Int, Vector{MTCCandidate
             best_sign = nothing
             for c in cands
                 # Different fusion tensor → skip
-                (c.N == anchor_c.N && c.unit_index == anchor_c.unit_index) || continue
+                # unit_index may legitimately differ across primes for
+                # equivalent candidates; use fusion-tensor equality as the
+                # compatibility guard here.
+                c.N == anchor_c.N || continue
 
                 # Check: can we reconstruct 2·√d·S as Z[√d] from just {anchor, p}?
                 trial_signs = [nothing]

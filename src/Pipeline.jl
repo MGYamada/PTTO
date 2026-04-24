@@ -124,7 +124,7 @@ end
                        sqrtd_fn = nothing,
                        verlinde_threshold = 3,
                        max_block_dim = 3,
-                       reconstruction_bound = 5,
+                       reconstruction_bound = 50,
                        ribbon_atol = 1e-8,
                        skip_FR = false,
                        verbose = true)
@@ -184,7 +184,7 @@ function classify_mtcs_auto(N::Int;
                             sqrtd_fn = nothing,
                             verlinde_threshold::Int = 3,
                             max_block_dim::Int = 3,
-                            reconstruction_bound::Int = 5,
+                            reconstruction_bound::Int = 50,
                             ribbon_atol::Float64 = 1e-8,
                             skip_FR::Bool = false,
                             verbose::Bool = true)
@@ -356,7 +356,7 @@ function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCand
                                       anchor_prime::Int,
                                       scale_d::Int,
                                       sqrtd_fn;
-                                      reconstruction_bound::Int = 5,
+                                      reconstruction_bound::Int = 50,
                                       branch_sign_getter = nothing,
                                       branch_sign_setter = nothing,
                                       verbose::Bool = false)
@@ -365,14 +365,22 @@ function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCand
     isempty(anchor_cands) && return Int[]
     contradictory = Int[]
 
-    function has_compatible_pair(cands::Vector{MTCCandidate}, p::Int, trial_signs, orig_sign)
+    function compatibility_status(cands::Vector{MTCCandidate}, p::Int, trial_signs, orig_sign)
+        saw_comparable = false
         for anchor_c in anchor_cands
             nrow = size(anchor_c.S_Fp, 1)
             ncol = size(anchor_c.S_Fp, 2)
             for c in cands
-                (c.N == anchor_c.N && c.unit_index == anchor_c.unit_index) || continue
+                # NOTE:
+                # unit_index can differ across primes for the same fusion
+                # ring candidate (ordering conventions / finite-field
+                # normalization). Requiring exact unit_index equality here
+                # over-filters compatible pairs and causes false
+                # "branch contradiction" reports.
+                c.N == anchor_c.N || continue
                 size(c.S_Fp, 1) == nrow || continue
                 size(c.S_Fp, 2) == ncol || continue
+                saw_comparable = true
                 for sgn in trial_signs
                     if branch_sign_setter !== nothing && sgn !== nothing
                         branch_sign_setter(p, sgn)
@@ -389,7 +397,7 @@ function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCand
                                   for i in 1:nrow, j in 1:ncol])
                         reconstruct_matrix_in_Z_sqrt_d(matrix_by_prime, scale_d;
                                                        bound = reconstruction_bound, sqrtd_fn = sqrtd_fn)
-                        return true
+                        return :compatible
                     catch
                         continue
                     finally
@@ -400,7 +408,7 @@ function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCand
                 end
             end
         end
-        return false
+        return saw_comparable ? :incompatible : :no_comparable
     end
 
     for (p, cands) in sort(collect(results_by_prime), by = x -> x[1])
@@ -411,9 +419,11 @@ function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCand
             orig_sign = branch_sign_getter(p)
             trial_signs = orig_sign == 1 ? [1, -1] : [-1, 1]
         end
-        compatible = has_compatible_pair(cands, p, trial_signs, orig_sign)
-        if !compatible
+        status = compatibility_status(cands, p, trial_signs, orig_sign)
+        if status == :incompatible
             push!(contradictory, p)
+        elseif status == :no_comparable && verbose
+            println("  precheck: no comparable candidates at prime $p; skip contradiction split")
         end
     end
     if verbose && !isempty(contradictory)
@@ -607,7 +617,7 @@ end
     classify_from_group(group, N, stratum, all_primes;
                         scale_d, scale_factor = 2,
                         sqrtd_fn = compute_sqrt_d_mod_p,
-                        reconstruction_bound = 5,
+                        reconstruction_bound = 50,
                         galois_sector = 1,
                         test_primes = nothing,
                         ribbon_atol = 1e-8,
@@ -630,7 +640,7 @@ Arguments:
                                      For SU(2)_4 / d = 3 /scale_d = 3,
                                      use `compute_sqrt3_cyclotomic_mod_p`
                                      to ensure Galois-consistent choice.
-- `reconstruction_bound::Int = 5`:   ℤ[√d] coefficient bound for rational
+- `reconstruction_bound::Int = 50`:  ℤ[√d] coefficient bound for rational
                                      reconstruction.
 - `galois_sector::Int = 1`:          sector index for provenance.
 - `test_primes::Vector{Int}=nothing`: which primes to use for CRT.
@@ -653,7 +663,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                              scale_d::Int,
                              scale_factor::Int = 2,
                              sqrtd_fn = compute_sqrt_d_mod_p,
-                             reconstruction_bound::Int = 5,
+                             reconstruction_bound::Int = 50,
                              galois_sector::Int = 1,
                              test_primes::Union{Vector{Int}, Nothing} = nothing,
                              ribbon_atol::Float64 = 1e-8,
@@ -751,7 +761,7 @@ end
                                 sqrtd_fn = nothing,
                                 verlinde_threshold = 3,
                                 max_block_dim = 3,
-                                reconstruction_bound = 5,
+                                reconstruction_bound = 50,
                                 ribbon_atol = 1e-8,
                                 skip_FR = false,
                                 verbose = true)
@@ -837,7 +847,7 @@ Arguments:
                                    dimension for naive O(n) Cayley
                                    sweep. Raise with caution (O(4)(F_p)
                                    has ~10¹¹ points).
-- `reconstruction_bound::Int = 5`: coefficient bound for ℤ[√d]
+- `reconstruction_bound::Int = 50`: coefficient bound for ℤ[√d]
                                    rational reconstruction.
 - `ribbon_atol::Float64 = 1e-8`:   Phase 4 ribbon-match tolerance.
 - `skip_FR::Bool = false`:         skip Phase 4. Useful if
@@ -855,7 +865,7 @@ function classify_mtcs_at_conductor(N::Int;
                                     sqrtd_fn = nothing,
                                     verlinde_threshold::Int = 3,
                                     max_block_dim::Int = 3,
-                                    reconstruction_bound::Int = 5,
+                                    reconstruction_bound::Int = 50,
                                     ribbon_atol::Float64 = 1e-8,
                                     skip_FR::Bool = false,
                                     verbose::Bool = true)
