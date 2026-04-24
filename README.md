@@ -51,14 +51,14 @@ arithmetic S-matrix in ℤ[√d], its complex-lifted `(S, T)`, the
 `(F, R)` symbols solving pentagon/hexagon over ℂ, and a `VerifyReport`
 with pentagon, hexagon and ribbon residuals.
 
-## `conductor_mode` (v0.5.0)
+## `conductor_mode`
 
 - `conductor_mode = :full_mtc` is the only supported mode.
 - Internal search uses
   `N_effective = lcm(N, cyclotomic_requirement(scale_d))`, where
   `cyclotomic_requirement(2|3)=24`, `cyclotomic_requirement(5)=5`,
   else `1` (so in many cases `N_effective = N`).
-- `conductor_mode = :T_only` was removed in v0.5.0.
+- `conductor_mode = :T_only` was removed.
 
 ## Installation
 
@@ -78,7 +78,7 @@ ACMG depends on:
 
 Julia ≥ 1.9 required.
 
-Compatibility policy: `[compat]` uses Julia caret semantics (e.g. `1.3`, `0.5`) to keep narrow ranges with explicit major/minor upper bounds for v0.5.0.
+Compatibility policy: `[compat]` uses Julia caret semantics (e.g. `1.3`, `0.5`) to keep narrow ranges with explicit major/minor upper bounds.
 
 ## Worked example: Fibonacci
 
@@ -526,4 +526,3 @@ scripts/
 | 4     | Pentagon + Hexagon + Ribbon (ℂ)         | ✅     |
 | 5     | End-to-end `classify_mtcs_at_conductor` | ✅     |
 
-Version: **v0.4-prototype** (April 2026).
