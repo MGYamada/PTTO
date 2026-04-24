@@ -99,8 +99,8 @@ and performs:
 1. Pentagon HC on `Nijk` — returns 4 F-solutions, split into 2
    gauge classes.
 2. For each F: hexagon HC — each pentagon solution yields 2 R-solutions.
-3. Ribbon match `(R^{ij}_k)² = θ_i θ_j / θ_k` against the input `T`
-   picks the `(F, R)` pair(s) realising that specific modular datum.
+3. Computes ribbon residuals `(R^{ij}_k)² = θ_i θ_j / θ_k` against the
+   input `T` and chooses the minimum-residual `(F, R)` pair.
 
 ```julia
 result = compute_FR_from_ST(Nijk, T_fib; ribbon_atol = 1e-8, verbose = true)
@@ -121,7 +121,8 @@ recognition.
 
 As a sanity check, running the same fusion ring against a bogus
 `T = (1, i)` — a semion-like twist not consistent with the Fibonacci
-pentagon class — returns zero ribbon matches:
+pentagon class — yields zero ribbon matches (`n_matches == 0`), while
+still returning the minimum-residual `(F,R)` candidate for diagnostics:
 
 ```julia
 compute_FR_from_ST(Nijk, ComplexF64[1.0, im]).n_matches    # == 0
@@ -223,7 +224,7 @@ reconstruction as the matching criterion — a construction not present
 in NRWW but necessary once you compute in F_p rather than a global
 number field.
 
-### Pentagon / Hexagon / Ribbon
+### Pentagon / Hexagon / modular-data consistency
 
 Phase 4 takes `(S, T)` in ℂ and a fusion tensor `Nijk`, and returns
 `(F, R)` symbols satisfying:
@@ -234,12 +235,13 @@ Phase 4 takes `(S, T)` in ℂ and a fusion tensor `Nijk`, and returns
 - **Hexagon**: `hexagon_equations(Nijk, one_vec, F)` (ACMG's own
   implementation with F baked in and the `R·S = I` constraint) →
   HC again.
-- **Ribbon match**: the multiplicity-free relation
+- **Ribbon residual diagnostic**: the multiplicity-free relation
   `(R^{ij}_k)² = θ_i · θ_j / θ_k`
-  is a necessary condition pinning down which `(F, R)` realises the
-  target T. Different pentagon F-classes on the same fusion ring
-  give different MTCs; the ribbon check selects the one matching the
-  input T.
+  is evaluated for all hexagon solutions, and the minimum-residual pair
+  is selected.
+- **Modular-data roundtrip check**: from `(F, R, N)` we evaluate
+  consistency of reproduced modular data `(S, T)` against the Phase 3
+  lifted target `(S, T)` up to cyclotomic Galois action (diagnostic log).
 
 ## Pipeline anatomy
 
@@ -295,7 +297,7 @@ implemented.
 - `verify_reconstruction(recon, candidate, d)`: validates the lift
   against a fresh prime.
 
-### Phase 4 — Pentagon + Hexagon + Ribbon verify
+### Phase 4 — Pentagon + Hexagon + modular-data verify
 
 Six files, all at `src/` top level:
 
@@ -325,9 +327,8 @@ scores < 1e-10 across all three.
 `Pipeline.jl`.
 
 - `compute_FR_from_ST(Nijk, T; ...)`: solve pentagon via HC, solve
-  hexagon for each F, select `(F, R)` whose ribbon residual vs. `T`
-  is below `ribbon_atol`. Returns a NamedTuple with the matched pair
-  and a `VerifyReport`.
+  hexagon for each F, select `(F, R)` with minimum ribbon residual vs.
+  `T`. Returns a NamedTuple with the selected pair and a `VerifyReport`.
 - `classify_from_group(group, N, stratum, primes; ...)`: CRT + ℂ-lift
   + Phase 4, producing one `ClassifiedMTC`.
 - `classify_mtcs_at_conductor(N; max_rank = 5, primes = nothing, ...)`: full driver,
