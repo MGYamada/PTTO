@@ -15,7 +15,7 @@ TensorCategories = "258c694e-7338-4d4d-b524-4851272a75cf"
 [compat]
 julia = "1.9"
 HomotopyContinuation = "2.9"
-KrylovKit = "0.8"
+KrylovKit = "0.10"
 LinearAlgebra = "1.9"
 Oscar = "1.3"
 Primes = "0.5"
