@@ -72,9 +72,6 @@ Test strategy:
                                          show_progress = false,
                                          verbose = false)
 
-        println("  Fibonacci ring with wrong T=$(T_wrong):")
-        println("    matches = $(result.n_matches)")
-
         @test result.n_matches == 0
         @test result.F === nothing
         @test result.R === nothing
