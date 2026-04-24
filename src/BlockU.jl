@@ -759,9 +759,38 @@ function _build_verlinde_groebner_system(S_atomic::Matrix{Int},
     return (ring = R, vars = vars, varsU = varsU, varsW = varsW, equations = eqs, ideal = I)
 end
 
-function _warmup_verlinde_groebner!(S_atomic::Matrix{Int}, indices_deg::Vector{Int}, p::Int)
-    # Start with one unit index to keep startup bounded while integrating the pipeline.
-    return _build_verlinde_groebner_system(S_atomic, indices_deg, p, 1)
+function _warmup_verlinde_groebner!(S_atomic::Matrix{Int}, indices_deg::Vector{Int},
+                                    p::Int, unit_idx::Int)
+    return _build_verlinde_groebner_system(S_atomic, indices_deg, p, unit_idx)
+end
+
+"""
+    _extract_U_blocks_via_verlinde_groebner(S_atomic, indices_deg, p)
+        -> Union{Nothing, Vector{Matrix{Int}}}
+
+Try fixed-unit Gröbner systems for all possible unit indices and collect
+all recovered `U_block` candidates.
+"""
+function _extract_U_blocks_via_verlinde_groebner(S_atomic::Matrix{Int},
+                                                 indices_deg::Vector{Int},
+                                                 p::Int)
+    r = size(S_atomic, 1)
+    all_blocks = Matrix{Int}[]
+    for unit_idx in 1:r
+        local sys
+        try
+            sys = _warmup_verlinde_groebner!(S_atomic, indices_deg, p, unit_idx)
+        catch
+            continue
+        end
+        blocks = _extract_U_blocks_from_verlinde_system(sys, p)
+        if blocks !== nothing && !isempty(blocks)
+            append!(all_blocks, blocks)
+        end
+    end
+
+    isempty(all_blocks) && return nothing
+    return _dedupe_matrices(all_blocks)
 end
 
 """
@@ -976,9 +1005,9 @@ Default 3 is feasible at p = 73-100; raising to 4 would take hours.
 - `:groebner` (default): algebraic solver mode (MVP hook)
 - `:exhaustive`: Cayley+reflection sweep
 
-In `:groebner` mode, the driver also performs a best-effort Gröbner
-system warmup for block-U + unit-axiom constraints and attempts direct
-U-block point extraction before falling back to enumeration.
+In `:groebner` mode, the driver performs best-effort Gröbner system
+construction for fixed-unit variants and attempts direct U-block point
+extraction before falling back to enumeration.
 """
 function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
                             p::Int; verlinde_threshold::Int = 3,
@@ -1031,8 +1060,7 @@ function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
     U_blocks = Matrix{Int}[]
     if search_mode == :groebner
         try
-            sys = _warmup_verlinde_groebner!(S_atomic, indices_deg, p)
-            gb_u_blocks = _extract_U_blocks_from_verlinde_system(sys, p)
+            gb_u_blocks = _extract_U_blocks_via_verlinde_groebner(S_atomic, indices_deg, p)
             if gb_u_blocks !== nothing && !isempty(gb_u_blocks)
                 U_blocks = gb_u_blocks
             end
