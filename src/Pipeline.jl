@@ -356,6 +356,7 @@ function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCand
                                       anchor_prime::Int,
                                       scale_d::Int,
                                       sqrtd_fn;
+                                      reconstruction_bound::Int = 5,
                                       branch_sign_getter = nothing,
                                       branch_sign_setter = nothing,
                                       verbose::Bool = false)
@@ -387,7 +388,7 @@ function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCand
                             p => [mod(two_s_p * c.S_Fp[i, j], p)
                                   for i in 1:nrow, j in 1:ncol])
                         reconstruct_matrix_in_Z_sqrt_d(matrix_by_prime, scale_d;
-                                                       bound = 5, sqrtd_fn = sqrtd_fn)
+                                                       bound = reconstruction_bound, sqrtd_fn = sqrtd_fn)
                         return true
                     catch
                         continue
@@ -969,6 +970,7 @@ function classify_mtcs_at_conductor(N::Int;
         verbose && println("  d=$scale_d, sqrt-branch mode=$(selector_mode == :custom ? "custom" : String(selector_mode))")
 
         contradictory = _branch_consistency_precheck(results_by_prime, anchor, scale_d, active_sqrtd_fn;
+                                                     reconstruction_bound = reconstruction_bound,
                                                      branch_sign_getter = branch_sign_getter,
                                                      branch_sign_setter = branch_sign_setter,
                                                      verbose = verbose)

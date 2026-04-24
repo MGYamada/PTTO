@@ -169,4 +169,38 @@ using ACMG
         @test length(groups) == 1
         @test length(groups[1]) == 2
     end
+
+    @testset "_branch_consistency_precheck honors reconstruction_bound" begin
+        d = 3
+        p_anchor = 73
+        p_other = 97
+
+        N1 = zeros(Int, 1, 1, 1)
+        N1[1, 1, 1] = 1
+
+        # Encode x = 8 + 0*√3, which needs bound ≥ 8 to reconstruct.
+        x = (a = 8, b = 0)
+        s_anchor = ACMG.compute_sqrt_d_mod_p(d, p_anchor)
+        s_other = ACMG.compute_sqrt_d_mod_p(d, p_other)
+
+        S_anchor = mod((x.a + x.b * s_anchor) * invmod(mod(2 * s_anchor, p_anchor), p_anchor), p_anchor)
+        S_other = mod((x.a + x.b * s_other) * invmod(mod(2 * s_other, p_other), p_other), p_other)
+
+        c_anchor = ACMG.MTCCandidate(p_anchor, :dummy, reshape([S_anchor], 1, 1),
+                                     [1], 1, N1, [1], 1)
+        c_other = ACMG.MTCCandidate(p_other, :dummy, reshape([S_other], 1, 1),
+                                    [1], 1, N1, [1], 1)
+        results = Dict(p_anchor => [c_anchor], p_other => [c_other])
+
+        contradictions_bound5 = ACMG._branch_consistency_precheck(results, p_anchor, d, ACMG.compute_sqrt_d_mod_p;
+                                                                  reconstruction_bound = 5,
+                                                                  verbose = false)
+        @test contradictions_bound5 == [p_other]
+
+        contradictions_bound8 = ACMG._branch_consistency_precheck(results, p_anchor, d, ACMG.compute_sqrt_d_mod_p;
+                                                                  reconstruction_bound = 8,
+                                                                  verbose = false)
+        @test isempty(contradictions_bound8)
+    end
+
 end
