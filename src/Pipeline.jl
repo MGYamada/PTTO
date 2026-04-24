@@ -138,6 +138,7 @@ end
                        search_mode = :groebner,
                        max_units_for_groebner = typemax(Int),
                        groebner_allow_fallback = true,
+                       precheck_unit_axiom = true,
                        reconstruction_bound = 50,
                        ribbon_atol = 1e-8,
                        skip_FR = false,
@@ -201,6 +202,7 @@ function classify_mtcs_auto(N::Int;
                             search_mode::Symbol = :groebner,
                             max_units_for_groebner::Int = typemax(Int),
                             groebner_allow_fallback::Bool = true,
+                            precheck_unit_axiom::Bool = true,
                             reconstruction_bound::Int = 50,
                             ribbon_atol::Float64 = 1e-8,
                             require_ribbon_match::Bool = false,
@@ -298,6 +300,7 @@ function classify_mtcs_auto(N::Int;
                                                             search_mode = search_mode,
                                                             max_units_for_groebner = max_units_for_groebner,
                                                             groebner_allow_fallback = groebner_allow_fallback,
+                                                            precheck_unit_axiom = precheck_unit_axiom,
                                                             reconstruction_bound = reconstruction_bound,
                                                             ribbon_atol = ribbon_atol,
                                                             require_ribbon_match = require_ribbon_match,
@@ -960,6 +963,10 @@ Arguments:
                                    when `search_mode=:groebner`,
                                    whether to fall back to enumeration
                                    if solver extraction is empty.
+- `precheck_unit_axiom::Bool = true`:
+                                   run fast unit-axiom precheck before
+                                   full Verlinde tensor evaluation in
+                                   Phase 2 candidate loop.
 - `reconstruction_bound::Int = 50`: coefficient bound for ℤ[√d]
                                    rational reconstruction.
 - `ribbon_atol::Float64 = 1e-8`:   Phase 4 ribbon residual tolerance
@@ -985,6 +992,7 @@ function classify_mtcs_at_conductor(N::Int;
                                     search_mode::Symbol = :groebner,
                                     max_units_for_groebner::Int = typemax(Int),
                                     groebner_allow_fallback::Bool = true,
+                                    precheck_unit_axiom::Bool = true,
                                     reconstruction_bound::Int = 50,
                                     ribbon_atol::Float64 = 1e-8,
                                     require_ribbon_match::Bool = false,
@@ -1050,7 +1058,8 @@ function classify_mtcs_at_conductor(N::Int;
                                             max_block_dim = max_block_dim,
                                             search_mode = search_mode,
                                             max_units_for_groebner = max_units_for_groebner,
-                                            groebner_allow_fallback = groebner_allow_fallback)
+                                            groebner_allow_fallback = groebner_allow_fallback,
+                                            precheck_unit_axiom = precheck_unit_axiom)
             catch err
                 # e.g. max_block_dim exceeded, or p not admissible
                 # for this stratum. Record the first such error for

@@ -1180,7 +1180,8 @@ end
                        max_block_dim::Int = 3,
                        search_mode::Symbol = :groebner,
                        max_units_for_groebner::Int = typemax(Int),
-                       groebner_allow_fallback::Bool = true)
+                       groebner_allow_fallback::Bool = true,
+                       precheck_unit_axiom::Bool = true)
         -> Vector{MTCCandidate}
 
 Top-level Phase 2 driver at a single prime.
@@ -1214,13 +1215,17 @@ fixed-unit Gröbner extraction (default: all).
 
 `groebner_allow_fallback` controls whether `:groebner` mode falls back
 to enumeration when solver extraction returns no candidates.
+
+`precheck_unit_axiom` enables a fast unit-axiom prefilter before full
+`verlinde_find_unit` tensor construction.
 """
 function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
                             p::Int; verlinde_threshold::Int = 3,
                             max_block_dim::Int = 3,
                             search_mode::Symbol = :groebner,
                             max_units_for_groebner::Int = typemax(Int),
-                            groebner_allow_fallback::Bool = true)
+                            groebner_allow_fallback::Bool = true,
+                            precheck_unit_axiom::Bool = true)
     validate_search_mode(search_mode)
     max_units_for_groebner >= 1 || error("max_units_for_groebner must be ≥ 1")
     # Common N
@@ -1293,12 +1298,16 @@ function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
     end
 
     candidates = MTCCandidate[]
+    r = size(S_atomic, 1)
     for U_block in U_blocks
         S_prime = apply_block_U(S_atomic, indices_deg, U_block, p)
+        if precheck_unit_axiom
+            any_unit = any(u -> passes_unit_axiom(S_prime, p, u), 1:r)
+            any_unit || continue
+        end
         result = verlinde_find_unit(S_prime, p; threshold = verlinde_threshold)
         if result !== nothing
             (u_idx, N_tensor) = result
-            r = size(S_prime, 1)
             Suu_inv = invmod(S_prime[u_idx, u_idx], p)
             d = [mod(S_prime[u_idx, i] * Suu_inv, p) for i in 1:r]
             D2 = sum(mod(d[m] * d[m], p) for m in 1:r) % p

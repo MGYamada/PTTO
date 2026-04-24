@@ -286,6 +286,8 @@ Useful knobs:
 - `max_units_for_groebner`: cap number of fixed-unit systems attempted.
 - `groebner_allow_fallback=true`: if set `false`, solver mode does not
   fall back to exhaustive enumeration when extraction is empty.
+- `precheck_unit_axiom=true`: run a fast unit-axiom prefilter before
+  full Verlinde tensor construction.
 
 Feasibility: `|O(n)(F_p)| ~ p^{n(n-1)/2}`. At p ≈ 100, exhaustive
 `n = 3` is still expensive; `n ≥ 4` generally needs solver-assisted
