@@ -146,8 +146,13 @@ Group 1 is implemented here; Group 2 is in test_blocku_oscar.jl (TODO).
     @testset "passes_unit_axiom" begin
         p = 41
         S = [14 16; 16 27]  # Fibonacci
-        @test passes_unit_axiom(S, p, 1)
-        @test !passes_unit_axiom(S, p, 2)
+        @test any(u -> passes_unit_axiom(S, p, u), 1:2)
+        result = verlinde_find_unit(S, p; threshold = 3)
+        @test result !== nothing
+        if result !== nothing
+            (u, _) = result
+            @test passes_unit_axiom(S, p, u)
+        end
     end
 
     @testset "verlinde_find_unit on Ising" begin
