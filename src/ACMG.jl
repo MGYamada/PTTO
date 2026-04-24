@@ -14,11 +14,8 @@ Top-level pipeline:
 returns a `Vector{ClassifiedMTC}`, one per Galois sector per stratum.
 
 Module organisation (all at ACMG top level — no submodules):
-- FpArith:             F_p arithmetic primitives (Tonelli-Shanks,
-                       primitive roots, matmul, lift_symmetric, ...)
-- Types:               `ModularDatumFp`, `FusionRule` with axiom validation
-- ModularData:         (S, T) axiom checking over F_p
-- FusionExtract:       Verlinde-based fusion rule extraction
+- Types:               Core layer (data types + F_p arithmetic +
+                       modular-data validation + Verlinde extraction)
 - SL2Reps:             SL(2, ℤ/N) irreducible representation catalog
                        (Oscar + GAP/SL2Reps)                  [Phase 0]
 - StratumEnum:         combinatorial partition `Σ m_λ d_λ = r`[Phase 1]
@@ -44,21 +41,9 @@ module ACMG
 using LinearAlgebra
 using Primes
 
-# Core arithmetic layer
-include("FpArith.jl")
-
-# Modular data and fusion rule types
+# Core types + arithmetic + modular-data/fusion helpers
 include("Types.jl")
 
-# (S, T) enumeration over F_p
-include("ModularData.jl")
-
-# Fusion rule extraction
-include("FusionExtract.jl")
-
-# Legacy stubs intentionally not included in public API surface:
-# - Dimensions.jl
-# - Enumerator.jl
 
 # SL(2, ℤ/N) irrep catalog (Oscar + GAP/SL2Reps) — Phase 0
 include("SL2Reps.jl")

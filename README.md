@@ -415,12 +415,8 @@ Test suite (`julia --project=. -e 'using Pkg; Pkg.test()'`) covers:
 ```
 src/
   ACMG.jl                 — module root, exports
-  FpArith.jl              — F_p primitives
-  Types.jl                — ModularDatumFp, FusionRule
-  ModularData.jl          — (S, T) axiom validation
-  FusionExtract.jl        — F_p Verlinde → ℤ lift (retained public API)
-  Dimensions.jl           — legacy stub (not included in public ACMG module)
-  Enumerator.jl           — legacy stub (not included in public ACMG module)
+  Types.jl                — core layer: ModularDatumFp/FusionRule + F_p primitives +
+                            (S, T) validation + Verlinde extraction/lift
   SL2Reps.jl              — Phase 0: Oscar + GAP/SL2Reps catalog
   StratumEnum.jl          — Phase 1: (m_λ) enumeration
   BlockU.jl               — Phase 2: O(n) Cayley + single-prime driver
