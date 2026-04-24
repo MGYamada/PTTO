@@ -362,6 +362,63 @@ _is_reconstruction_unstable_message(msg::AbstractString) = begin
            occursin("crt", low)
 end
 
+function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCandidate}},
+                                      anchor_prime::Int,
+                                      scale_d::Int,
+                                      sqrtd_fn;
+                                      branch_sign_getter = nothing,
+                                      branch_sign_setter = nothing,
+                                      verbose::Bool = false)
+    haskey(results_by_prime, anchor_prime) || return Int[]
+    anchor_cands = results_by_prime[anchor_prime]
+    isempty(anchor_cands) && return Int[]
+    anchor_c = anchor_cands[1]
+    contradictory = Int[]
+    for (p, cands) in sort(collect(results_by_prime), by = x -> x[1])
+        p == anchor_prime && continue
+        compatible = false
+        trial_signs = [nothing]
+        if branch_sign_getter !== nothing && branch_sign_setter !== nothing
+            cur = branch_sign_getter(p)
+            trial_signs = cur == 1 ? [1, -1] : [-1, 1]
+        end
+        for sgn in trial_signs
+            if branch_sign_setter !== nothing && sgn !== nothing
+                branch_sign_setter(p, sgn)
+            end
+            for c in cands
+                (c.N == anchor_c.N && c.unit_index == anchor_c.unit_index) || continue
+                try
+                    s_anchor = sqrtd_fn(scale_d, anchor_prime)
+                    s_p = sqrtd_fn(scale_d, p)
+                    two_s_anchor = mod(2 * s_anchor, anchor_prime)
+                    two_s_p = mod(2 * s_p, p)
+                    nrow = size(anchor_c.S_Fp, 1)
+                    matrix_by_prime = Dict(
+                        anchor_prime => [mod(two_s_anchor * anchor_c.S_Fp[i, j], anchor_prime)
+                                         for i in 1:nrow, j in 1:nrow],
+                        p => [mod(two_s_p * c.S_Fp[i, j], p)
+                              for i in 1:nrow, j in 1:nrow])
+                    reconstruct_matrix_in_Z_sqrt_d(matrix_by_prime, scale_d;
+                                                   bound = 5, sqrtd_fn = sqrtd_fn)
+                    compatible = true
+                    break
+                catch
+                    continue
+                end
+            end
+            compatible && break
+        end
+        if !compatible
+            push!(contradictory, p)
+        end
+    end
+    if verbose && !isempty(contradictory)
+        println("  precheck: branch contradiction detected at primes $contradictory")
+    end
+    return contradictory
+end
+
 function Base.show(io::IO, m::ClassifiedMTC)
     FR_status = if m.F_values === nothing
         "(F,R)=none"
@@ -759,17 +816,21 @@ Arguments:
                                    deprecated (scheduled for removal in
                                    v0.5.0).
 - `sqrtd_fn`:                      custom √d-in-F_p function. If
-                                   `nothing` (default), chooses the
-                                   cyclotomic variant:
+                                   `nothing` (default), chooses:
+                                   cyclotomic variant for `scale_d ∈
+                                   {2,3,5}` and anchored mode for
+                                   other `scale_d` (anchor prime +
+                                   branch-transform layer over raw
+                                   Tonelli roots):
                                    `compute_sqrt3_cyclotomic_mod_p`
                                    (needs 24 | p-1) for `scale_d = 3`,
                                    `compute_sqrt2_cyclotomic_mod_p`
                                    (needs 24 | p-1) for `scale_d = 2`,
                                    `compute_sqrt5_cyclotomic_mod_p`
                                    (needs 5 | p-1) for `scale_d = 5`,
-                                   else the non-cyclotomic
-                                   `compute_sqrt_d_mod_p` (Tonelli-
-                                   Shanks, NOT Galois-consistent).
+                                   else anchored mode (with per-prime
+                                   sign alignment and pre-group
+                                   contradiction check/split).
 - `verlinde_threshold::Int = 3`:   max absolute fusion coefficient
                                    allowed (beyond which the candidate
                                    is rejected). See
@@ -800,6 +861,7 @@ function classify_mtcs_at_conductor(N::Int;
                                     ribbon_atol::Float64 = 1e-8,
                                     skip_FR::Bool = false,
                                     verbose::Bool = true)
+    user_sqrtd_fn = sqrtd_fn
     N_effective = if conductor_mode == :T_only
         N
     elseif conductor_mode == :full_mtc
@@ -823,25 +885,6 @@ function classify_mtcs_at_conductor(N::Int;
     end
     length(primes) >= 2 || error(
         "need at least 2 primes (got $(length(primes)))")
-
-    # Default sqrtd_fn for the common cases. Cyclotomic variants are
-    # Galois-consistent across primes; Tonelli-Shanks is not.
-    if sqrtd_fn === nothing
-        sqrtd_fn = if scale_d == 3
-            (d, p) -> compute_sqrt3_cyclotomic_mod_p(p)
-        elseif scale_d == 2
-            (d, p) -> compute_sqrt2_cyclotomic_mod_p(p)
-        elseif scale_d == 5
-            (d, p) -> compute_sqrt5_cyclotomic_mod_p(p)
-        else
-            # Generic Tonelli-Shanks fallback. NOT Galois-consistent —
-            # CRT reconstruction may pick the wrong sector.
-            verbose && @warn "Using generic (Tonelli-Shanks) √d for scale_d=$scale_d; " *
-                             "this is not Galois-consistent. Consider supplying an " *
-                             "explicit cyclotomic `sqrtd_fn` if the result looks wrong."
-            compute_sqrt_d_mod_p
-        end
-    end
 
     # ------- Phase 0: atomic catalog -------
     verbose && println("=== Phase 0: atomic SL(2, ℤ/$N_effective) irrep catalog ===")
@@ -919,15 +962,67 @@ function classify_mtcs_at_conductor(N::Int;
             continue
         end
 
-        # Galois-aware grouping
+        # Build d-wise sqrt branch selector:
+        #  - d = 2,3,5: cyclotomic
+        #  - otherwise: anchored transform layer (not raw Tonelli direct)
         anchor = present_primes[1]
+        selector_mode = :custom
+        active_sqrtd_fn = user_sqrtd_fn
+        branch_sign_getter = nothing
+        branch_sign_setter = nothing
+        if active_sqrtd_fn === nothing
+            selector = build_sqrtd_selector(scale_d, present_primes, anchor; verbose = verbose)
+            active_sqrtd_fn = selector.sqrtd_fn
+            selector_mode = selector.mode
+            branch_sign_getter = selector.branch_sign_getter
+            branch_sign_setter = selector.branch_sign_setter
+        end
+        verbose && println("  d=$scale_d, sqrt-branch mode=$(selector_mode == :custom ? "custom" : String(selector_mode))")
+
+        contradictory = _branch_consistency_precheck(results_by_prime, anchor, scale_d, active_sqrtd_fn;
+                                                     branch_sign_getter = branch_sign_getter,
+                                                     branch_sign_setter = branch_sign_setter,
+                                                     verbose = verbose)
+        # If contradictory primes remain, split sector inputs (anchor+main, anchor+each contradictory).
+        results_chunks = Dict{Int, Vector{MTCCandidate}}[]
+        if isempty(contradictory)
+            push!(results_chunks, results_by_prime)
+        else
+            main_dict = Dict{Int, Vector{MTCCandidate}}()
+            for (p, cands) in results_by_prime
+                if !(p in contradictory)
+                    main_dict[p] = cands
+                end
+            end
+            if length(main_dict) >= 2
+                push!(results_chunks, main_dict)
+            end
+            for p in contradictory
+                local_dict = Dict{Int, Vector{MTCCandidate}}(
+                    anchor => results_by_prime[anchor],
+                    p => results_by_prime[p])
+                push!(results_chunks, local_dict)
+            end
+        end
+
+        # Galois-aware grouping
         local groups
-        try
-            groups = group_mtcs_galois_aware(results_by_prime, anchor;
-                                              scale_d = scale_d,
-                                              sqrtd_fn = sqrtd_fn)
-        catch err
-            verbose && println("  stratum: galois grouping failed: $err")
+        groups = Vector{Dict{Int, MTCCandidate}}()
+        grouping_failed = false
+        for chunk in results_chunks
+            try
+                append!(groups, group_mtcs_galois_aware(chunk, anchor;
+                                                        scale_d = scale_d,
+                                                        sqrtd_fn = active_sqrtd_fn,
+                                                        branch_sign_getter = branch_sign_getter,
+                                                        branch_sign_setter = branch_sign_setter))
+            catch err
+                grouping_failed = true
+                verbose && println("  stratum: galois grouping failed: $err")
+                break
+            end
+        end
+        if grouping_failed
             continue
         end
 
@@ -956,7 +1051,7 @@ function classify_mtcs_at_conductor(N::Int;
                                                 N_input = N,
                                                 scale_d = scale_d,
                                                 scale_factor = scale_factor,
-                                                sqrtd_fn = sqrtd_fn,
+                                                sqrtd_fn = active_sqrtd_fn,
                                                 reconstruction_bound = reconstruction_bound,
                                                 galois_sector = gi,
                                                 test_primes = used,
