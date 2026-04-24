@@ -301,6 +301,7 @@ Test strategy:
         auto = ACMG.classify_mtcs_auto(1;
                                        max_rank_candidates = [1],
                                        scale_d_candidates = [2],
+                                       d_candidates = [1],
                                        conductor_modes = [:T_only],
                                        min_primes = 2,
                                        prime_start = 29,
