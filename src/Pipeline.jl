@@ -197,6 +197,7 @@ function classify_mtcs_auto(N::Int;
                             max_block_dim::Int = 3,
                             reconstruction_bound::Int = 50,
                             ribbon_atol::Float64 = 1e-8,
+                            require_ribbon_match::Bool = false,
                             skip_FR::Bool = false,
                             verbose::Bool = true)
     N >= 1 || error("N must be positive, got $N")
@@ -290,6 +291,7 @@ function classify_mtcs_auto(N::Int;
                                                             max_block_dim = max_block_dim,
                                                             reconstruction_bound = reconstruction_bound,
                                                             ribbon_atol = ribbon_atol,
+                                                            require_ribbon_match = require_ribbon_match,
                                                             skip_FR = skip_FR,
                                                             verbose = verbose)
 
@@ -465,6 +467,7 @@ end
 
 """
     compute_FR_from_ST(Nijk, T_complex; ribbon_atol = 1e-8,
+                        require_ribbon_match = true,
                         pentagon_slice = 1, show_progress = false,
                         verbose = false)
         -> NamedTuple{(:F, :R, :report, :n_pentagon, :n_tried, :n_matches,
@@ -486,7 +489,7 @@ Algorithm:
    - For each R solution, compute ribbon residuals against `T_complex`;
      keep the `(F, R)` pair with the smallest ribbon residual below
      `ribbon_atol`.
-4. Return the best match (or all-`nothing` fields if none found).
+4. Return the best match.
 
 Caveats:
 - Pentagon HC is feasible only for small fusion rings (~10 F-variables
@@ -505,10 +508,15 @@ Returns a NamedTuple with:
 - `n_tried`:      total `(F, R)` pairs examined
 - `n_matches`:    how many of those passed ribbon
 - `f_idx`, `r_idx`: indices of the chosen pair (0 if none)
+
+If `require_ribbon_match = true`, `(F,R)` is returned as `nothing` when
+no candidate satisfies `ribbon_atol`. If false, the minimum-ribbon-
+residual `(F,R)` is returned.
 """
 function compute_FR_from_ST(Nijk::Array{Int, 3},
                             T_complex::Vector{ComplexF64};
                             ribbon_atol::Float64 = 1e-8,
+                            require_ribbon_match::Bool = true,
                             pentagon_slice::Int = 1,
                             show_progress::Bool = false,
                             verbose::Bool = false)
@@ -596,15 +604,20 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
 
             if rib_max < ribbon_atol
                 best = (; best..., n_matches = best.n_matches + 1)
-                if rib_max < best.ribbon_max
-                    rep = verify_mtc(F, R, Nijk; T = T_complex)
-                    best = (; best...,
-                            F = F, R = R, report = rep,
-                            f_idx = fi, r_idx = ri,
-                            ribbon_max = rib_max)
-                end
+            end
+            if rib_max < best.ribbon_max
+                rep = verify_mtc(F, R, Nijk; T = T_complex)
+                best = (; best...,
+                        F = F, R = R, report = rep,
+                        f_idx = fi, r_idx = ri,
+                        ribbon_max = rib_max)
             end
         end
+    end
+
+    if require_ribbon_match && best.n_matches == 0
+        best = (; best..., F = nothing, R = nothing, report = nothing,
+                f_idx = 0, r_idx = 0)
     end
 
     # Drop the internal ribbon_max field from the public return
@@ -626,6 +639,7 @@ end
                         galois_sector = 1,
                         test_primes = nothing,
                         ribbon_atol = 1e-8,
+                        require_ribbon_match = false,
                         skip_FR = false,
                         verbose = false)
         -> ClassifiedMTC
@@ -654,6 +668,10 @@ Arguments:
                                      primes; remaining are fresh.
 - `ribbon_atol::Float64 = 1e-8`:     tolerance for the Phase 4 ribbon
                                      match.
+- `require_ribbon_match::Bool=false`: if true, reject candidates with
+                                     no ribbon match below
+                                     `ribbon_atol`; if false, accept
+                                     minimum-ribbon-residual `(F,R)`.
 - `skip_FR::Bool = false`:           if true, only do Phase 0–3 and leave
                                      (F, R) as `nothing`. Useful for
                                      rank/complexity beyond the pentagon
@@ -672,6 +690,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                              galois_sector::Int = 1,
                              test_primes::Union{Vector{Int}, Nothing} = nothing,
                              ribbon_atol::Float64 = 1e-8,
+                             require_ribbon_match::Bool = false,
                              skip_FR::Bool = false,
                              verbose::Bool = false)
     group_primes = sort(collect(keys(group)))
@@ -745,27 +764,14 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     end
     verbose && println("  running pentagon/hexagon on rank=$rank...")
 
-    # The T-lift from F_p depends on the chosen primitive root and may land
-    # in a Galois-conjugate branch. Retry Phase 4 over cyclotomic Galois
-    # actions θ ↦ θ^a (a ∈ (ℤ/Nℤ)^×) to recover equivalent branches such as
-    # Fibonacci / Yang-Lee pairs.
-    fr_result = nothing
-    T_for_phase4 = T_ℂ
-    local last_phase4_summary
-    last_phase4_summary = "no_attempt"
-    for a in _galois_unit_residues(N)
-        T_trial = a == 1 ? T_ℂ : (T_ℂ .^ a)
-        trial = compute_FR_from_ST(Nijk, T_trial;
+    fr_result = compute_FR_from_ST(Nijk, T_ℂ;
                                    ribbon_atol = ribbon_atol,
+                                   require_ribbon_match = require_ribbon_match,
                                    verbose = verbose)
-        if trial.F !== nothing
-            fr_result = trial
-            T_for_phase4 = T_trial
-            verbose && a != 1 &&
-                println("  Phase 4 ribbon match recovered via T ↦ T^$a Galois action")
-            break
-        end
-        last_phase4_summary = "a=$a (n_pent=$(trial.n_pentagon), n_tried=$(trial.n_tried), n_match=$(trial.n_matches))"
+    fr_result.F === nothing && error(
+        "Phase 4 found no ribbon-matching (F,R) solution for this candidate")
+    if !require_ribbon_match && fr_result.n_matches == 0
+        verbose && println("  Phase 4: ribbon matching disabled; accepted min-residual solution")
     end
     fr_result === nothing && error(
         "Phase 4 found no ribbon-matching (F,R) solution across all T Galois branches; last=$last_phase4_summary")
@@ -792,6 +798,7 @@ end
                                 max_block_dim = 3,
                                 reconstruction_bound = 50,
                                 ribbon_atol = 1e-8,
+                                require_ribbon_match = false,
                                 skip_FR = false,
                                 verbose = true)
         -> Vector{ClassifiedMTC}
@@ -890,6 +897,12 @@ Arguments:
 - `reconstruction_bound::Int = 50`: coefficient bound for ℤ[√d]
                                    rational reconstruction.
 - `ribbon_atol::Float64 = 1e-8`:   Phase 4 ribbon-match tolerance.
+- `require_ribbon_match::Bool = false`:
+                                   if true, reject candidates unless
+                                   a ribbon-matching `(F,R)` pair is
+                                   found within `ribbon_atol`. If false
+                                   (default), accept the minimum-ribbon-
+                                   residual `(F,R)` solution.
 - `skip_FR::Bool = false`:         skip Phase 4. Useful if
                                    `max_rank ≥ 5` and pentagon HC would
                                    blow up.
@@ -910,6 +923,7 @@ function classify_mtcs_at_conductor(N::Int;
                                     max_block_dim::Int = 3,
                                     reconstruction_bound::Int = 50,
                                     ribbon_atol::Float64 = 1e-8,
+                                    require_ribbon_match::Bool = false,
                                     skip_FR::Bool = false,
                                     verbose::Bool = true)
     user_sqrtd_fn = sqrtd_fn
@@ -1112,6 +1126,7 @@ function classify_mtcs_at_conductor(N::Int;
                                                 galois_sector = gi,
                                                 test_primes = used,
                                                 ribbon_atol = cur_ribbon_atol,
+                                                require_ribbon_match = require_ribbon_match,
                                                 skip_FR = skip_FR,
                                                 verbose = verbose)
                     sector_ok = true
