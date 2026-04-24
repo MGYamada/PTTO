@@ -434,6 +434,207 @@ function enumerate_o_n_Fp(n::Int, p::Int)
     return vcat(so_part, refl_part)
 end
 
+
+"""
+    enumerate_o_n_Fp_groebner(n::Int, p::Int) -> Vector{Matrix{Int}}
+
+MVP algebraic-search entry point for O(n)(F_p) block candidates.
+
+Current implementation reuses the Cayley/reflection enumeration used by
+`enumerate_o_n_Fp` while exposing a dedicated hook for solver-based modes.
+It now also computes/caches a Gröbner basis for the O(n) orthogonality
+ideal as groundwork for a true F4/FGLM point-solving backend, while
+keeping downstream Phase-2 logic unchanged.
+"""
+function enumerate_o_n_Fp_groebner(n::Int, p::Int)
+    # Kick off/refresh Gröbner-basis preprocessing for O(n) constraints.
+    # The resulting basis is cached and intended for future algebraic
+    # point extraction (F4/FGLM pipeline). Candidate extraction is still
+    # delegated to the stable Cayley enumerator in this first step.
+    gb_data = _ensure_orthogonality_groebner_cache!(n, p)
+    gb_data !== nothing || return enumerate_o_n_Fp(n, p)
+
+    gb_points = _extract_orthogonality_points(gb_data, n, p)
+    if gb_points !== nothing && !isempty(gb_points)
+        return gb_points
+    end
+    return enumerate_o_n_Fp(n, p)
+end
+
+const _ORTHOGONALITY_GB_CACHE = Dict{Tuple{Int, Int}, Any}()
+
+"""
+    build_orthogonality_equations(vars, n::Int, p::Int)
+        -> Vector
+
+Build polynomial equations for `U^T U = I` over `F_p`, where `vars`
+encodes an `n×n` matrix in row-major order.
+"""
+function build_orthogonality_equations(vars, n::Int, p::Int)
+    eqs = Any[]
+    idx(i, j) = (i - 1) * n + j
+    for i in 1:n
+        for j in i:n
+            acc = zero(vars[1])
+            for k in 1:n
+                acc += vars[idx(k, i)] * vars[idx(k, j)]
+            end
+            rhs = (i == j) ? one(vars[1]) : zero(vars[1])
+            push!(eqs, acc - rhs)
+        end
+    end
+    return eqs
+end
+
+"""
+    _ensure_orthogonality_groebner_cache!(n::Int, p::Int)
+
+Attempt to compute and cache a Gröbner basis for the orthogonality ideal
+of `O(n)` over `F_p`. This is the first building block for a future
+F4/FGLM-style solver backend.
+"""
+function _ensure_orthogonality_groebner_cache!(n::Int, p::Int)
+    key = (n, p)
+    haskey(_ORTHOGONALITY_GB_CACHE, key) && return _ORTHOGONALITY_GB_CACHE[key]
+
+    gb_data = nothing
+    try
+        F = GF(p)
+        R, vars = polynomial_ring(F, n * n, :u)
+        eqs = build_orthogonality_equations(vars, n, p)
+        I = ideal(R, eqs)
+        G = groebner_basis(I)
+        gb_data = (ring = R, vars = vars, equations = eqs, ideal = I, gb = G)
+    catch err
+        @warn "Groebner preprocessing failed for O($n)(F_$p); falling back to enumeration" exception = (err, catch_backtrace())
+    end
+
+    _ORTHOGONALITY_GB_CACHE[key] = gb_data
+    return gb_data
+end
+
+function _point_entry(point, var)
+    # Common container styles returned by algebra systems:
+    # 1) associative map keyed by variable object
+    # 2) keyed by Symbol/String of the variable name
+    # 3) custom object supporting getindex(point, var)
+    try
+        return point[var]
+    catch
+    end
+
+    vname = string(var)
+    try
+        return point[vname]
+    catch
+    end
+    try
+        return point[Symbol(vname)]
+    catch
+    end
+
+    return nothing
+end
+
+function _coerce_point_to_matrix(point, vars, n::Int, p::Int)
+    vals = Int[]
+    for v in vars
+        entry = _point_entry(point, v)
+        entry === nothing && return nothing
+        local intval
+        try
+            intval = Int(entry)
+        catch
+            return nothing
+        end
+        push!(vals, mod(intval, p))
+    end
+
+    M = zeros(Int, n, n)
+    t = 1
+    for i in 1:n
+        for j in 1:n
+            M[i, j] = vals[t]
+            t += 1
+        end
+    end
+    return M
+end
+
+function _dedupe_matrices(mats::Vector{Matrix{Int}})
+    seen = Set{String}()
+    out = Matrix{Int}[]
+    for M in mats
+        key = join(vec(M), ",")
+        if !(key in seen)
+            push!(seen, key)
+            push!(out, M)
+        end
+    end
+    return out
+end
+
+"""
+    _extract_orthogonality_points(gb_data, n::Int, p::Int)
+        -> Union{Nothing, Vector{Matrix{Int}}}
+
+Best-effort extraction of F_p-rational O(n) points from a Gröbner ideal.
+If Oscar point extraction APIs are unavailable, returns `nothing`.
+"""
+function _extract_orthogonality_points(gb_data, n::Int, p::Int)
+    I = gb_data.ideal
+    vars = gb_data.vars
+
+    # Try several Oscar entry points (version-dependent).
+    candidates = Any[]
+    for fname in (:rational_points, :variety, :points)
+        if isdefined(Oscar, fname)
+            f = getproperty(Oscar, fname)
+            try
+                pts = f(I)
+                pts === nothing || push!(candidates, pts)
+            catch
+            end
+        end
+    end
+
+    isempty(candidates) && return nothing
+
+    mats = Matrix{Int}[]
+    for pts in candidates
+        if pts isa AbstractVector
+            for pt in pts
+                M = _coerce_point_to_matrix(pt, vars, n, p)
+                M === nothing || push!(mats, M)
+            end
+        end
+    end
+
+    isempty(mats) && return nothing
+    return _dedupe_matrices(mats)
+end
+
+"""
+    enumerate_block_candidates(n_block::Int, p::Int, search_mode::Symbol)
+        -> Vector{Matrix{Int}}
+
+Choose the Phase-2 block-U search backend.
+
+Supported modes:
+- `:exhaustive`: Cayley + reflection sweep.
+- `:groebner`: algebraic-solver hook (MVP currently aliases exhaustive
+  generator while preserving the external mode contract).
+"""
+function enumerate_block_candidates(n_block::Int, p::Int, search_mode::Symbol)
+    if search_mode == :exhaustive
+        return enumerate_o_n_Fp(n_block, p)
+    elseif search_mode == :groebner
+        return enumerate_o_n_Fp_groebner(n_block, p)
+    else
+        error("Unknown search_mode=$(search_mode). Expected :exhaustive or :groebner")
+    end
+end
+
 """
     apply_block_U(S::Matrix{Int}, indices::Vector{Int},
                   U_block::Matrix{Int}, p::Int) -> Matrix{Int}
@@ -599,7 +800,8 @@ end
 """
     find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
                        p::Int; verlinde_threshold::Int = 3,
-                       max_block_dim::Int = 3)
+                       max_block_dim::Int = 3,
+                       search_mode::Symbol = :groebner)
         -> Vector{MTCCandidate}
 
 Top-level Phase 2 driver at a single prime.
@@ -619,10 +821,15 @@ Steps:
 `max_block_dim` is a safety guard against runaway enumeration: if any
 degenerate eigenspace has n_θ > max_block_dim, an error is raised.
 Default 3 is feasible at p = 73-100; raising to 4 would take hours.
+
+`search_mode` selects the block-U candidate backend:
+- `:groebner` (default): algebraic solver mode (MVP hook)
+- `:exhaustive`: Cayley+reflection sweep
 """
 function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
                             p::Int; verlinde_threshold::Int = 3,
-                            max_block_dim::Int = 3)
+                            max_block_dim::Int = 3,
+                            search_mode::Symbol = :groebner)
     # Common N
     N = catalog[first(keys(stratum.multiplicities))].N
 
@@ -667,8 +874,8 @@ function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
         "Naive enumeration would be O(p^$(div(n_block*(n_block-1), 2))). " *
         "Increase max_block_dim if you really want to proceed.")
 
-    # Enumerate U_blocks in O(n)(F_p) via Cayley + reflection
-    U_blocks = enumerate_o_n_Fp(n_block, p)
+    # Enumerate U_blocks via selected search backend
+    U_blocks = enumerate_block_candidates(n_block, p, search_mode)
 
     candidates = MTCCandidate[]
     for U_block in U_blocks
