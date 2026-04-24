@@ -289,6 +289,14 @@ Useful knobs:
 - `precheck_unit_axiom=true`: run a fast unit-axiom prefilter before
   full Verlinde tensor construction.
 
+Practical presets:
+- **Strict solver-only trial**:
+  `search_mode=:groebner, groebner_allow_fallback=false, precheck_unit_axiom=true`
+- **Hybrid (recommended default)**:
+  `search_mode=:groebner, groebner_allow_fallback=true, precheck_unit_axiom=true`
+- **Legacy exhaustive baseline**:
+  `search_mode=:exhaustive`
+
 Feasibility: `|O(n)(F_p)| ~ p^{n(n-1)/2}`. At p ≈ 100, exhaustive
 `n = 3` is still expensive; `n ≥ 4` generally needs solver-assisted
 search to be practical.
