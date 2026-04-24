@@ -161,7 +161,7 @@ end
     group_mtcs_galois_aware(results_by_prime::Dict{Int, Vector{MTCCandidate}},
                              anchor_prime::Int;
                              scale_d::Int = 3,
-                             reconstruction_bound::Int = 5,
+                             reconstruction_bound::Int = 50,
                              sqrtd_fn = (d, p) -> compute_sqrt3_cyclotomic_mod_p(p))
         -> Vector{Dict{Int, MTCCandidate}}
 
@@ -183,7 +183,7 @@ pass the same `sqrtd_fn` as `classify_from_group` / `reconstruct_S_matrix`.
 function group_mtcs_galois_aware(results_by_prime::Dict{Int, Vector{MTCCandidate}},
                                   anchor_prime::Int;
                                   scale_d::Int = 3,
-                                  reconstruction_bound::Int = 5,
+                                  reconstruction_bound::Int = 50,
                                   sqrtd_fn = (d, p) -> compute_sqrt3_cyclotomic_mod_p(p),
                                   branch_sign_getter = nothing,
                                   branch_sign_setter = nothing)
