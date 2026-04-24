@@ -220,6 +220,11 @@ function classify_mtcs_auto(N::Int;
 
     for d in d_candidates
         N_eff_candidate = lcm(N, 4 * d)
+        if all(m -> m == :T_only, conductor_modes)
+            # Backward-compatible behavior: in T-only mode, effective
+            # conductor stays at the user input N.
+            N_eff_candidate = N
+        end
 
         if N_eff_candidate > N_eff_max
             push!(history, (d = d, N_effective = N_eff_candidate, executed = false,
@@ -280,7 +285,8 @@ function classify_mtcs_auto(N::Int;
                                        "mode=$conductor_mode scale_d=$scale_d " *
                                        "max_rank=$max_rank primes=$chosen_primes")
 
-                    classified = classify_mtcs_at_conductor(N_eff_candidate;
+                    call_N = conductor_mode == :T_only ? N : N_eff_candidate
+                    classified = classify_mtcs_at_conductor(call_N;
                                                             max_rank = max_rank,
                                                             primes = chosen_primes,
                                                             strata = strata,
@@ -296,7 +302,7 @@ function classify_mtcs_auto(N::Int;
                                                             verbose = verbose)
 
                     last_meta = (N_input = N, N_effective = N_eff_candidate, d = d,
-                                 scale_d = scale_d, conductor_mode = :T_only,
+                                 scale_d = scale_d, conductor_mode = conductor_mode,
                                  primes = copy(chosen_primes), max_rank = max_rank,
                                  attempts = attempts)
                     if !isempty(classified)
