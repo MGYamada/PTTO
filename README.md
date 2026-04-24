@@ -45,10 +45,10 @@ with pentagon, hexagon and ribbon residuals.
 
 ## Migration note: `conductor_mode`
 
-- 旧挙動（互換モード）: `conductor_mode = :T_only`
-- 新デフォルト: `conductor_mode = :full_mtc`
-  - 内部探索は `N_effective = lcm(N, 4 * scale_d)` を使用
-- `:T_only` は後方互換のため残していますが、**v0.5.0 で削除予定**です。
+- Legacy behavior (compat mode): `conductor_mode = :T_only`
+- New default: `conductor_mode = :full_mtc`
+  - Internal search uses `N_effective = lcm(N, 4 * scale_d)`
+- `:T_only` is kept for backward compatibility, but is **planned for removal in v0.5.0**.
 
 ## Installation
 
@@ -70,10 +70,16 @@ Julia ≥ 1.9 required.
 
 ## Worked example: Fibonacci
 
-The Fibonacci category has rank 2, conductor `N = 5`, fusion ring
-`τ ⊗ τ = 1 ⊕ τ`, and twists `θ_1 = 1`, `θ_τ = exp(4πi/5)`. The pentagon
-system has 5 F-variables and 12 equations; the hexagon system has 2
-variables once F is fixed.
+The Fibonacci category has rank 2, fusion ring `τ ⊗ τ = 1 ⊕ τ`, and
+twists `θ_1 = 1`, `θ_τ = exp(4πi/5)`.
+
+> **Conductor note (for this section):**
+> Here `N = 5` means the **conductor of the input T-spectrum** used by
+> `compute_FR_from_ST`. This function does not run a conductor search;
+> it only solves `(F, R)` for the given `(Nijk, T)`.
+
+For Fibonacci, the pentagon system has 5 F-variables and 12 equations;
+the hexagon system has 2 variables once F is fixed.
 
 `compute_FR_from_ST` takes a fusion tensor and complex T-eigenvalues
 and performs:
@@ -107,6 +113,30 @@ pentagon class — returns zero ribbon matches:
 
 ```julia
 compute_FR_from_ST(Nijk, ComplexF64[1.0, im]).n_matches    # == 0
+```
+
+## Difference between `N` in `compute_FR_from_ST` and in `classify_mtcs_at_conductor`
+
+- On the `compute_FR_from_ST(Nijk, T)` side:
+  - You are matching `(F, R)` on a fixed fusion ring using the **conductor of the input T-spectrum** (root-of-unity phases in `T`).
+  - In the Fibonacci example, `T = (1, exp(4πi/5))`, so `N_T = 5`.
+- On the `classify_mtcs_at_conductor(N; ...)` side:
+  - You are searching candidates that satisfy consistency conditions for the **full MTC (including the S-field)** starting from `N`.
+  - Under `conductor_mode = :full_mtc`, the internal search uses
+    `N_effective = lcm(N, 4 * scale_d)`, so the search conductor may differ
+    from the conductor seen from `T` alone.
+
+If you use the Issue 1 `conductor_mode`, a typical call that reaches
+Fibonacci from `N = 5` is:
+
+```julia
+mtcs = classify_mtcs_at_conductor(
+    5;
+    max_rank = 2,
+    primes = [41, 61],
+    conductor_mode = :full_mtc,
+    scale_d = 5,
+)
 ```
 
 ## Conceptual framework
@@ -281,6 +311,8 @@ scores < 1e-10 across all three.
   + Phase 4, producing one `ClassifiedMTC`.
 - `classify_mtcs_at_conductor(N; max_rank, primes, ...)`: full driver,
   iterating over strata and Galois sectors.
+  - Note: using an incorrect `scale_d` can produce **zero candidates**.
+    For Fibonacci (`N = 5`), we recommend `scale_d = 5`.
 
 ## Output type
 
