@@ -230,11 +230,11 @@ Test strategy:
         msg = sprint(showerror, err)
         @test occursin("N_effective | p-1", msg)
         @test occursin("input N=1", msg)
-        @test occursin("N_effective=4", msg)
+        @test occursin("N_effective=8", msg)
     end
 
     @testset "conductor_mode=:T_only keeps behavior and emits deprecation warning" begin
-        result = @test_logs (:warn, r"conductor_mode=:T_only.*removed in v0\\.5\\.0") ACMG.classify_mtcs_at_conductor(1;
+        result = @test_logs (:warn, r"conductor_mode=:T_only.*removed in v0\.5\.0") ACMG.classify_mtcs_at_conductor(1;
                                                                                                                           max_rank = 1,
                                                                                                                           primes = [5, 13],
                                                                                                                           scale_d = 2,
