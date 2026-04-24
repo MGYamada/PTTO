@@ -14,6 +14,13 @@ TensorCategories = "258c694e-7338-4d4d-b524-4851272a75cf"
 
 [compat]
 julia = "1.9"
+HomotopyContinuation = "2.9"
+KrylovKit = "0.8"
+LinearAlgebra = "1.9"
+Oscar = "1.3"
+Primes = "0.5"
+SparseArrays = "1.9"
+TensorCategories = "0.17"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
