@@ -365,14 +365,22 @@ function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCand
     isempty(anchor_cands) && return Int[]
     contradictory = Int[]
 
-    function has_compatible_pair(cands::Vector{MTCCandidate}, p::Int, trial_signs, orig_sign)
+    function compatibility_status(cands::Vector{MTCCandidate}, p::Int, trial_signs, orig_sign)
+        saw_comparable = false
         for anchor_c in anchor_cands
             nrow = size(anchor_c.S_Fp, 1)
             ncol = size(anchor_c.S_Fp, 2)
             for c in cands
-                (c.N == anchor_c.N && c.unit_index == anchor_c.unit_index) || continue
+                # NOTE:
+                # unit_index can differ across primes for the same fusion
+                # ring candidate (ordering conventions / finite-field
+                # normalization). Requiring exact unit_index equality here
+                # over-filters compatible pairs and causes false
+                # "branch contradiction" reports.
+                c.N == anchor_c.N || continue
                 size(c.S_Fp, 1) == nrow || continue
                 size(c.S_Fp, 2) == ncol || continue
+                saw_comparable = true
                 for sgn in trial_signs
                     if branch_sign_setter !== nothing && sgn !== nothing
                         branch_sign_setter(p, sgn)
@@ -389,7 +397,7 @@ function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCand
                                   for i in 1:nrow, j in 1:ncol])
                         reconstruct_matrix_in_Z_sqrt_d(matrix_by_prime, scale_d;
                                                        bound = reconstruction_bound, sqrtd_fn = sqrtd_fn)
-                        return true
+                        return :compatible
                     catch
                         continue
                     finally
@@ -400,7 +408,7 @@ function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCand
                 end
             end
         end
-        return false
+        return saw_comparable ? :incompatible : :no_comparable
     end
 
     for (p, cands) in sort(collect(results_by_prime), by = x -> x[1])
@@ -411,9 +419,11 @@ function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCand
             orig_sign = branch_sign_getter(p)
             trial_signs = orig_sign == 1 ? [1, -1] : [-1, 1]
         end
-        compatible = has_compatible_pair(cands, p, trial_signs, orig_sign)
-        if !compatible
+        status = compatibility_status(cands, p, trial_signs, orig_sign)
+        if status == :incompatible
             push!(contradictory, p)
+        elseif status == :no_comparable && verbose
+            println("  precheck: no comparable candidates at prime $p; skip contradiction split")
         end
     end
     if verbose && !isempty(contradictory)
