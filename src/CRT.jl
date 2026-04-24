@@ -182,7 +182,9 @@ pass the same `sqrtd_fn` as `classify_from_group` / `reconstruct_S_matrix`.
 function group_mtcs_galois_aware(results_by_prime::Dict{Int, Vector{MTCCandidate}},
                                   anchor_prime::Int;
                                   scale_d::Int = 3,
-                                  sqrtd_fn = (d, p) -> compute_sqrt3_cyclotomic_mod_p(p))
+                                  sqrtd_fn = (d, p) -> compute_sqrt3_cyclotomic_mod_p(p),
+                                  branch_sign_getter = nothing,
+                                  branch_sign_setter = nothing)
     haskey(results_by_prime, anchor_prime) || error("anchor_prime $anchor_prime not in results")
     anchor_cands = results_by_prime[anchor_prime]
 
@@ -201,37 +203,56 @@ function group_mtcs_galois_aware(results_by_prime::Dict{Int, Vector{MTCCandidate
             p == anchor_prime && continue
 
             best_match = nothing
+            best_sign = nothing
             for c in cands
                 # Different fusion tensor → skip
                 (c.N == anchor_c.N && c.unit_index == anchor_c.unit_index) || continue
 
                 # Check: can we reconstruct 2·√d·S as Z[√d] from just {anchor, p}?
-                try
-                    s_anchor = sqrtd_fn(scale_d, anchor_prime)
-                    s_p = sqrtd_fn(scale_d, p)
-                    two_s_anchor = mod(2 * s_anchor, anchor_prime)
-                    two_s_p = mod(2 * s_p, p)
-                    nrow = size(anchor_c.S_Fp, 1)
-                    matrix_by_prime = Dict{Int, Matrix{Int}}()
-                    matrix_by_prime[anchor_prime] = [
-                        mod(two_s_anchor * anchor_c.S_Fp[i, j], anchor_prime)
-                        for i in 1:nrow, j in 1:nrow]
-                    matrix_by_prime[p] = [
-                        mod(two_s_p * c.S_Fp[i, j], p)
-                        for i in 1:nrow, j in 1:nrow]
-                    recon = reconstruct_matrix_in_Z_sqrt_d(
-                        matrix_by_prime, scale_d; bound = 5, sqrtd_fn = sqrtd_fn)
-                    # Success!
-                    best_match = c
+                trial_signs = [nothing]
+                if branch_sign_getter !== nothing && branch_sign_setter !== nothing
+                    cur_sign = branch_sign_getter(p)
+                    trial_signs = cur_sign == 1 ? [1, -1] : [-1, 1]
+                end
+
+                for sgn in trial_signs
+                    if branch_sign_setter !== nothing && sgn !== nothing
+                        branch_sign_setter(p, sgn)
+                    end
+                    try
+                        s_anchor = sqrtd_fn(scale_d, anchor_prime)
+                        s_p = sqrtd_fn(scale_d, p)
+                        two_s_anchor = mod(2 * s_anchor, anchor_prime)
+                        two_s_p = mod(2 * s_p, p)
+                        nrow = size(anchor_c.S_Fp, 1)
+                        matrix_by_prime = Dict{Int, Matrix{Int}}()
+                        matrix_by_prime[anchor_prime] = [
+                            mod(two_s_anchor * anchor_c.S_Fp[i, j], anchor_prime)
+                            for i in 1:nrow, j in 1:nrow]
+                        matrix_by_prime[p] = [
+                            mod(two_s_p * c.S_Fp[i, j], p)
+                            for i in 1:nrow, j in 1:nrow]
+                        recon = reconstruct_matrix_in_Z_sqrt_d(
+                            matrix_by_prime, scale_d; bound = 5, sqrtd_fn = sqrtd_fn)
+                        # Success!
+                        best_match = c
+                        best_sign = sgn
+                        break
+                    catch
+                        # Not compatible with this candidate/sign; try next
+                        continue
+                    end
+                end
+                if best_match !== nothing
                     break
-                catch e
-                    # Not compatible with this candidate; try next
-                    continue
                 end
             end
 
             if best_match !== nothing
                 group[p] = best_match
+                if branch_sign_setter !== nothing && best_sign !== nothing
+                    branch_sign_setter(p, best_sign)
+                end
             end
         end
 
@@ -239,6 +260,75 @@ function group_mtcs_galois_aware(results_by_prime::Dict{Int, Vector{MTCCandidate
     end
 
     return groups
+end
+
+"""
+    build_sqrtd_selector(scale_d::Int, primes::Vector{Int}, anchor_prime::Int; verbose::Bool = false)
+        -> NamedTuple
+
+Build a per-`d` square-root selector that is consistent across primes.
+
+- `d ∈ {2,3,5}`: use cyclotomic branch (`mode = :cyclotomic`).
+- otherwise: use anchored mode (`mode = :anchored`) with a sign cache
+  relative to `anchor_prime`. The returned `sqrtd_fn` is a transform
+  layer on top of raw Tonelli-style roots, so callers can align branches
+  by updating `branch_sign_setter`.
+"""
+function build_sqrtd_selector(scale_d::Int, primes::Vector{Int}, anchor_prime::Int;
+                              verbose::Bool = false)
+    if scale_d == 2
+        verbose && println("  √d selector: d=$scale_d, branch=cyclotomic")
+        return (sqrtd_fn = (d, p) -> compute_sqrt2_cyclotomic_mod_p(p),
+                mode = :cyclotomic,
+                anchor_prime = anchor_prime,
+                branch_sign_getter = (_p -> 1),
+                branch_sign_setter = (_p, _sgn) -> nothing)
+    elseif scale_d == 3
+        verbose && println("  √d selector: d=$scale_d, branch=cyclotomic")
+        return (sqrtd_fn = (d, p) -> compute_sqrt3_cyclotomic_mod_p(p),
+                mode = :cyclotomic,
+                anchor_prime = anchor_prime,
+                branch_sign_getter = (_p -> 1),
+                branch_sign_setter = (_p, _sgn) -> nothing)
+    elseif scale_d == 5
+        verbose && println("  √d selector: d=$scale_d, branch=cyclotomic")
+        return (sqrtd_fn = (d, p) -> compute_sqrt5_cyclotomic_mod_p(p),
+                mode = :cyclotomic,
+                anchor_prime = anchor_prime,
+                branch_sign_getter = (_p -> 1),
+                branch_sign_setter = (_p, _sgn) -> nothing)
+    end
+
+    sign_by_prime = Dict{Int, Int}(anchor_prime => 1)
+    raw_cache = Dict{Int, Int}()
+    function raw_root(p::Int)
+        if !haskey(raw_cache, p)
+            s = compute_sqrt_d_mod_p(scale_d, p)
+            s === nothing && error("$scale_d is not a QR mod $p")
+            raw_cache[p] = s
+        end
+        return raw_cache[p]
+    end
+    function branch_sign_getter(p::Int)
+        return get(sign_by_prime, p, 1)
+    end
+    function branch_sign_setter(p::Int, sgn::Int)
+        sign_by_prime[p] = sgn >= 0 ? 1 : -1
+        return nothing
+    end
+    function sqrtd_fn(d::Int, p::Int)
+        d == scale_d || error("anchored selector was built for d=$scale_d, got d=$d")
+        s = raw_root(p)
+        sgn = branch_sign_getter(p)
+        return sgn == 1 ? s : mod(-s, p)
+    end
+
+    verbose && println("  √d selector: d=$scale_d, branch=anchored (anchor prime=$anchor_prime)")
+    return (sqrtd_fn = sqrtd_fn,
+            mode = :anchored,
+            anchor_prime = anchor_prime,
+            branch_sign_getter = branch_sign_getter,
+            branch_sign_setter = branch_sign_setter)
 end
 
 # ============================================================

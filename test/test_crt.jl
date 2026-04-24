@@ -154,6 +154,50 @@ Tests for CRT module (Phase 3) — pure F_p parts, no Oscar.
         @test haskey(g_N1, 41) && haskey(g_N1, 61)
     end
 
+    @testset "build_sqrtd_selector + galois grouping branch alignment" begin
+        # d=3 uses cyclotomic selector
+        cyclo = ACMG.build_sqrtd_selector(3, [73], 73; verbose = false)
+        @test cyclo.mode == :cyclotomic
+        s3 = cyclo.sqrtd_fn(3, 73)
+        @test mod(s3 * s3, 73) == 3
+
+        # d=6 uses anchored selector with per-prime sign cache
+        d = 6
+        p_anchor = 29
+        p_other = 53
+        sel = ACMG.build_sqrtd_selector(d, [p_anchor, p_other], p_anchor; verbose = false)
+        @test sel.mode == :anchored
+
+        # Build synthetic rank-1 candidate data where p_other requires
+        # the opposite sqrt branch to be reconstruction-compatible.
+        N1 = zeros(Int, 1, 1, 1)
+        N1[1, 1, 1] = 1
+        true_x = (a = 5, b = 1)  # x = a + b*√d
+        s_anchor = ACMG.compute_sqrt_d_mod_p(d, p_anchor)
+        s_other_raw = ACMG.compute_sqrt_d_mod_p(d, p_other)
+        s_other_true = mod(-s_other_raw, p_other)  # force opposite branch
+
+        S_anchor = mod((true_x.a + true_x.b * s_anchor) * invmod(2 * s_anchor, p_anchor), p_anchor)
+        S_other = mod((true_x.a + true_x.b * s_other_true) * invmod(2 * s_other_true, p_other), p_other)
+
+        c_anchor = MTCCandidate(p_anchor, :dummy, reshape([S_anchor], 1, 1),
+                                [1], 1, N1, [1], 1)
+        c_other = MTCCandidate(p_other, :dummy, reshape([S_other], 1, 1),
+                               [1], 1, N1, [1], 1)
+        results = Dict(p_anchor => [c_anchor], p_other => [c_other])
+
+        groups = ACMG.group_mtcs_galois_aware(results, p_anchor;
+                                              scale_d = d,
+                                              sqrtd_fn = sel.sqrtd_fn,
+                                              branch_sign_getter = sel.branch_sign_getter,
+                                              branch_sign_setter = sel.branch_sign_setter)
+
+        @test length(groups) == 1
+        @test haskey(groups[1], p_anchor)
+        @test haskey(groups[1], p_other)
+        @test sel.branch_sign_getter(p_other) in (-1, 1)
+    end
+
     @testset "describe_matrix" begin
         # Small 2x2 to test formatting
         M = [(1, 0) (0, -1); (0, 1) (2, 0)]
