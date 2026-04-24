@@ -275,8 +275,8 @@ not as a separate 1d_1 summand.
    block search backend:
    - `search_mode = :groebner` (default): best-effort Gröbner system
      build + point extraction (`O(n)` orthogonality and fixed-unit
-     Verlinde/Cayley-linked systems), with optional fallback to
-     enumeration.
+     Verlinde/Cayley-linked systems), then Cayley unit-axiom filtered
+     search, with optional final fallback to enumeration.
    - `search_mode = :exhaustive`: direct Cayley/reflection sweep over
      `O(n_θ)(F_p)`.
 5. For each block-U, apply to S, check Verlinde integrality with

@@ -119,6 +119,14 @@ det_2x2(M) = M[1, 1] * M[2, 2] - M[1, 2] * M[2, 1]
         @test length(eqs) == 4
     end
 
+    @testset "solve_cayley_unit_filtered_blocks" begin
+        p = 41
+        S = [14 16; 16 27]  # Fibonacci S in F_41
+        blocks = solve_cayley_unit_filtered_blocks(S, [1, 2], p; max_units = 2)
+        @test !isempty(blocks)
+        @test all(U -> is_orthogonal_mod_p(U, p), blocks)
+    end
+
     @testset "apply_block_U sanity" begin
         # Note: apply_block_U reduces entries mod p. For identity-block test,
         # keep all S entries already in [0, p) so that S and apply_block_U(S,...,I,...)

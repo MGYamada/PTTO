@@ -1047,6 +1047,89 @@ function verlinde_find_unit(S_Fp::Matrix{Int}, p::Int; threshold::Int = 5)
     return nothing
 end
 
+"""
+    passes_unit_axiom(S_Fp::Matrix{Int}, p::Int, u::Int) -> Bool
+
+Fast check of unit axiom only:
+`N_{u,i}^k = δ_{i,k}` using the Verlinde formula over `F_p`.
+"""
+function passes_unit_axiom(S_Fp::Matrix{Int}, p::Int, u::Int)
+    r = size(S_Fp, 1)
+    S_u_row = [S_Fp[u, m] for m in 1:r]
+    any(x -> x == 0, S_u_row) && return false
+
+    local S_u_inv
+    try
+        S_u_inv = [invmod(x, p) for x in S_u_row]
+    catch
+        return false
+    end
+
+    for i in 1:r
+        for k in 1:r
+            val = 0
+            for m in 1:r
+                term = mod(S_Fp[u, m] * S_Fp[i, m], p)
+                term = mod(term * S_Fp[k, m], p)
+                term = mod(term * S_u_inv[m], p)
+                val = mod(val + term, p)
+            end
+            expected = (i == k) ? 1 : 0
+            val == expected || return false
+        end
+    end
+    return true
+end
+
+"""
+    solve_cayley_unit_filtered_blocks(S_atomic, indices_deg, p; max_units)
+        -> Vector{Matrix{Int}}
+
+Enumerate Cayley-parametrized O(n)(F_p) blocks, but retain only those whose
+transformed `S'` satisfies the unit axiom for at least one candidate unit
+index in `1:min(r, max_units)`.
+
+This is a deterministic algebraic filter stage used by `:groebner` mode
+when direct Gröbner point extraction is unavailable.
+"""
+function solve_cayley_unit_filtered_blocks(S_atomic::Matrix{Int},
+                                           indices_deg::Vector{Int},
+                                           p::Int;
+                                           max_units::Int = typemax(Int))
+    n_block = length(indices_deg)
+    d = div(n_block * (n_block - 1), 2)
+    if n_block == 1
+        return [reshape([1], 1, 1)]
+    end
+
+    so_blocks = Matrix{Int}[]
+    for params_tuple in Iterators.product(ntuple(_ -> 0:(p-1), d)...)
+        U = cayley_so_n(collect(params_tuple), n_block, p)
+        U === nothing || push!(so_blocks, U)
+    end
+
+    # Include reflection coset as in enumerate_o_n_Fp
+    R = I_n(n_block)
+    R[1, 1] = p - 1
+    all_blocks = vcat(so_blocks, [matmul_mod(R, U, p) for U in so_blocks])
+
+    r = size(S_atomic, 1)
+    unit_max = min(r, max_units)
+    kept = Matrix{Int}[]
+    for U_block in all_blocks
+        S_prime = apply_block_U(S_atomic, indices_deg, U_block, p)
+        ok = false
+        for u in 1:unit_max
+            if passes_unit_axiom(S_prime, p, u)
+                ok = true
+                break
+            end
+        end
+        ok && push!(kept, U_block)
+    end
+    return _sort_matrices_lex(_dedupe_matrices(kept))
+end
+
 # ============================================================
 #  Step 6: Top-level single-prime driver
 # ============================================================
@@ -1194,6 +1277,13 @@ function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
             end
         catch err
             @warn "Verlinde Gröbner warmup failed; continuing with candidate enumeration" exception = (err, catch_backtrace())
+        end
+
+        # Deterministic algebraic fallback inside :groebner mode:
+        # Cayley-parametrized O(n) filtered by unit-axiom constraints.
+        if isempty(U_blocks)
+            U_blocks = solve_cayley_unit_filtered_blocks(S_atomic, indices_deg, p;
+                                                         max_units = max_units_for_groebner)
         end
     end
 
