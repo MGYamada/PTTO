@@ -43,7 +43,8 @@ using LinearAlgebra
 The full output of `classify_mtcs_at_conductor` for a single MTC.
 
 Arithmetic / F_p layer (Phase 0–3 output):
-- `N`:              conductor
+- `N`:              effective conductor used internally by the pipeline
+- `N_input`:        user-requested conductor (for provenance)
 - `rank`:           rank
 - `stratum`:        the SL(2, ℤ/N) irrep decomposition `(m_λ)` that gave
                     rise to this MTC
@@ -79,6 +80,7 @@ Provenance:
 """
 struct ClassifiedMTC
     N::Int
+    N_input::Int
     rank::Int
     stratum::Stratum
     Nijk::Array{Int, 3}
@@ -109,7 +111,8 @@ function Base.show(io::IO, m::ClassifiedMTC)
     end
     fresh_str = isempty(m.fresh_primes) ? "no fresh" :
         (m.verify_fresh ? "fresh✓" : "fresh✗")
-    print(io, "ClassifiedMTC(N=$(m.N), rank=$(m.rank), ",
+    n_desc = m.N == m.N_input ? string(m.N) : "$(m.N) [input=$(m.N_input)]"
+    print(io, "ClassifiedMTC(N=$(n_desc), rank=$(m.rank), ",
           "sector=$(m.galois_sector), $(length(m.used_primes)) primes, ",
           "$fresh_str, $FR_status)")
 end
@@ -322,6 +325,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                              N::Int,
                              stratum::Stratum,
                              all_primes::Vector{Int};
+                             N_input::Int = N,
                              scale_d::Int,
                              scale_factor::Int = 2,
                              sqrtd_fn = compute_sqrt_d_mod_p,
@@ -382,7 +386,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     rank = size(Nijk, 1)
 
     if skip_FR
-        return ClassifiedMTC(N, rank, stratum, Nijk,
+        return ClassifiedMTC(N, N_input, rank, stratum, Nijk,
                              recon_S, scale_d, scale_factor,
                              used, fresh, verify_fresh,
                              S_ℂ, T_ℂ, nothing, nothing, nothing,
@@ -397,14 +401,14 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                                         verbose = verbose)
     catch err
         verbose && println("  Phase 4 failed: $err")
-        return ClassifiedMTC(N, rank, stratum, Nijk, recon_S,
+        return ClassifiedMTC(N, N_input, rank, stratum, Nijk, recon_S,
                              scale_d, scale_factor,
                              used, fresh, verify_fresh,
                              S_ℂ, T_ℂ, nothing, nothing, nothing,
                              galois_sector)
     end
 
-    return ClassifiedMTC(N, rank, stratum, Nijk, recon_S,
+    return ClassifiedMTC(N, N_input, rank, stratum, Nijk, recon_S,
                          scale_d, scale_factor,
                          used, fresh, verify_fresh,
                          S_ℂ, T_ℂ,
@@ -419,6 +423,7 @@ end
 """
     classify_mtcs_at_conductor(N; max_rank, primes, strata = nothing,
                                 scale_d = 3, scale_factor = 2,
+                                conductor_mode = :T_only,
                                 sqrtd_fn = nothing,
                                 verlinde_threshold = 3,
                                 max_block_dim = 3,
@@ -475,6 +480,14 @@ Arguments:
 - `scale_factor::Int = 2`:         scalar multiplying `S` at
                                    reconstruction (matches
                                    `reconstruct_S_matrix` convention).
+- `conductor_mode::Symbol = :T_only`:
+                                   interpretation of `N`.
+                                   `:T_only` keeps existing behavior
+                                   (`N` is the T-order conductor).
+                                   `:full_mtc` expands internally to
+                                   `N_effective = lcm(N, 4*scale_d)` so
+                                   the S-side field constraints are
+                                   conservatively included.
 - `sqrtd_fn`:                      custom √d-in-F_p function. If
                                    `nothing` (default), chooses the
                                    cyclotomic variant:
@@ -509,6 +522,7 @@ function classify_mtcs_at_conductor(N::Int;
                                     strata::Union{Nothing, Vector{Stratum}} = nothing,
                                     scale_d::Int = 3,
                                     scale_factor::Int = 2,
+                                    conductor_mode::Symbol = :T_only,
                                     sqrtd_fn = nothing,
                                     verlinde_threshold::Int = 3,
                                     max_block_dim::Int = 3,
@@ -516,10 +530,22 @@ function classify_mtcs_at_conductor(N::Int;
                                     ribbon_atol::Float64 = 1e-8,
                                     skip_FR::Bool = false,
                                     verbose::Bool = true)
+    N_effective = if conductor_mode == :T_only
+        N
+    elseif conductor_mode == :full_mtc
+        lcm(N, 4 * scale_d)
+    else
+        error("unknown conductor_mode=$conductor_mode. Use :T_only or :full_mtc.")
+    end
+
+    verbose && println("Conductor mode: $conductor_mode " *
+                       "(input N=$N, effective N=$N_effective)")
+
     # Prime validity check
     for p in primes
-        (p - 1) % N == 0 || error(
-            "prime $p does not satisfy N | p-1 for N=$N")
+        (p - 1) % N_effective == 0 || error(
+            "prime $p does not satisfy N_effective | p-1 " *
+            "(N_effective=$N_effective; input N=$N)")
     end
     length(primes) >= 2 || error(
         "need at least 2 primes (got $(length(primes)))")
@@ -544,8 +570,8 @@ function classify_mtcs_at_conductor(N::Int;
     end
 
     # ------- Phase 0: atomic catalog -------
-    verbose && println("=== Phase 0: atomic SL(2, ℤ/$N) irrep catalog ===")
-    catalog = build_atomic_catalog(N; max_rank = max_rank, verbose = false)
+    verbose && println("=== Phase 0: atomic SL(2, ℤ/$N_effective) irrep catalog ===")
+    catalog = build_atomic_catalog(N_effective; max_rank = max_rank, verbose = false)
     verbose && println("  $(length(catalog)) atomic irreps (≤ rank $max_rank)")
 
     # ------- Phase 1: strata -------
@@ -648,7 +674,8 @@ function classify_mtcs_at_conductor(N::Int;
 
             local cmtc
             try
-                cmtc = classify_from_group(group, N, st, group_primes;
+                cmtc = classify_from_group(group, N_effective, st, group_primes;
+                                            N_input = N,
                                             scale_d = scale_d,
                                             scale_factor = scale_factor,
                                             sqrtd_fn = sqrtd_fn,

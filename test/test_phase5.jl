@@ -147,5 +147,41 @@ Test strategy:
         # Two distinct Galois sectors (index 1 and 2)
         sectors = sort([c.galois_sector for c in classified])
         @test sectors == [1, 2]
+
+        for c in classified
+            @test c.N_input == 24
+            @test c.N == 24
+        end
+    end
+
+    @testset "classify_mtcs_at_conductor full_mtc finds Fibonacci from N=5" begin
+        test_primes = [41, 61, 101, 181]
+        N_input = 5
+
+        classified = ACMG.classify_mtcs_at_conductor(N_input;
+                                                     max_rank = 2,
+                                                     primes = test_primes,
+                                                     scale_d = 5,
+                                                     scale_factor = 2,
+                                                     conductor_mode = :full_mtc,
+                                                     skip_FR = true,
+                                                     verbose = false)
+
+        println("  classify_mtcs_at_conductor(5, conductor_mode=:full_mtc) ⇒ " *
+                "$(length(classified)) ClassifiedMTC(s)")
+
+        # full_mtc mode applies the conservative expansion N_eff=lcm(N, 4*scale_d)
+        @test all(c -> c.N == 20, classified)
+        @test all(c -> c.N_input == N_input, classified)
+
+        fib_like(c) =
+            c.rank == 2 &&
+            c.Nijk[1, 1, 1] == 1 &&
+            c.Nijk[1, 2, 2] == 1 &&
+            c.Nijk[2, 1, 2] == 1 &&
+            c.Nijk[2, 2, 1] == 1 &&
+            c.Nijk[2, 2, 2] == 1
+
+        @test any(fib_like, classified)
     end
 end
