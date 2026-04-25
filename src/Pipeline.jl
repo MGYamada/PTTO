@@ -625,15 +625,18 @@ end
 """
     compute_FR_from_ST(Nijk, T_complex; ribbon_atol = 1e-8,
                         require_ribbon_match = true,
+                        return_all = false,
                         pentagon_slice = 1, show_progress = false,
                         verbose = false)
         -> NamedTuple{(:F, :R, :report, :n_pentagon, :n_tried, :n_matches,
                        :f_idx, :r_idx)}
 
-Given a fusion tensor `Nijk` and complex T-eigenvalues `T_complex`,
-find a pair `(F, R)` of complex F- and R-symbols satisfying pentagon,
-hexagon, and the ribbon relation `(R^{ij}_k)² = θ_i θ_j / θ_k` against
-the given T.
+Given a fusion tensor `Nijk`, find a pair `(F, R)` of complex
+F- and R-symbols satisfying pentagon and hexagon.
+
+`T_complex` is accepted for API compatibility but is not used to select
+an `(F,R)` branch. Consistency with modular data is checked afterwards by
+`_modular_data_roundtrip_up_to_galois` in `classify_from_group`.
 
 Algorithm:
 1. Set up pentagon system from `Nijk` (via TensorCategories).
@@ -643,18 +646,17 @@ Algorithm:
    - Polish with damped Newton.
    - Build hexagon system with F fixed.
    - Solve hexagon via HC.
-   - For each R solution, compute ribbon residuals against `T_complex`;
-     keep the `(F, R)` pair with the smallest ribbon residual.
-4. Return the best match.
+   - Keep the `(F,R)` pair with the smallest pentagon/hexagon residual
+     score.
+4. Return the best numerical pentagon/hexagon solution.
 
 Caveats:
 - Pentagon HC is feasible only for small fusion rings (~10 F-variables
   before mixed-volume blow-up; Ising-sized rings with ~14 F-vars may
   require hours).
-- Ribbon match is a NECESSARY condition only: `(R²) = θ_i θ_j / θ_k`
-  is blind to the overall sign of R. Two sign-conjugate braidings
-  (Fibonacci vs its complex conjugate) will both pass; we return the
-  first one HC produces.
+- Multiple inequivalent braided branches can share the same fusion ring.
+  This function does not disambiguate them via `T`; modular-data
+  equivalence is handled in the Phase 4 roundtrip check.
 
 Returns a NamedTuple with:
 - `F`:            best `Vector{ComplexF64}` or `nothing`
@@ -662,14 +664,17 @@ Returns a NamedTuple with:
 - `report`:       `VerifyReport` or `nothing`
 - `n_pentagon`:   number of pentagon solutions found
 - `n_tried`:      total `(F, R)` pairs examined
-- `n_matches`:    how many of those passed ribbon
+- `n_matches`:    how many candidates were numerically valid
 - `f_idx`, `r_idx`: indices of the chosen pair (0 if none)
+- `candidates`:   present only when `return_all=true`; contains all
+                  numerically valid `(F,R)` candidates with reports.
 
 """
 function compute_FR_from_ST(Nijk::Array{Int, 3},
                             T_complex::Vector{ComplexF64};
                             ribbon_atol::Float64 = 1e-8,
                             require_ribbon_match::Bool = true,
+                            return_all::Bool = false,
                             pentagon_slice::Int = 1,
                             show_progress::Bool = false,
                             verbose::Bool = false)
@@ -687,7 +692,15 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
         R_trivial = ComplexF64[1.0]
         # Fields in order: pentagon_max, hexagon_max, ribbon_max,
         # n_pentagon_eqs, n_hexagon_eqs, rank
-        report = VerifyReport(0.0, 0.0, 0.0, 0, 0, 1)
+        report = VerifyReport(0.0, 0.0, nothing, 0, 0, 1)
+        cand = (F = F_trivial, R = R_trivial, report = report,
+                f_idx = 1, r_idx = 1)
+        if return_all
+            return (F = F_trivial, R = R_trivial, report = report,
+                    n_pentagon = 1, n_tried = 1, n_matches = 1,
+                    f_idx = 1, r_idx = 1,
+                    candidates = [cand])
+        end
         return (F = F_trivial, R = R_trivial, report = report,
                 n_pentagon = 1, n_tried = 1, n_matches = 1,
                 f_idx = 1, r_idx = 1)
@@ -721,6 +734,9 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
             f_idx = 0,
             r_idx = 0,
             score = Inf)
+    all_candidates = NamedTuple{(:F, :R, :report, :f_idx, :r_idx),
+                                Tuple{Vector{ComplexF64}, Vector{ComplexF64},
+                                      VerifyReport, Int, Int}}[]
 
     for (fi, F_raw) in enumerate(F_sols)
         local F
@@ -748,10 +764,7 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
 
             local rep
             try
-                # Ribbon-residual based matching is intentionally no longer
-                # used for candidate selection. Phase 4 now picks an (F,R)
-                # by pentagon/hexagon consistency only; modular-data
-                # roundtrip matching is done afterwards in classify_from_group.
+                # First pass verifies pentagon/hexagon consistency.
                 rep = verify_mtc(F, R_vals, Nijk)
             catch err
                 verbose && println("      R[$ri] verify failed: $err")
@@ -766,14 +779,11 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
             # Keep counters for API compatibility. n_matches now counts
             # numerically valid pentagon+hexagon candidates.
             best = (; best..., n_matches = best.n_matches + 1)
+            push!(all_candidates, (F = F, R = R_vals, report = rep,
+                                   f_idx = fi, r_idx = ri))
             if score < best.score
-                rep_with_t = try
-                    verify_mtc(F, R_vals, Nijk; T = T_complex)
-                catch
-                    rep
-                end
                 best = (; best...,
-                        F = F, R = R_vals, report = rep_with_t,
+                        F = F, R = R_vals, report = rep,
                         f_idx = fi, r_idx = ri,
                         score = score)
             end
@@ -783,8 +793,16 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
     # Backward-compatible knobs kept in signature (deprecated path).
     _ = ribbon_atol
     _ = require_ribbon_match
+    _ = T_complex
 
     # Drop the internal score field from the public return
+    if return_all
+        return (F = best.F, R = best.R, report = best.report,
+                n_pentagon = best.n_pentagon, n_tried = best.n_tried,
+                n_matches = best.n_matches,
+                f_idx = best.f_idx, r_idx = best.r_idx,
+                candidates = all_candidates)
+    end
     return (F = best.F, R = best.R, report = best.report,
             n_pentagon = best.n_pentagon, n_tried = best.n_tried,
             n_matches = best.n_matches,
@@ -931,11 +949,28 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
 
     fr_result = compute_FR_from_ST(Nijk, T_for_phase4;
                                    ribbon_atol = ribbon_atol,
+                                   return_all = true,
                                    verbose = verbose)
     fr_result.F === nothing && error("Phase 4 could not produce any (F,R) solution")
+    isempty(fr_result.candidates) && error("Phase 4 produced no valid (F,R) candidates")
 
-    md_roundtrip = _modular_data_roundtrip_up_to_galois(fr_result.F, fr_result.R,
-                                                        Nijk, S_ℂ, T_for_phase4, N)
+    # Select branch by modular-data equivalence after reconstruction,
+    # not by direct ribbon fitting against the input T.
+    best_idx = 0
+    best_md = nothing
+    for (ci, cand) in enumerate(fr_result.candidates)
+        md = _modular_data_roundtrip_up_to_galois(cand.F, cand.R,
+                                                  Nijk, S_ℂ, T_for_phase4, N)
+        if best_md === nothing ||
+           (md.S_max < best_md.S_max) ||
+           (isapprox(md.S_max, best_md.S_max; atol = 1e-12) && md.T_max < best_md.T_max)
+            best_md = md
+            best_idx = ci
+        end
+    end
+
+    selected = fr_result.candidates[best_idx]
+    md_roundtrip = best_md
     verbose && println("  modular-data roundtrip: galois a=$(md_roundtrip.best_a), " *
                        "S_err=$(md_roundtrip.S_max), T_err=$(md_roundtrip.T_max), " *
                        "ok=$(md_roundtrip.ok)")
@@ -944,7 +979,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                          scale_d, scale_factor,
                          used, fresh, verify_fresh,
                          S_ℂ, T_for_phase4,
-                         fr_result.F, fr_result.R, fr_result.report,
+                         selected.F, selected.R, selected.report,
                          galois_sector)
 end
 
