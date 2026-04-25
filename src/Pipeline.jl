@@ -576,6 +576,9 @@ function _modular_data_roundtrip(F_values::Vector{ComplexF64},
             end
             return mod(ta + tb - tc - m, N) == 0
         end
+    end
+    return best
+end
 
         function backtrack(pos::Int)
             length(sols) >= max_candidates && return
