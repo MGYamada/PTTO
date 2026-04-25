@@ -444,6 +444,27 @@ end
 
 _maxabs(M::AbstractArray{<:Number}) = isempty(M) ? 0.0 : maximum(abs.(M))
 
+function _normalize_twists(T::Vector{ComplexF64})
+    Tn = copy(T)
+    if !iszero(Tn[1])
+        Tn ./= Tn[1]
+    end
+    for i in eachindex(Tn)
+        if !iszero(Tn[i])
+            Tn[i] /= abs(Tn[i])
+        end
+    end
+    return Tn
+end
+
+function _normalize_smatrix(S::Matrix{ComplexF64})
+    Sn = copy(S)
+    if !iszero(Sn[1, 1])
+        Sn ./= Sn[1, 1]
+    end
+    return Sn
+end
+
 function _st_signature_under_gauge(S::Matrix{ComplexF64},
                                    T::Vector{ComplexF64},
                                    automorphisms::Vector{Vector{Int}};
@@ -512,17 +533,6 @@ function _modular_data_roundtrip(F_values::Vector{ComplexF64},
         end
         T_from[a] = acc / d[a]
     end
-    # Normalize so the unit twist is exactly 1.
-    if !iszero(T_from[1])
-        T_from ./= T_from[1]
-    end
-    # Project to unit circle to stabilize numerical drift.
-    for a in 1:r
-        if !iszero(T_from[a])
-            T_from[a] /= abs(T_from[a])
-        end
-    end
-
     # Kitaev (223): S from monodromy trace.
     S_from = Matrix{ComplexF64}(undef, r, r)
     for a in 1:r, b in 1:r
@@ -537,15 +547,20 @@ function _modular_data_roundtrip(F_values::Vector{ComplexF64},
         S_from[a, b] = acc / D
     end
 
+    T_from_n = _normalize_twists(T_from)
+    T_target_n = _normalize_twists(T_target)
+    S_from_n = _normalize_smatrix(S_from)
+    S_target_n = _normalize_smatrix(S_target)
+
     automorphisms = _fusion_automorphisms_fixing_unit(Nijk)
     best_perm = automorphisms[1]
     best_s = Inf
     best_t = Inf
     for perm in automorphisms
-        S_p = S_from[perm, perm]
-        T_p = T_from[perm]
-        s_err = min(_maxabs(S_p .- S_target), _maxabs(-S_p .- S_target))
-        t_err = _maxabs(T_p .- T_target)
+        S_p = S_from_n[perm, perm]
+        T_p = T_from_n[perm]
+        s_err = min(_maxabs(S_p .- S_target_n), _maxabs(-S_p .- S_target_n))
+        t_err = _maxabs(T_p .- T_target_n)
         if (s_err < best_s) || (isapprox(s_err, best_s; atol = 1e-12) && t_err < best_t)
             best_s = s_err
             best_t = t_err
@@ -558,9 +573,9 @@ function _modular_data_roundtrip(F_values::Vector{ComplexF64},
             S_max = best_s,
             T_max = best_t,
             best_perm = best_perm,
-            S_from = S_from,
-            T_from = T_from,
-            st_signature = _st_signature_under_gauge(S_from, T_from, automorphisms))
+            S_from = S_from_n,
+            T_from = T_from_n,
+            st_signature = _st_signature_under_gauge(S_from_n, T_from_n, automorphisms))
 end
 
 """
