@@ -577,6 +577,9 @@ function _modular_data_roundtrip(F_values::Vector{ComplexF64},
             end
             return mod(ta + tb - tc - m, N) == 0
         end
+    end
+    return best
+end
 
         pos = 1
         while pos >= 1
