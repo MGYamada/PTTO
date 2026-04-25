@@ -174,7 +174,7 @@ function _flatten_permuted(N::Array{Int, 3}, perm::Vector{Int})
     return out
 end
 
-function _for_each_permutation!(v::Vector{Int}, f::F) where {F}
+function _for_each_permutation!(f::F, v::Vector{Int}) where {F}
     function rec(start::Int)
         if start > length(v)
             f(v)
