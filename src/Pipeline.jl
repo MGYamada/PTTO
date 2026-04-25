@@ -630,10 +630,12 @@ end
         -> NamedTuple{(:F, :R, :report, :n_pentagon, :n_tried, :n_matches,
                        :f_idx, :r_idx)}
 
-Given a fusion tensor `Nijk` and complex T-eigenvalues `T_complex`,
-find a pair `(F, R)` of complex F- and R-symbols satisfying pentagon,
-hexagon, and the ribbon relation `(R^{ij}_k)² = θ_i θ_j / θ_k` against
-the given T.
+Given a fusion tensor `Nijk`, find a pair `(F, R)` of complex
+F- and R-symbols satisfying pentagon and hexagon.
+
+`T_complex` is accepted for API compatibility but is not used to select
+an `(F,R)` branch. Consistency with modular data is checked afterwards by
+`_modular_data_roundtrip_up_to_galois` in `classify_from_group`.
 
 Algorithm:
 1. Set up pentagon system from `Nijk` (via TensorCategories).
@@ -643,18 +645,17 @@ Algorithm:
    - Polish with damped Newton.
    - Build hexagon system with F fixed.
    - Solve hexagon via HC.
-   - For each R solution, compute ribbon residuals against `T_complex`;
-     keep the `(F, R)` pair with the smallest ribbon residual.
-4. Return the best match.
+   - Keep the `(F,R)` pair with the smallest pentagon/hexagon residual
+     score.
+4. Return the best numerical pentagon/hexagon solution.
 
 Caveats:
 - Pentagon HC is feasible only for small fusion rings (~10 F-variables
   before mixed-volume blow-up; Ising-sized rings with ~14 F-vars may
   require hours).
-- Ribbon match is a NECESSARY condition only: `(R²) = θ_i θ_j / θ_k`
-  is blind to the overall sign of R. Two sign-conjugate braidings
-  (Fibonacci vs its complex conjugate) will both pass; we return the
-  first one HC produces.
+- Multiple inequivalent braided branches can share the same fusion ring.
+  This function does not disambiguate them via `T`; modular-data
+  equivalence is handled in the Phase 4 roundtrip check.
 
 Returns a NamedTuple with:
 - `F`:            best `Vector{ComplexF64}` or `nothing`
@@ -662,7 +663,7 @@ Returns a NamedTuple with:
 - `report`:       `VerifyReport` or `nothing`
 - `n_pentagon`:   number of pentagon solutions found
 - `n_tried`:      total `(F, R)` pairs examined
-- `n_matches`:    how many of those passed ribbon
+- `n_matches`:    how many candidates were numerically valid
 - `f_idx`, `r_idx`: indices of the chosen pair (0 if none)
 
 """
@@ -687,7 +688,7 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
         R_trivial = ComplexF64[1.0]
         # Fields in order: pentagon_max, hexagon_max, ribbon_max,
         # n_pentagon_eqs, n_hexagon_eqs, rank
-        report = VerifyReport(0.0, 0.0, 0.0, 0, 0, 1)
+        report = VerifyReport(0.0, 0.0, nothing, 0, 0, 1)
         return (F = F_trivial, R = R_trivial, report = report,
                 n_pentagon = 1, n_tried = 1, n_matches = 1,
                 f_idx = 1, r_idx = 1)
@@ -748,10 +749,7 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
 
             local rep
             try
-                # Ribbon-residual based matching is intentionally no longer
-                # used for candidate selection. Phase 4 now picks an (F,R)
-                # by pentagon/hexagon consistency only; modular-data
-                # roundtrip matching is done afterwards in classify_from_group.
+                # First pass verifies pentagon/hexagon consistency.
                 rep = verify_mtc(F, R_vals, Nijk)
             catch err
                 verbose && println("      R[$ri] verify failed: $err")
@@ -767,13 +765,8 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
             # numerically valid pentagon+hexagon candidates.
             best = (; best..., n_matches = best.n_matches + 1)
             if score < best.score
-                rep_with_t = try
-                    verify_mtc(F, R_vals, Nijk; T = T_complex)
-                catch
-                    rep
-                end
                 best = (; best...,
-                        F = F, R = R_vals, report = rep_with_t,
+                        F = F, R = R_vals, report = rep,
                         f_idx = fi, r_idx = ri,
                         score = score)
             end
@@ -783,6 +776,7 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
     # Backward-compatible knobs kept in signature (deprecated path).
     _ = ribbon_atol
     _ = require_ribbon_match
+    _ = T_complex
 
     # Drop the internal score field from the public return
     return (F = best.F, R = best.R, report = best.report,
