@@ -492,9 +492,12 @@ end
 """
     _modular_data_roundtrip(F_values, R_values, Nijk, S_target, T_target, N) -> NamedTuple
 
-Reconstruct `(S,T)` from `(F,R)` using Kitaev definitions:
-- (211): `θ_a = d_a^{-1} Σ_c d_c Tr(R^{aa}_c)`
-- (223): `S_ab = (1/D) Σ_c d_c Tr(R^{\bar b a}_c R^{a \bar b}_c)`
+Reconstruct `(S,T)` from `(F,R)` using the note's balancing/Hopf-link form:
+- infer twist candidates from monodromy phases
+  `M^{ab}_c = R^{ba}_c R^{ab}_c = θ_a θ_b / θ_c`
+  (multiplicity-free channels),
+- rebuild `S` from
+  `S_ab = (1/D) Σ_c N_ab^c d_c (θ_a θ_b / θ_c)`.
 
 Then compare reconstructed data against targets while accounting for
 non-Galois gauge freedom (fusion-rule automorphisms fixing the unit and
@@ -506,10 +509,8 @@ function _modular_data_roundtrip(F_values::Vector{ComplexF64},
                                  S_target::Matrix{ComplexF64},
                                  T_target::Vector{ComplexF64},
                                  N::Int)
-    _ = (F_values, N)
+    _ = F_values
     r = size(Nijk, 1)
-    fr = FusionRule(Nijk)
-    dual = fr.dual
 
     # Quantum dimensions from PF eigenvector of Σ_i N_i.
     A = zeros(Float64, r, r)
@@ -522,49 +523,123 @@ function _modular_data_roundtrip(F_values::Vector{ComplexF64},
     d ./= d[1]
     D = sqrt(sum(d .^ 2))
 
-    # Kitaev (211): twists from partial quantum trace of R^{aa}.
-    T_from = Vector{ComplexF64}(undef, r)
-    for a in 1:r
-        acc = 0.0 + 0.0im
-        for c in 1:r
-            Nijk[a, a, c] == 0 && continue
-            block = extract_R_block(R_values, Nijk, a, a, c)
-            acc += d[c] * tr(block)
+    T_target_n = _normalize_twists(T_target)
+    S_target_n = _normalize_smatrix(S_target)
+
+    function reconstruct_S_from_T(Tvals::Vector{ComplexF64})
+        S = Matrix{ComplexF64}(undef, r, r)
+        for a in 1:r, b in 1:r
+            acc = 0.0 + 0.0im
+            for c in 1:r
+                Nijk[a, b, c] == 0 && continue
+                # Balancing form:
+                #   R^{ba}_c R^{ab}_c = θ_a θ_b / θ_c
+                # so S_ab = (1/D) Σ_c N_ab^c d_c (θ_a θ_b / θ_c).
+                acc += Nijk[a, b, c] * (Tvals[a] * Tvals[b] / Tvals[c]) * d[c]
+            end
+            S[a, b] = acc / D
         end
-        T_from[a] = acc / d[a]
-    end
-    # Kitaev (223): S from monodromy trace.
-    S_from = Matrix{ComplexF64}(undef, r, r)
-    for a in 1:r, b in 1:r
-        bdual = dual[b]
-        acc = 0.0 + 0.0im
-        for c in 1:r
-            Nijk[a, bdual, c] == 0 && continue
-            R_ba = extract_R_block(R_values, Nijk, bdual, a, c)
-            R_ab = extract_R_block(R_values, Nijk, a, bdual, c)
-            acc += d[c] * tr(R_ba * R_ab)
-        end
-        S_from[a, b] = acc / D
+        return S
     end
 
-    T_from_n = _normalize_twists(T_from)
-    T_target_n = _normalize_twists(T_target)
-    S_from_n = _normalize_smatrix(S_from)
-    S_target_n = _normalize_smatrix(S_target)
+    function infer_T_candidates_from_monodromy(; max_candidates::Int = 64)
+        vars = max(0, r - 1)
+        vars == 0 && return [ComplexF64[1.0 + 0.0im]]
+
+        # equations: t_a + t_b - t_c = m (mod N), where
+        # exp(2πim/N) approximates the monodromy eigenvalue
+        # M^{ab}_c = R^{ba}_c R^{ab}_c (multiplicity-free channels).
+        eqs = Tuple{Int, Int, Int, Int}[]
+        for a in 1:r, b in 1:r, c in 1:r
+            Nijk[a, b, c] == 0 && continue
+            R_ab = extract_R_block(R_values, Nijk, a, b, c)
+            R_ba = extract_R_block(R_values, Nijk, b, a, c)
+            size(R_ab) == (1, 1) || continue
+            size(R_ba) == (1, 1) || continue
+            z = R_ba[1, 1] * R_ab[1, 1]
+            z = iszero(z) ? z : z / abs(z)
+            m = mod(round(Int, (N * angle(z)) / (2π)), N)
+            push!(eqs, (a, b, c, m))
+        end
+        isempty(eqs) && return [ComplexF64[1.0 + 0.0im; fill(1.0 + 0.0im, r - 1)]]
+
+        assignments = fill(-1, vars)  # t_2 ... t_r
+        sols = Vector{Vector{Int}}()
+        get_t(idx::Int) = idx == 1 ? 0 : assignments[idx - 1]
+
+        function eq_satisfied_or_pending(a::Int, b::Int, c::Int, m::Int)
+            ta = get_t(a)
+            tb = get_t(b)
+            tc = get_t(c)
+            if ta < 0 || tb < 0 || tc < 0
+                return true
+            end
+            return mod(ta + tb - tc - m, N) == 0
+        end
+    end
+    return best
+end
+
+        function backtrack(pos::Int)
+            length(sols) >= max_candidates && return
+            if pos > vars
+                for (a, b, c, m) in eqs
+                    eq_satisfied_or_pending(a, b, c, m) || return
+                end
+                push!(sols, copy(assignments))
+                return
+            end
+            for v in 0:(N - 1)
+                assignments[pos] = v
+                local ok = true
+                for (a, b, c, m) in eqs
+                    if !eq_satisfied_or_pending(a, b, c, m)
+                        ok = false
+                        break
+                    end
+                end
+                ok && backtrack(pos + 1)
+                length(sols) >= max_candidates && return
+            end
+            assignments[pos] = -1
+        end
+
+        backtrack(1)
+        T_candidates = Vector{Vector{ComplexF64}}()
+        for sol in sols
+            Tvals = Vector{ComplexF64}(undef, r)
+            Tvals[1] = 1.0 + 0.0im
+            for i in 2:r
+                Tvals[i] = exp((2π * im * sol[i - 1]) / N)
+            end
+            push!(T_candidates, Tvals)
+        end
+        isempty(T_candidates) && push!(T_candidates, ComplexF64[1.0 + 0.0im; fill(1.0 + 0.0im, r - 1)])
+        return T_candidates
+    end
 
     automorphisms = _fusion_automorphisms_fixing_unit(Nijk)
     best_perm = automorphisms[1]
     best_s = Inf
     best_t = Inf
-    for perm in automorphisms
-        S_p = S_from_n[perm, perm]
-        T_p = T_from_n[perm]
-        s_err = min(_maxabs(S_p .- S_target_n), _maxabs(-S_p .- S_target_n))
-        t_err = _maxabs(T_p .- T_target_n)
-        if (s_err < best_s) || (isapprox(s_err, best_s; atol = 1e-12) && t_err < best_t)
-            best_s = s_err
-            best_t = t_err
-            best_perm = perm
+    best_Sn = _normalize_smatrix(reconstruct_S_from_T(T_target_n))
+    best_Tn = copy(T_target_n)
+
+    for T_raw in infer_T_candidates_from_monodromy()
+        Tn = _normalize_twists(T_raw)
+        Sn = _normalize_smatrix(reconstruct_S_from_T(Tn))
+        for perm in automorphisms
+            S_p = Sn[perm, perm]
+            T_p = Tn[perm]
+            s_err = min(_maxabs(S_p .- S_target_n), _maxabs(-S_p .- S_target_n))
+            t_err = _maxabs(T_p .- T_target_n)
+            if (s_err < best_s) || (isapprox(s_err, best_s; atol = 1e-12) && t_err < best_t)
+                best_s = s_err
+                best_t = t_err
+                best_perm = perm
+                best_Sn = Sn
+                best_Tn = Tn
+            end
         end
     end
 
@@ -573,9 +648,9 @@ function _modular_data_roundtrip(F_values::Vector{ComplexF64},
             S_max = best_s,
             T_max = best_t,
             best_perm = best_perm,
-            S_from = S_from_n,
-            T_from = T_from_n,
-            st_signature = _st_signature_under_gauge(S_from_n, T_from_n, automorphisms))
+            S_from = best_Sn,
+            T_from = best_Tn,
+            st_signature = _st_signature_under_gauge(best_Sn, best_Tn, automorphisms))
 end
 
 """
