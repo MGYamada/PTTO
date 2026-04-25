@@ -69,3 +69,25 @@ using ACMG
         @test isapprox(out.T_best[2], T_from[2]; atol = 1e-8)
     end
 end
+
+@testset "Pipeline fusion-rule aggregation key" begin
+    @testset "fusion_rule_key is invariant under non-unit relabeling and tensor type" begin
+        Nijk = zeros(Int, 3, 3, 3)
+        for i in 1:3
+            Nijk[1, i, i] = 1
+            Nijk[i, 1, i] = 1
+        end
+        # 2 ⊗ 2 = 1 ⊕ 2, 3 ⊗ 3 = 1 ⊕ 3, 2 ⊗ 3 = 3
+        Nijk[2, 2, 1] = 1
+        Nijk[2, 2, 2] = 1
+        Nijk[3, 3, 1] = 1
+        Nijk[3, 3, 3] = 1
+        Nijk[2, 3, 3] = 1
+        Nijk[3, 2, 3] = 1
+
+        perm = [1, 3, 2]
+        N_perm = Nijk[perm, perm, perm]
+        @test ACMG.fusion_rule_key(Nijk) == ACMG.fusion_rule_key(N_perm)
+        @test ACMG.fusion_rule_key(Int32.(Nijk)) == ACMG.fusion_rule_key(Nijk)
+    end
+end

@@ -141,7 +141,7 @@ end
     end
 
     @testset "compute_FR_from_ST does not enforce ribbon against input T" begin
-        fr = compute_FR_from_ST(Nijk, T_expected;
+        fr = compute_FR_from_ST(Nijk;
                                 ribbon_atol = 1e-8,
                                 require_ribbon_match = false,
                                 return_all = true,

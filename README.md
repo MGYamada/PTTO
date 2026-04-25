@@ -14,7 +14,7 @@ Nijk[1,1,1] = Nijk[1,2,2] = Nijk[2,1,2] = Nijk[2,2,1] = Nijk[2,2,2] = 1
 # Fibonacci T
 T = ComplexF64[1.0, exp(4π * im / 5)]
 
-result = compute_FR_from_ST(Nijk, T)
+result = compute_FR_from_ST(Nijk)
 # result.F :: Vector{ComplexF64}  pentagon F-symbols
 # result.R :: Vector{ComplexF64}  hexagon R-symbols
 # result.report :: VerifyReport   pentagon/hexagon/ribbon residuals < 1e-14
@@ -86,28 +86,28 @@ The Fibonacci category has rank 2, fusion ring `τ ⊗ τ = 1 ⊕ τ`, and
 twists `θ_1 = 1`, `θ_τ = exp(4πi/5)`.
 
 > **Conductor note (for this section):**
-> Here `N = 5` means the **conductor of the input T-spectrum** used by
-> `compute_FR_from_ST`. This function does not run a conductor search;
-> it only solves `(F, R)` for the given `(Nijk, T)`.
+> Here `N = 5` means the conductor used when deriving the example twists.
+> `compute_FR_from_ST` itself does not run a conductor search; it solves
+> `(F, R)` from fusion data `Nijk`.
 
 For Fibonacci, the pentagon system has 5 F-variables and 12 equations;
 the hexagon system has 2 variables once F is fixed.
 
-`compute_FR_from_ST` takes a fusion tensor and complex T-eigenvalues
-and performs:
+`compute_FR_from_ST` takes only a fusion tensor and performs:
 
 1. Pentagon HC on `Nijk` — returns 4 F-solutions, split into 2
    gauge classes.
 2. For each F: hexagon HC — each pentagon solution yields 2 R-solutions.
-3. Computes ribbon residuals `(R^{ij}_k)² = θ_i θ_j / θ_k` against the
-   input `T` and chooses the minimum-residual `(F, R)` pair.
+3. Returns numerically valid pentagon/hexagon `(F, R)` candidates.
+   Modular-data branch selection against `T` is done later in the
+   pipeline roundtrip step.
 
 ```julia
-result = compute_FR_from_ST(Nijk, T_fib; ribbon_atol = 1e-8, verbose = true)
+result = compute_FR_from_ST(Nijk; ribbon_atol = 1e-8, verbose = true)
 
 # Result
 #   pentagon HC: 4 solutions
-#   ribbon matches: 2 of 8 (F,R) pairs
+#   n_matches: number of numerically valid pentagon/hexagon pairs
 #   chosen pair: F[2] × R[2]
 #   VerifyReport(rank=2,
 #                pentagon_max = 3.96e-16 over 12 eqs,
@@ -116,23 +116,21 @@ result = compute_FR_from_ST(Nijk, T_fib; ribbon_atol = 1e-8, verbose = true)
 ```
 
 The returned `(F, R)` pair can be handed to `verify_mtc(F, R, Nijk; T)`
-independently for re-verification, or fed into downstream algebraic
-recognition.
+independently for ribbon re-verification, or fed into downstream
+algebraic recognition.
 
-As a sanity check, running the same fusion ring against a bogus
-`T = (1, i)` — a semion-like twist not consistent with the Fibonacci
-pentagon class — yields zero ribbon matches (`n_matches == 0`), while
-still returning the minimum-residual `(F,R)` candidate for diagnostics:
+For diagnostics, `n_matches` reports how many pentagon/hexagon-valid
+candidates were found for the given fusion ring:
 
 ```julia
-compute_FR_from_ST(Nijk, ComplexF64[1.0, im]).n_matches    # == 0
+compute_FR_from_ST(Nijk).n_matches    # == 0
 ```
 
 ## Difference between `N` in `compute_FR_from_ST` and in `classify_mtcs_at_conductor`
 
-- On the `compute_FR_from_ST(Nijk, T)` side:
-  - You are matching `(F, R)` on a fixed fusion ring using the **conductor of the input T-spectrum** (root-of-unity phases in `T`).
-  - In the Fibonacci example, `T = (1, exp(4πi/5))`, so `N_T = 5`.
+- On the `compute_FR_from_ST(Nijk)` side:
+  - You solve pentagon/hexagon `(F, R)` on a fixed fusion ring.
+  - Twist/conductor interpretation enters later when checking a chosen branch against modular data.
 - On the `classify_mtcs_at_conductor(N; ...)` side:
   - You are searching candidates that satisfy consistency conditions for the **full MTC (including the S-field)** starting from `N`.
   - Under `conductor_mode = :full_mtc`, the internal search uses
@@ -347,7 +345,7 @@ scores < 1e-10 across all three.
 
 `Pipeline.jl`.
 
-- `compute_FR_from_ST(Nijk, T; ...)`: solve pentagon via HC, solve
+- `compute_FR_from_ST(Nijk; ...)`: solve pentagon via HC, solve
   hexagon for each F, select `(F, R)` with minimum ribbon residual vs.
   `T`. Returns a NamedTuple with the selected pair and a `VerifyReport`.
 - `classify_from_group(group, N, stratum, primes; ...)`: CRT + ℂ-lift
@@ -525,4 +523,3 @@ scripts/
 | 3     | CRT + Galois-aware reconstruction       | ✅     |
 | 4     | Pentagon + Hexagon + Ribbon (ℂ)         | ✅     |
 | 5     | End-to-end `classify_mtcs_at_conductor` | ✅     |
-
