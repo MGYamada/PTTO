@@ -489,53 +489,22 @@ function _infer_T_candidates_from_monodromy(R_values::Vector{ComplexF64},
     end
     isempty(eqs) && return [vcat(ComplexF64[1.0 + 0.0im], fill(1.0 + 0.0im, r - 1))]
 
-    assignments = fill(-1, vars)  # t_2 ... t_r
     sols = Vector{Vector{Int}}()
-    nextval = fill(0, vars)
-
-    pos = 1
-    while pos >= 1
+    ranges = ntuple(_ -> 0:(N - 1), vars)
+    for tup in Iterators.product(ranges...)
         length(sols) >= max_candidates && break
-        if pos > vars
-            push!(sols, copy(assignments))
-            pos -= 1
-            if pos >= 1
-                nextval[pos] += 1
-            end
-            continue
-        end
-    end
-    return best
-end
-
-        if nextval[pos] >= N
-            nextval[pos] = 0
-            assignments[pos] = -1
-            pos -= 1
-            if pos >= 1
-                nextval[pos] += 1
-            end
-            continue
-        end
-
-        assignments[pos] = nextval[pos]
+        assignments = collect(tup)
         ok = true
         for (a, b, c, m) in eqs
             ta = a == 1 ? 0 : assignments[a - 1]
             tb = b == 1 ? 0 : assignments[b - 1]
             tc = c == 1 ? 0 : assignments[c - 1]
-            if ta >= 0 && tb >= 0 && tc >= 0
-                if mod(ta + tb - tc - m, N) != 0
-                    ok = false
-                    break
-                end
+            if mod(ta + tb - tc - m, N) != 0
+                ok = false
+                break
             end
         end
-        if ok
-            pos += 1
-        else
-            nextval[pos] += 1
-        end
+        ok && push!(sols, assignments)
     end
 
     T_candidates = Vector{Vector{ComplexF64}}()
