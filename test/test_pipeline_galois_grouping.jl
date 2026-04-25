@@ -116,7 +116,7 @@ using ACMG
         @test selector.branch_sign_getter(p_other) == 1
 
         groups = ACMG.group_mtcs_galois_aware(results, p_anchor;
-                                              scale_d = d,
+                                              quadratic_d = d,
                                               sqrtd_fn = selector.sqrtd_fn,
                                               branch_sign_getter = selector.branch_sign_getter,
                                               branch_sign_setter = selector.branch_sign_setter)
@@ -125,7 +125,7 @@ using ACMG
         @test selector.branch_sign_getter(p_other) == -1
     end
 
-    @testset "regression: N=5, scale_d=5, primes=[41,61] keeps rank-2 sector on both primes" begin
+    @testset "regression: N=5, quadratic_d=5, primes=[41,61] keeps rank-2 sector on both primes" begin
         d = 5
         p_anchor = 41
         p_other = 61
@@ -162,7 +162,7 @@ using ACMG
         @test isempty(contradictory)
 
         groups = ACMG.group_mtcs_galois_aware(results, p_anchor;
-                                              scale_d = d,
+                                              quadratic_d = d,
                                               sqrtd_fn = selector.sqrtd_fn,
                                               branch_sign_getter = selector.branch_sign_getter,
                                               branch_sign_setter = selector.branch_sign_setter)
@@ -194,7 +194,7 @@ using ACMG
         results = Dict(p_anchor => [c_anchor], p_other => [c_other])
 
         groups_bound5 = ACMG.group_mtcs_galois_aware(results, p_anchor;
-                                                     scale_d = d,
+                                                     quadratic_d = d,
                                                      reconstruction_bound = 5,
                                                      sqrtd_fn = selector.sqrtd_fn,
                                                      branch_sign_getter = selector.branch_sign_getter,
@@ -203,7 +203,7 @@ using ACMG
         @test length(groups_bound5[1]) == 1
 
         groups_bound6 = ACMG.group_mtcs_galois_aware(results, p_anchor;
-                                                     scale_d = d,
+                                                     quadratic_d = d,
                                                      reconstruction_bound = 6,
                                                      sqrtd_fn = selector.sqrtd_fn,
                                                      branch_sign_getter = selector.branch_sign_getter,

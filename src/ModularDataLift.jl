@@ -1,7 +1,7 @@
 """
     ModularDataLift
 
-Bridge from ACMG v0.2 Phase 3 output (F_p + ℤ[√d]) to Phase 4 input (ℂ).
+Bridge from finite-field Phase 3 output to exact cyclotomic modular data.
 
 v0.2 Phase 3 produces two kinds of data per MTC candidate:
 - `MTCCandidate.T_Fp :: Vector{Int}`  —  T-eigenvalues mod p
@@ -9,14 +9,13 @@ v0.2 Phase 3 produces two kinds of data per MTC candidate:
   `(a, b)` meaning `a + b·√d` in ℤ[√d]
 - `MTCCandidate.N :: Array{Int,3}`  —  fusion coefficients (Galois-invariant)
 
-Phase 4 (pentagon/hexagon solver) consumes:
+Phase 4 consumes:
 - `Nijk :: Array{Int,3}`                 —  used as-is
-- `(S, T) :: (Matrix{ComplexF64}, Vector{ComplexF64})` —  for Verify layer
-  (not strictly needed for pentagon itself, but needed for round-trip check)
+- `(S, T)` over `Q(ζ_N)`                 —  for exact modular-data checks
 
 This module provides:
-- `lift_T_Fp_to_complex`:  discrete log T_Fp → ζ_N powers → ComplexF64
-- `lift_S_sqrtd_to_complex`: (a, b) in ℤ[√d] → a + b·√d as ComplexF64
+- `lift_T_Fp_to_cyclotomic`:  discrete log T_Fp → powers of ζ_N
+- `lift_S_sqrtd_to_cyclotomic`: exact `(a,b)` reconstruction in `Q(ζ_N)`
 - `lift_mtc_candidate`:    convenience wrapper bundling both
 
 Depends on: Primes (already in v0.2 via ACMG); no new dependencies.
@@ -89,18 +88,19 @@ function discrete_log(tbl::DiscreteLogTable, x::Int)
 end
 
 # ============================================================
-#  T lift: F_p → ℂ
+#  T lift: F_p → Q(ζ_N)
 # ============================================================
 
 """
-    lift_T_Fp_to_complex(T_Fp, N, p, zeta_Fp) -> Vector{ComplexF64}
+    lift_T_Fp_to_cyclotomic(T_Fp, N, p, zeta_Fp) -> Vector
 
-Lift T-eigenvalues from F_p back to ℂ by discrete log.
+Lift T-eigenvalues from F_p back to the cyclotomic field `Q(ζ_N)` by
+discrete log.
 
 Each entry of T is assumed to be an N-th root of unity (axiomatic for
 modular data): T_Fp[i] ∈ ⟨ζ_N⟩ ⊂ F_p*. We recover the exponent k_i
-such that T_Fp[i] = ζ_N^{k_i} mod p, then embed as
-`exp(2π·i·k_i / N) ∈ ℂ`.
+such that T_Fp[i] = ζ_N^{k_i} mod p, then return the exact field element
+`ζ_N^k`.
 
 Arguments:
 - `T_Fp::Vector{Int}`:   T residues mod p, 1-indexed
@@ -109,34 +109,49 @@ Arguments:
 - `zeta_Fp::Int`:        a chosen primitive N-th root of unity in F_p.
                          Must match the one used when reducing T to F_p.
 
-Returns: Vector{ComplexF64} of the same length, each entry on the unit
-circle with argument 2π·k/N for some integer k ∈ [0, N).
+Returns: a vector of elements in `Q(ζ_N)`.
 
 Consistency requirement: The `zeta_Fp` passed here must be THE SAME
 primitive root used when producing `T_Fp`. In v0.2's pipeline this is
 `find_zeta_in_Fp(N, p)`, which uses `primitive_root(p)` as a fixed base.
 """
-function lift_T_Fp_to_complex(T_Fp::Vector{Int}, N::Int, p::Int, zeta_Fp::Int)
+function lift_T_Fp_to_cyclotomic(T_Fp::Vector{Int}, N::Int, p::Int, zeta_Fp::Int)
     (p - 1) % N == 0 || error("N=$N does not divide p-1=$(p-1)")
+    K, z = cyclotomic_field(N)
     tbl = DiscreteLogTable(N, p, zeta_Fp)
-    T_complex = Vector{ComplexF64}(undef, length(T_Fp))
-    two_pi_i_over_N = (2π * im) / N
+    T = Vector{elem_type(K)}(undef, length(T_Fp))
     for i in eachindex(T_Fp)
         k = discrete_log(tbl, T_Fp[i])
-        T_complex[i] = exp(two_pi_i_over_N * k)
+        T[i] = z^k
     end
-    return T_complex
+    return T
 end
 
 # ============================================================
-#  S lift: ℤ[√d] → ℂ
+#  S lift: ℤ[√d] → Q(ζ_N)
 # ============================================================
 
+function _sqrt_d_in_cyclotomic(K, z, N::Int, d::Int)
+    d == 1 && return one(K)
+    if d == 2
+        N % 8 == 0 || error("√2 is not available in Q(ζ_$N); use an N divisible by 8")
+        return z^(N ÷ 8) + z^(7N ÷ 8)
+    elseif d == 3
+        N % 12 == 0 || error("√3 is not available in Q(ζ_$N); use an N divisible by 12")
+        return z^(N ÷ 12) - z^(5N ÷ 12)
+    elseif d == 5
+        N % 5 == 0 || error("√5 is not available in Q(ζ_$N); use an N divisible by 5")
+        return one(K) + 2 * (z^(N ÷ 5) + z^(4N ÷ 5))
+    end
+    error("no built-in exact √$d expression in Q(ζ_$N)")
+end
+
 """
-    lift_S_sqrtd_to_complex(recon_S, d; scale=2) -> Matrix{ComplexF64}
+    lift_S_sqrtd_to_cyclotomic(recon_S, d, N; scale=2) -> Matrix
 
 Convert a matrix of ℤ[√d] entries (as `(a, b)` tuples meaning
-`a + b·√d`) into a ℂ matrix, undoing any normalization scaling.
+`a + b·√d`) into exact elements of `Q(ζ_N)`, undoing any normalization
+scaling.
 
 `reconstruct_S_matrix` in v0.2 returns `scale · √d · S'` for some
 `scale` (default 2 in the SU(2)_4 / d=3 setting). To recover `S'` we
@@ -150,23 +165,18 @@ Arguments:
                                         (v0.2 default, see
                                          `reconstruct_S_matrix` docstring)
 
-Returns: `Matrix{ComplexF64}` representing `S'` as originally a
-cyclotomic-valued matrix.
-
-Note: The choice of branch for √d matches the `sqrtd_fn` used at
-reconstruction time. Here we simply take the positive real branch
-`sqrt(d)` for the ℂ embedding; Galois conjugates should already be
-encoded in the sign of `b`.
+Returns an Oscar matrix over `Q(ζ_N)`.
 """
-function lift_S_sqrtd_to_complex(recon_S::Matrix{Tuple{Int,Int}}, d::Int;
-                                 scale::Int = 2)
+function lift_S_sqrtd_to_cyclotomic(recon_S::Matrix{Tuple{Int,Int}}, d::Int,
+                                    N::Int; scale::Int = 2)
+    K, z = cyclotomic_field(N)
+    sd = _sqrt_d_in_cyclotomic(K, z, N, d)
+    denom = K(scale) * sd
     nrow, ncol = size(recon_S)
-    sd = sqrt(Float64(d))
-    denom = scale * sd
-    result = Matrix{ComplexF64}(undef, nrow, ncol)
+    result = zero_matrix(K, nrow, ncol)
     for i in 1:nrow, j in 1:ncol
         (a, b) = recon_S[i, j]
-        result[i, j] = ComplexF64((a + b * sd) / denom)
+        result[i, j] = (K(a) + K(b) * sd) / denom
     end
     return result
 end
@@ -177,7 +187,7 @@ end
 
 """
     lift_mtc_candidate(candidate, recon_S; d, scale=2) ->
-        (S::Matrix{ComplexF64}, T::Vector{ComplexF64}, Nijk::Array{Int,3})
+        (S, T, Nijk::Array{Int,3})
 
 Combine the two lifts into a single call that produces Phase 4-ready
 modular data from one v0.2 MTCCandidate plus a reconstructed S.
@@ -189,7 +199,7 @@ Arguments:
 - `d::Int`:       the d such that entries live in ℤ[√d] (keyword).
 - `scale::Int=2`: scaling factor used at reconstruction (keyword).
 
-Returns `(S, T, Nijk)` suitable for calling Phase 4 routines:
+Returns exact `(S, T, Nijk)` suitable for calling Phase 4 routines:
 - `Nijk = candidate.N` (pass directly to `get_pentagon_system`)
 - `(S, T)` for downstream verification
 
@@ -202,9 +212,14 @@ Requirements at the call site:
 """
 function lift_mtc_candidate(candidate, recon_S::Matrix{Tuple{Int,Int}};
                             d::Int, N::Int, zeta_Fp::Int, scale::Int = 2)
-    S_ℂ = lift_S_sqrtd_to_complex(recon_S, d; scale = scale)
-    T_ℂ = lift_T_Fp_to_complex(candidate.T_Fp, N, candidate.p, zeta_Fp)
+    S = lift_S_sqrtd_to_cyclotomic(recon_S, d, N; scale = scale)
+    T = lift_T_Fp_to_cyclotomic(candidate.T_Fp, N, candidate.p, zeta_Fp)
     Nijk = candidate.N
-    return (S_ℂ, T_ℂ, Nijk)
+    return (S, T, Nijk)
 end
 
+lift_T_Fp_to_complex(args...; kwargs...) =
+    error("lift_T_Fp_to_complex was removed; use lift_T_Fp_to_cyclotomic for exact Q(ζ_N) output")
+
+lift_S_sqrtd_to_complex(args...; kwargs...) =
+    error("lift_S_sqrtd_to_complex was removed; use lift_S_sqrtd_to_cyclotomic for exact Q(ζ_N) output")

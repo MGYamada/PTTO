@@ -2,12 +2,17 @@ using Test
 using ACMG
 
 @testset "Pipeline prime selection and modes" begin
-    @testset "conductor_mode default uses auto N_effective in prime validity check" begin
+    @testset "N_effective is fixed to N" begin
+        @test ACMG.compute_effective_conductor(1) == 1
+        @test ACMG.compute_effective_conductor(8) == 8
+        @test ACMG.compute_effective_conductor(20) == 20
+    end
+
+    @testset "prime validity uses N directly" begin
         err = try
-            ACMG.classify_mtcs_at_conductor(1;
+            ACMG.classify_mtcs_at_conductor(8;
                                             max_rank = 1,
-                                            primes = [5, 13],
-                                            scale_d = 2,
+                                            primes = [17, 19],
                                             skip_FR = true,
                                             verbose = false)
             nothing
@@ -18,8 +23,8 @@ using ACMG
         @test err isa ErrorException
         msg = sprint(showerror, err)
         @test occursin("N_effective | p-1", msg)
-        @test occursin("input N=1", msg)
-        @test occursin("N_effective=24", msg)
+        @test occursin("input N=8", msg)
+        @test occursin("N_effective=8", msg)
     end
 
     @testset "classify_mtcs_at_conductor auto-selects primes when omitted" begin
@@ -43,12 +48,11 @@ using ACMG
         @test occursin("N_eff=24", msg)
     end
 
-    @testset "conductor_mode=:T_only is removed in v0.5.0" begin
+    @testset "conductor_mode=:T_only is removed" begin
         err = try
-            ACMG.classify_mtcs_at_conductor(1;
+            ACMG.classify_mtcs_at_conductor(8;
                                             max_rank = 1,
-                                            primes = [73, 97],
-                                            scale_d = 2,
+                                            primes = [17, 41],
                                             conductor_mode = :T_only,
                                             skip_FR = true,
                                             verbose = false)
@@ -58,55 +62,30 @@ using ACMG
         end
 
         @test err isa ErrorException
-        @test occursin("removed in v0.5.0", sprint(showerror, err))
+        @test occursin("removed", sprint(showerror, err))
     end
 
     @testset "classify_mtcs_auto returns reproducibility metadata" begin
-        auto = ACMG.classify_mtcs_auto(1;
+        auto = ACMG.classify_mtcs_auto(8;
                                        max_rank_candidates = [1],
-                                       scale_d_candidates = [2],
-                                       d_candidates = [2],
+                                       d_candidates = [1],
                                        min_primes = 2,
-                                       prime_start = 29,
-                                       prime_max = 200,
+                                       prime_start = 11,
+                                       prime_max = 50,
                                        max_attempts = 1,
                                        skip_FR = true,
                                        verbose = false)
 
         @test haskey(auto, :classified)
         @test haskey(auto, :N_effective)
-        @test haskey(auto, :scale_d)
         @test haskey(auto, :primes)
         @test haskey(auto, :max_rank)
-        @test auto.N_input == 1
-        @test auto.N_effective == 24
-        @test auto.scale_d == 2
+        @test auto.N_input == 8
+        @test auto.N_effective == 8
         @test auto.conductor_mode == :full_mtc
         @test auto.max_rank == 1
         @test length(auto.primes) == 2
         @test auto.attempts == 1
-    end
-
-    @testset "classify_mtcs_auto rejects :T_only in v0.5.0" begin
-        err = try
-            ACMG.classify_mtcs_auto(1;
-                                    max_rank_candidates = [1],
-                                    scale_d_candidates = [2],
-                                    d_candidates = [1],
-                                    conductor_modes = [:T_only],
-                                    min_primes = 2,
-                                    prime_start = 29,
-                                    prime_max = 39,
-                                    max_attempts = 1,
-                                    skip_FR = true,
-                                    verbose = false)
-            nothing
-        catch e
-            e
-        end
-
-        @test err isa ErrorException
-        @test occursin("removed in v0.5.0", sprint(showerror, err))
     end
 
     @testset "select_admissible_primes picks valid primes" begin
@@ -135,25 +114,5 @@ using ACMG
         @test occursin("insufficient admissible primes", msg)
         @test occursin("(29, 39]", msg)
         @test occursin("found", msg)
-    end
-
-    @testset "classify_mtcs_auto records prime-search shortage reason" begin
-        auto = ACMG.classify_mtcs_auto(1;
-                                       max_rank_candidates = [1],
-                                       scale_d_candidates = [2],
-                                       d_candidates = [1],
-                                       min_primes = 2,
-                                       prime_start = 29,
-                                       prime_max = 39,
-                                       max_attempts = 1,
-                                       skip_FR = true,
-                                       verbose = false)
-
-        @test isempty(auto.classified)
-        @test length(auto.history) == 1
-        @test auto.history[1].executed
-        @test !auto.history[1].success
-        @test occursin("insufficient admissible primes", auto.history[1].reason)
-        @test occursin("(29, 39]", auto.history[1].reason)
     end
 end

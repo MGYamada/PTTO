@@ -209,7 +209,7 @@ Tests for CRT module (Phase 3) — pure F_p parts, no Oscar.
         results = Dict(p_anchor => [c_anchor], p_other => [c_other])
 
         groups = ACMG.group_mtcs_galois_aware(results, p_anchor;
-                                              scale_d = d,
+                                              quadratic_d = d,
                                               sqrtd_fn = sel.sqrtd_fn,
                                               branch_sign_getter = sel.branch_sign_getter,
                                               branch_sign_setter = sel.branch_sign_setter)

@@ -298,7 +298,7 @@ end
 """
     group_mtcs_galois_aware(results_by_prime::Dict{Int, Vector{MTCCandidate}},
                              anchor_prime::Int;
-                             scale_d::Int = 3,
+                             quadratic_d::Int = 3,
                              reconstruction_bound::Int = 50,
                              sqrtd_fn = (d, p) -> compute_sqrt3_cyclotomic_mod_p(p))
         -> Vector{Dict{Int, MTCCandidate}}
@@ -320,17 +320,19 @@ pass the same `sqrtd_fn` as `classify_from_group` / `reconstruct_S_matrix`.
 """
 function group_mtcs_galois_aware(results_by_prime::Dict{Int, Vector{MTCCandidate}},
                                   anchor_prime::Int;
-                                  scale_d::Int = 3,
+                                  quadratic_d::Int = 3,
                                   reconstruction_bound::Int = 50,
                                   sqrtd_fn = (d, p) -> compute_sqrt3_cyclotomic_mod_p(p),
                                   branch_sign_getter = nothing,
-                                  branch_sign_setter = nothing)
+                                  branch_sign_setter = nothing,
+                                  kwargs...)
+    isempty(kwargs) || error("unsupported keyword arguments: $(collect(keys(kwargs)))")
     haskey(results_by_prime, anchor_prime) || error("anchor_prime $anchor_prime not in results")
     anchor_cands = results_by_prime[anchor_prime]
 
     # For each anchor candidate, seed a group. For each other prime's
-    # candidate, accept it if `2·√scale_d · S_Fp` from {anchor, p} can be
-    # reconstructed as Z[√scale_d] with small bounded coefficients. This
+    # candidate, accept it if `2·√quadratic_d · S_Fp` from {anchor, p} can be
+    # reconstructed as Z[√quadratic_d] with small bounded coefficients. This
     # is the same test `verify_reconstruction` does, just truncated to
     # two primes.
 
@@ -365,8 +367,8 @@ function group_mtcs_galois_aware(results_by_prime::Dict{Int, Vector{MTCCandidate
                         branch_sign_setter(p, sgn)
                     end
                     try
-                        s_anchor = sqrtd_fn(scale_d, anchor_prime)
-                        s_p = sqrtd_fn(scale_d, p)
+                        s_anchor = sqrtd_fn(quadratic_d, anchor_prime)
+                        s_p = sqrtd_fn(quadratic_d, p)
                         two_s_anchor = mod(2 * s_anchor, anchor_prime)
                         two_s_p = mod(2 * s_p, p)
                         nrow = size(anchor_c.S_Fp, 1)
@@ -378,7 +380,7 @@ function group_mtcs_galois_aware(results_by_prime::Dict{Int, Vector{MTCCandidate
                             mod(two_s_p * c.S_Fp[i, j], p)
                             for i in 1:nrow, j in 1:nrow]
                         recon = reconstruct_matrix_in_Z_sqrt_d(
-                            matrix_by_prime, scale_d;
+                            matrix_by_prime, quadratic_d;
                             bound = reconstruction_bound,
                             sqrtd_fn = sqrtd_fn)
                         # Success: score by coefficient size to prefer the
@@ -422,7 +424,7 @@ function group_mtcs_galois_aware(results_by_prime::Dict{Int, Vector{MTCCandidate
 end
 
 """
-    build_sqrtd_selector(scale_d::Int, primes::Vector{Int}, anchor_prime::Int; verbose::Bool = false)
+    build_sqrtd_selector(quadratic_d::Int, primes::Vector{Int}, anchor_prime::Int; verbose::Bool = false)
         -> NamedTuple
 
 Build a per-`d` square-root selector that is consistent across primes.
@@ -434,14 +436,14 @@ Build a per-`d` square-root selector that is consistent across primes.
   layer on top of raw Tonelli-style roots, so callers can align branches
   by updating `branch_sign_setter`.
 """
-function build_sqrtd_selector(scale_d::Int, primes::Vector{Int}, anchor_prime::Int;
+function build_sqrtd_selector(quadratic_d::Int, primes::Vector{Int}, anchor_prime::Int;
                               verbose::Bool = false)
-    if scale_d in (2, 3, 5)
+    if quadratic_d in (2, 3, 5)
         sign_by_prime = Dict{Int, Int}(anchor_prime => 1)
         cyclotomic_base = function (p::Int)
-            if scale_d == 2
+            if quadratic_d == 2
                 return compute_sqrt2_cyclotomic_mod_p(p)
-            elseif scale_d == 3
+            elseif quadratic_d == 3
                 return compute_sqrt3_cyclotomic_mod_p(p)
             else
                 return compute_sqrt5_cyclotomic_mod_p(p)
@@ -455,12 +457,12 @@ function build_sqrtd_selector(scale_d::Int, primes::Vector{Int}, anchor_prime::I
             return nothing
         end
         sqrtd_fn = function (d::Int, p::Int)
-            d == scale_d || error("cyclotomic selector was built for d=$scale_d, got d=$d")
+            d == quadratic_d || error("cyclotomic selector was built for d=$quadratic_d, got d=$d")
             base = cyclotomic_base(p)
             sgn = branch_sign_getter(p)
             return sgn == 1 ? base : mod(-base, p)
         end
-        verbose && println("  √d selector: d=$scale_d, branch=cyclotomic-signed (anchor prime=$anchor_prime)")
+        verbose && println("  √d selector: d=$quadratic_d, branch=cyclotomic-signed (anchor prime=$anchor_prime)")
         return (sqrtd_fn = sqrtd_fn,
                 mode = :cyclotomic_signed,
                 anchor_prime = anchor_prime,
@@ -472,8 +474,8 @@ function build_sqrtd_selector(scale_d::Int, primes::Vector{Int}, anchor_prime::I
     raw_cache = Dict{Int, Int}()
     raw_root = function (p::Int)
         if !haskey(raw_cache, p)
-            s = compute_sqrt_d_mod_p(scale_d, p)
-            s === nothing && error("$scale_d is not a QR mod $p")
+            s = compute_sqrt_d_mod_p(quadratic_d, p)
+            s === nothing && error("$quadratic_d is not a QR mod $p")
             raw_cache[p] = s
         end
         return raw_cache[p]
@@ -486,13 +488,13 @@ function build_sqrtd_selector(scale_d::Int, primes::Vector{Int}, anchor_prime::I
         return nothing
     end
     sqrtd_fn = function (d::Int, p::Int)
-        d == scale_d || error("anchored selector was built for d=$scale_d, got d=$d")
+        d == quadratic_d || error("anchored selector was built for d=$quadratic_d, got d=$d")
         s = raw_root(p)
         sgn = branch_sign_getter(p)
         return sgn == 1 ? s : mod(-s, p)
     end
 
-    verbose && println("  √d selector: d=$scale_d, branch=anchored (anchor prime=$anchor_prime)")
+    verbose && println("  √d selector: d=$quadratic_d, branch=anchored (anchor prime=$anchor_prime)")
     return (sqrtd_fn = sqrtd_fn,
             mode = :anchored,
             anchor_prime = anchor_prime,
@@ -698,27 +700,29 @@ Actually more cleanly: for D² = 12 we scale by 2√3 (not 2D = 4√3), because
 the Kac-Peterson S has an extra 1/2 factor in its natural form. The result
 M has entries in Z[√3].
 
-This function takes the parameter `scale_d`: the d such that the scaling
-is √(scale_d). For SU(2)_4 (D² = 12), scale_d = 3.
+This function takes the parameter `quadratic_d`: the d such that the scaling
+is √(quadratic_d). For SU(2)_4 (D² = 12), quadratic_d = 3.
 """
 function reconstruct_S_matrix(group::Dict{Int, MTCCandidate};
-                              scale_d::Int = 3,
+                              quadratic_d::Int = 3,
                               bound::Int = 5,
-                              sqrtd_fn = compute_sqrt_d_mod_p)
+                              sqrtd_fn = compute_sqrt_d_mod_p,
+                              kwargs...)
+    isempty(kwargs) || error("unsupported keyword arguments: $(collect(keys(kwargs)))")
     primes = collect(keys(group))
 
-    # Build matrix_by_prime: S_scaled[p][i, j] = (2 · √scale_d · S'[i, j]) mod p
+    # Build matrix_by_prime: S_scaled[p][i, j] = (2 · √quadratic_d · S'[i, j]) mod p
     matrix_by_prime = Dict{Int, Matrix{Int}}()
     for p in primes
-        s = sqrtd_fn(scale_d, p)
-        s === nothing && error("$scale_d is not a QR mod $p")
+        s = sqrtd_fn(quadratic_d, p)
+        s === nothing && error("$quadratic_d is not a QR mod $p")
         two_s = mod(2 * s, p)
         S_p = group[p].S_Fp
         M_p = [mod(two_s * S_p[i, j], p) for i in 1:size(S_p, 1), j in 1:size(S_p, 2)]
         matrix_by_prime[p] = M_p
     end
 
-    return reconstruct_matrix_in_Z_sqrt_d(matrix_by_prime, scale_d; bound = bound, sqrtd_fn = sqrtd_fn)
+    return reconstruct_matrix_in_Z_sqrt_d(matrix_by_prime, quadratic_d; bound = bound, sqrtd_fn = sqrtd_fn)
 end
 
 """

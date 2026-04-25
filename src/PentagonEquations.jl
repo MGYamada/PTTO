@@ -15,9 +15,8 @@ The result is a list of polynomials in Oscar's `QQMPolyRingElem` whose
 variables correspond to the independent entries of every associator block
 F^{ijk}_o. The **variable-to-block correspondence** is defined by
 TensorCategories' internal traversal order (nested loops over i, j, k, o
-with a `pop!` from a shared stack). `assign_F_to_associator!` in
-`HexagonEquations.jl` mirrors exactly this order so that numerical
-solutions from the pentagon can be injected back into a category object.
+with a `pop!` from a shared stack). Exact solvers should preserve this
+ordering when interpreting a point of the pentagon variety.
 
 Depends on: TensorCategories.jl (>= 0.1), Oscar.jl
 """
@@ -50,10 +49,8 @@ Notes
 - TensorCategories' pentagon_equations uses 1-indexed unit at position 1.
   We pass `one_vec = [1, 0, 0, ..., 0]` to mark this.
 - The **variable ordering is an internal implementation detail** of
-  TensorCategories. Any code that consumes a solution from
-  `solve_pentagon_*` must route the values through
-  `assign_F_to_associator!` (in HexagonEquations.jl), which respects the
-  same ordering.
+  TensorCategories. Exact solver code should preserve this ordering when
+  converting between polynomial coordinates and associator blocks.
 """
 function get_pentagon_system(Nijk::Array{Int,3}, r::Int)
     size(Nijk) == (r, r, r) || error("Nijk must have shape ($r, $r, $r), got $(size(Nijk))")
@@ -71,4 +68,3 @@ function get_pentagon_system(Nijk::Array{Int,3}, r::Int)
     n = nvars(R)
     return R, eqs, n
 end
-

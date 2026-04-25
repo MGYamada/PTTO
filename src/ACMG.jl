@@ -3,7 +3,7 @@
 
 Modular Tensor Category classification by fixing the conductor `N`,
 running an SL(2, ℤ/N) stratum + block-U enumeration, multi-prime F_p
-sweep + CRT reconstruction, and pentagon/hexagon `(F, R)` solution.
+sweep + CRT reconstruction, and exact lift to `Q(ζ_N)`.
 
 Top-level pipeline:
 
@@ -16,6 +16,8 @@ returns a `Vector{ClassifiedMTC}`, one per Galois sector per stratum.
 Module organisation (all at ACMG top level — no submodules):
 - Types:               Core layer (data types + F_p arithmetic +
                        modular-data validation + Verlinde extraction)
+- CyclotomicContext:  exact arithmetic context `Q(ζ_N)` and
+                       context-carrying `ModularData`
 - SL2Reps:             SL(2, ℤ/N) irreducible representation catalog
                        (Oscar + GAP/SL2Reps)                  [Phase 0]
 - StratumEnum:         combinatorial partition `Σ m_λ d_λ = r`[Phase 1]
@@ -23,18 +25,13 @@ Module organisation (all at ACMG top level — no submodules):
                        `find_mtcs_at_prime`                   [Phase 2]
 - CRT:                 multi-prime CRT reconstruction + Galois-aware
                        grouping                               [Phase 3]
-- PentagonEquations:   pentagon equations from fusion rule
+- PentagonEquations:   pentagon equation generation
                        (TensorCategories wrapper)             [Phase 4]
-- PentagonSolver:      F_p + Groebner + CRT pentagon solvers  [Phase 4]
-- HexagonEquations:    hexagon equations with F baked in      [Phase 4]
-- HexagonSolver:       F_p + Groebner + CRT solver for R      [Phase 4]
-- ModularDataLift:     F_p / ℤ[√d] → ℂ lift                   [Phase 4]
-- Verify:              pentagon / hexagon / ribbon residuals,
-                       `VerifyReport`, `verify_mtc`           [Phase 4]
+- ModularDataLift:     exact F_p / ℤ[√d] → Q(ζ_N) lift        [Phase 4]
 - Pipeline:            end-to-end driver `classify_mtcs_at_conductor`,
                        auto wrapper `classify_mtcs_auto`,
-                       `compute_FR_from_ST`, `classify_from_group`,
-                       and the `ClassifiedMTC` output type    [Phase 5]
+                       `classify_from_group`, and the
+                       `ClassifiedMTC` output type             [Phase 5]
 """
 module ACMG
 
@@ -54,16 +51,18 @@ include("StratumEnum.jl")
 # Block-U parametrisation and MTC reconstruction — Phase 2
 include("BlockU.jl")
 
+# Cyclotomic context and exact modular-data objects
+include("CyclotomicContext.jl")
+
 # Multi-prime CRT reconstruction — Phase 3
 include("CRT.jl")
 
-# Phase 4: Pentagon/Hexagon (F, R) solver + verify, all at top level
+# Phase 4: exact F/R equations and solvers over cyclotomic fields
 include("PentagonEquations.jl")
 include("PentagonSolver.jl")
 include("HexagonEquations.jl")
 include("HexagonSolver.jl")
 include("ModularDataLift.jl")
-include("Verify.jl")
 
 # Prime selection helpers
 include("PrimeSelection.jl")
@@ -77,6 +76,10 @@ include("Pipeline.jl")
 
 # Core types and F_p arithmetic
 export ModularDatumFp, FusionRule
+export CyclotomicContext, ModularData
+export field, zeta, conductor, cond_S, cond_T, cond_F
+export semion_modular_data, fibonacci_modular_data, ising_modular_data, modular_data
+export galois_action, galois_orbit, frobenius, reduce_mod_p
 export validate_modular_data, build_modular_datum, compute_alpha, compute_charge_conjugation
 export extract_fusion_rule_Fp, lift_fusion_to_Z, extract_and_lift
 export verlinde_coefficient
@@ -115,18 +118,12 @@ export verify_reconstruction, describe_matrix
 
 # Phase 4: (F, R) classification
 export get_pentagon_system
-export solve_pentagon_modular_crt
-export solve_pentagon_newton, solve_pentagon_homotopy, refine_solution_newton
-export eval_poly_complex, sparse_jacobian
-export hexagon_equations, get_hexagon_system
+export solve_pentagon_modular_crt, solve_pentagon_homotopy, solve_pentagon_newton
+export assign_F_to_associator!, hexagon_equations, get_hexagon_system
 export number_of_variables_in_hexagon_equations
-export coerce_complex, invert_associator_numeric, assign_F_to_associator!
 export solve_hexagon_modular_crt, solve_hexagon_homotopy
-export DiscreteLogTable, lift_T_Fp_to_complex, lift_S_sqrtd_to_complex
+export DiscreteLogTable, lift_T_Fp_to_cyclotomic, lift_S_sqrtd_to_cyclotomic
 export lift_mtc_candidate
-export pentagon_residuals, hexagon_residuals
-export extract_R_block, block_positions_R
-export ribbon_residuals, VerifyReport, verify_mtc
 
 # End-to-end pipeline
 export ClassifiedMTC

@@ -7,32 +7,28 @@ MTCs, each carrying:
 - the SL(2, ℤ/N) stratum (m_λ) decomposition (Phase 0/1),
 - F_p-validated modular data (Phase 2),
 - Galois-coherent, arithmetic S-matrix in ℤ[√d] (Phase 3),
-- `(F, R)` symbols in ℂ satisfying pentagon + hexagon (Phase 4),
-- a `VerifyReport` summarising residuals.
+- exact `(S, T)` lifted to `Q(ζ_N)` with `N` fixed as the base conductor.
 
 This module also provides two mid-level helpers:
 
-- `compute_FR_from_ST(Nijk; ...)`: given a fusion tensor,
-  solve for `(F, R)` via F_p Groebner/CRT pentagon → hexagon.
+- `compute_FR_from_ST(Nijk; ...)`: exact cyclotomic Phase 4 helper.
 
 - `classify_from_group(group, all_primes; ...)`: given a Galois-coherent
   group from `group_mtcs_galois_aware`, performs Phase 3 CRT + Phase 4
-  `(F, R)` solve and returns a single `ClassifiedMTC`.
+  exact lift and returns a single `ClassifiedMTC`.
 
 And one high-level convenience API:
 
 - `classify_mtcs_auto(N; ...)`: automatically chooses
-  `conductor_mode`, `scale_d`, `primes`, and `max_rank` from candidate
+  `conductor_mode`, `primes`, and `max_rank` from candidate
   lists, then runs `classify_mtcs_at_conductor`.
 
 Design notes:
 - The pipeline is conductor-first: `N` is the outer loop; rank emerges
   from stratum enumeration.
-- `(F, R)` is computed over ℂ (`ComplexF64`). Algebraic lift to ℚ(ζ_N)
-  is not performed; users can PSLQ/LLL downstream.
-- For each Galois-coherent group, Phase 4 may return no match (e.g. if
-  the fusion ring has no braided structure at the given T) — such
-  groups are reported but `classified_mtc.FR === nothing` in that case.
+- Modular data is lifted exactly to `Q(ζ_N)`.  The effective conductor is
+  fixed to the user-supplied `N`.
+- `skip_FR = false` runs exact cyclotomic `(F, R)` reconstruction.
 """
 
 using LinearAlgebra
@@ -47,7 +43,7 @@ using LinearAlgebra
 The full output of `classify_mtcs_at_conductor` for a single MTC.
 
 Arithmetic / F_p layer (Phase 0–3 output):
-- `N`:              effective conductor used internally by the pipeline
+- `N`:              conductor used internally by the pipeline
 - `N_input`:        user-requested conductor (for provenance)
 - `rank`:           rank
 - `stratum`:        the SL(2, ℤ/N) irrep decomposition `(m_λ)` that gave
@@ -56,26 +52,21 @@ Arithmetic / F_p layer (Phase 0–3 output):
 - `S_Zsqrtd`:       S-matrix as `(a, b)` = `a + b·√d` in ℤ[√d]
                     (after Phase 3 CRT; entries before dividing by
                     `scale · √d`)
-- `scale_d`:        the `d` such that `S_Zsqrtd` lives in ℤ[√d]
+- `quadratic_d`:    the inferred `d` such that `S_Zsqrtd` lives in ℤ[√d]
 - `scale_factor`:   the scalar multiplying `S` before reconstruction
-                    (so `S_ℂ = S_Zsqrtd / (scale_factor · √d)`)
+                    (so `S_cyclotomic = S_Zsqrtd / (scale_factor · √d)`)
 - `used_primes`:    primes used for CRT reconstruction
 - `fresh_primes`:   primes used for cross-validation (may be empty)
 - `verify_fresh`:   `true` iff all fresh primes cross-check
 
-Complex-lifted modular data (Phase 4 input):
-- `S_complex`:      `Matrix{ComplexF64}`, lifted from `S_Zsqrtd`
-- `T_complex`:      `Vector{ComplexF64}` of T-eigenvalues (θ_i), N-th
-                    roots of unity on the unit circle
+Exact modular data (Phase 4 input):
+- `S_cyclotomic`:   S-matrix over `Q(ζ_N)`
+- `T_cyclotomic`:   T-eigenvalues over `Q(ζ_N)`
 
-(F, R) symbols (Phase 4 output):
-- `F_values`:       pentagon solution in ℂ, `Vector{ComplexF64}`.
-                    `nothing` if no match was found.
-- `R_values`:       hexagon solution in ℂ, `Vector{ComplexF64}` of
-                    length `2 · r_var_count` (forward ⊕ reverse).
-                    `nothing` if no match was found.
-- `verify_report`:  `VerifyReport` with pentagon/hexagon residuals
-                    max-residuals. `nothing` if no match was found.
+Exact `(F, R)` layer:
+- `F_values`:       reserved for exact pentagon data; currently `nothing`.
+- `R_values`:       reserved for exact braiding data; currently `nothing`.
+- `verify_report`:  reserved for exact verification data; currently `nothing`.
 
 Provenance:
 - `galois_sector`:  integer index of the Galois orbit element
@@ -89,16 +80,16 @@ struct ClassifiedMTC
     stratum::Stratum
     Nijk::Array{Int, 3}
     S_Zsqrtd::Matrix{Tuple{Int, Int}}
-    scale_d::Int
+    quadratic_d::Int
     scale_factor::Int
     used_primes::Vector{Int}
     fresh_primes::Vector{Int}
     verify_fresh::Bool
-    S_complex::Matrix{ComplexF64}
-    T_complex::Vector{ComplexF64}
-    F_values::Union{Vector{ComplexF64}, Nothing}
-    R_values::Union{Vector{ComplexF64}, Nothing}
-    verify_report::Union{VerifyReport, Nothing}
+    S_cyclotomic::Any
+    T_cyclotomic::Any
+    F_values::Union{Vector, Nothing}
+    R_values::Union{Vector, Nothing}
+    verify_report::Any
     galois_sector::Int
 end
 
@@ -147,13 +138,13 @@ function _classify_modular_data_by_fusion_rule(classified::Vector{ClassifiedMTC}
 end
 
 function _with_fr_result(c::ClassifiedMTC,
-                         F::Union{Vector{ComplexF64}, Nothing},
-                         R::Union{Vector{ComplexF64}, Nothing},
-                         report::Union{VerifyReport, Nothing})
+                         F::Union{Vector, Nothing},
+                         R::Union{Vector, Nothing},
+                         report)
     return ClassifiedMTC(c.N, c.N_input, c.rank, c.stratum, c.Nijk,
-                         c.S_Zsqrtd, c.scale_d, c.scale_factor,
+                         c.S_Zsqrtd, c.quadratic_d, c.scale_factor,
                          c.used_primes, c.fresh_primes, c.verify_fresh,
-                         c.S_complex, c.T_complex,
+                         c.S_cyclotomic, c.T_cyclotomic,
                          F, R, report, c.galois_sector)
 end
 
@@ -161,21 +152,26 @@ end
 #  classify_mtcs_auto: user-friendly auto-parameter wrapper
 # ============================================================
 
-cyclotomic_requirement(scale_d::Int) =
-    (scale_d == 2 || scale_d == 3) ? 24 :
-    scale_d == 5 ? 5 : 1
+cyclotomic_requirement(::Int) = 1
 
-function compute_effective_conductor(N::Int, scale_d::Int;
+function compute_effective_conductor(N::Int, args...;
                                      conductor_mode::Symbol = :full_mtc)
     conductor_mode == :full_mtc ||
         error("conductor_mode=:$(conductor_mode) was removed in v0.5.0. Use :full_mtc.")
-    return lcm(N, cyclotomic_requirement(scale_d))
+    return N
+end
+
+function _quadratic_candidates_for_conductor(N::Int)
+    ds = Int[1]
+    N % 8 == 0 && push!(ds, 2)
+    N % 12 == 0 && push!(ds, 3)
+    N % 5 == 0 && push!(ds, 5)
+    return unique(ds)
 end
 
 """
     classify_mtcs_auto(N::Int;
                        max_rank_candidates = [2, 3, 4, 5],
-                       scale_d_candidates = [3, 5, 2],
                        d_candidates = [1, 2, 3, 5, 6, 7, 10],
                        conductor_modes = [:full_mtc],
                        min_primes = 4,
@@ -201,15 +197,14 @@ end
 Auto-select wrapper around `classify_mtcs_at_conductor`.
 
 This function is intended as the recommended public entry point for
-users who do not want to manually specify `max_rank`, `primes`,
-`scale_d`, and `conductor_mode`. It now performs a stage-wise search
-over `d_candidates`, where each stage sets:
+users who do not want to manually specify `max_rank`, `primes`, and
+quadratic reconstruction branches. The effective conductor is fixed to
+the user-supplied `N`.
 
-`N_eff_candidate = compute_effective_conductor(N, d)`.
-
-For each previously unseen `N_eff_candidate`, the driver tries
-`(conductor_mode, scale_d, max_rank)` combinations at each effective
-conductor and records stage metadata. Search stops when any of:
+For each previously unseen effective conductor, the driver tries
+`(conductor_mode, max_rank)` combinations and records stage metadata.
+Since `N_effective = N`, duplicate stages are skipped. Search stops
+when any of:
 
 - no new MTCs for `stagnation_k` consecutive executed stages,
 - `N_eff_candidate > N_eff_max`,
@@ -222,23 +217,19 @@ Returns:
    - `N_input`
    - `N_effective`
    - `d`
-   - `scale_d`
    - `conductor_mode`
    - `primes`
    - `max_rank`
    - `attempts`
    - `history`
 
-Prime selection rule for each attempted `(conductor_mode, scale_d)`:
-- Let `req = lcm(N_effective, cyclotomic_requirement(scale_d))`, where
-  `cyclotomic_requirement(2|3)=24`, `cyclotomic_requirement(5)=5`, else
-  `1`.
+Prime selection rule for each attempted conductor:
+- Let `req = N_effective`.
 - Choose the first `min_primes` primes `p > prime_start` with
   `(p - 1) % req == 0`.
 """
 function classify_mtcs_auto(N::Int;
                             max_rank_candidates::Vector{Int} = [2, 3, 4, 5],
-                            scale_d_candidates::Vector{Int} = [3, 5, 2],
                             d_candidates::Vector{Int} = [1, 2, 3, 5, 6, 7, 10],
                             conductor_modes::Vector{Symbol} = [:full_mtc],
                             min_primes::Int = 4,
@@ -262,14 +253,13 @@ function classify_mtcs_auto(N::Int;
     N >= 1 || error("N must be positive, got $N")
     min_primes >= 2 || error("min_primes must be ≥ 2, got $min_primes")
     !isempty(max_rank_candidates) || error("max_rank_candidates must be non-empty")
-    !isempty(scale_d_candidates) || error("scale_d_candidates must be non-empty")
     !isempty(d_candidates) || error("d_candidates must be non-empty")
     !isempty(conductor_modes) || error("conductor_modes must be non-empty")
     stagnation_k >= 1 || error("stagnation_k must be ≥ 1, got $stagnation_k")
     max_attempts >= 1 || error("max_attempts must be ≥ 1, got $max_attempts")
 
     last_result = ClassifiedMTC[]
-    last_meta = (N_input = N, N_effective = N, d = 1, scale_d = 0,
+    last_meta = (N_input = N, N_effective = N, d = 1,
                  conductor_mode = :full_mtc, primes = Int[],
                  max_rank = 0, attempts = 0)
     attempts = 0
@@ -281,8 +271,7 @@ function classify_mtcs_auto(N::Int;
 
     mtc_signature(m::ClassifiedMTC) = begin
         nijk_key = join(vec(m.Nijk), ",")
-        t_key = join(["$(round(real(t), digits = 10)):$(round(imag(t), digits = 10))"
-                      for t in m.T_complex], ",")
+        t_key = join(string.(m.T_cyclotomic), ",")
         string(m.rank, "|", m.galois_sector, "|", nijk_key, "|", t_key)
     end
 
@@ -313,36 +302,32 @@ function classify_mtcs_auto(N::Int;
             conductor_mode == :full_mtc || error(
                 "conductor_mode=:$(conductor_mode) was removed in v0.5.0. Use :full_mtc.")
 
-            for scale_d in scale_d_candidates
-                attempts >= max_attempts && break
+            req = N_eff_candidate
 
-                req = lcm(N_eff_candidate, cyclotomic_requirement(scale_d))
+            local chosen_primes
+            try
+                chosen_primes = select_admissible_primes(req;
+                                                         min_count = min_primes,
+                                                         window = prime_max - prime_start,
+                                                         start_from = prime_start)
+            catch err
+                stage_reason = sprint(showerror, err)
+                continue
+            end
 
-                local chosen_primes
-                try
-                    chosen_primes = select_admissible_primes(req;
-                                                             min_count = min_primes,
-                                                             window = prime_max - prime_start,
-                                                             start_from = prime_start)
-                catch err
-                    stage_reason = sprint(showerror, err)
-                    continue
-                end
-
-                for max_rank in max_rank_candidates
+            for max_rank in max_rank_candidates
                     attempts >= max_attempts && break
                     attempts += 1
                     stage_attempts += 1
                     verbose && println("AUTO attempt #$attempts: " *
                                        "d=$d N_eff=$N_eff_candidate " *
-                                       "mode=$conductor_mode scale_d=$scale_d " *
+                                       "mode=$conductor_mode " *
                                        "max_rank=$max_rank primes=$chosen_primes")
 
                     classified = classify_mtcs_at_conductor(N_eff_candidate;
                                                             max_rank = max_rank,
                                                             primes = chosen_primes,
                                                             strata = strata,
-                                                            scale_d = scale_d,
                                                             scale_factor = scale_factor,
                                                             conductor_mode = conductor_mode,
                                                             sqrtd_fn = sqrtd_fn,
@@ -357,7 +342,7 @@ function classify_mtcs_auto(N::Int;
                                                             verbose = verbose)
 
                     last_meta = (N_input = N, N_effective = N_eff_candidate, d = d,
-                                 scale_d = scale_d, conductor_mode = conductor_mode,
+                                 conductor_mode = conductor_mode,
                                  primes = copy(chosen_primes), max_rank = max_rank,
                                  attempts = attempts)
                     if !isempty(classified)
@@ -367,8 +352,6 @@ function classify_mtcs_auto(N::Int;
                         break
                     end
                     stage_reason = "no_classified"
-                end
-                stage_success && break
             end
             stage_success && break
         end
@@ -402,7 +385,6 @@ function classify_mtcs_auto(N::Int;
             N_input = last_meta.N_input,
             N_effective = last_meta.N_effective,
             d = last_meta.d,
-            scale_d = last_meta.scale_d,
             conductor_mode = last_meta.conductor_mode,
             primes = last_meta.primes,
             max_rank = last_meta.max_rank,
@@ -419,10 +401,72 @@ _is_reconstruction_unstable_message(msg::AbstractString) = begin
            occursin("crt", low)
 end
 
-# OBSOLETE (Phase 5):
-# Directly calling this function for candidate comparison is deprecated.
-# Use `_score_fr_st_match` / `_select_fr_for_st`, which centralize
-# comparison rules and fallback behavior.
+function _phase4_removed_error()
+    error("exact Phase 4 did not find a cyclotomic F/R solution for this input")
+end
+
+function _select_fr_for_st(candidates, Nijk, S_cyc, T_cyc, N)
+    isempty(candidates) && _phase4_removed_error()
+    all_scores = NamedTuple[]
+    best_idx = 0
+    best_score = nothing
+    for (ci, cand) in enumerate(candidates)
+        score = _score_fr_st_match(cand.F, cand.R, Nijk, S_cyc, T_cyc, N;
+                                   candidate_index = ci)
+        push!(all_scores, score)
+        if best_score === nothing || score.order_key < best_score.order_key
+            best_score = score
+            best_idx = ci
+        end
+    end
+    return (selected = candidates[best_idx],
+            score = best_score,
+            selected_index = best_idx,
+            selected_ok = best_score.ok,
+            all_scores = all_scores)
+end
+
+function _matrix_dim(M)
+    return M isa MatElem ? (nrows(M), ncols(M)) : size(M)
+end
+
+_matrix_entry(M, i::Int, j::Int) = M[i, j]
+
+function _forward_r_var_count(Nijk::Array{Int,3})
+    r = size(Nijk, 1)
+    return sum(Nijk[i, j, k]^2 for i in 1:r, j in 1:r, k in 1:r)
+end
+
+function _forward_R_values(R_values::Vector, Nijk::Array{Int,3})
+    n = _forward_r_var_count(Nijk)
+    length(R_values) == n && return R_values
+    length(R_values) == 2n && return R_values[1:n]
+    error("R_values has length $(length(R_values)); expected $n or $(2n)")
+end
+
+function _extract_R_block_exact(R_values::Vector, Nijk::Array{Int,3},
+                                i::Int, j::Int, k::Int)
+    n = Nijk[i, j, k]
+    n == 0 && return nothing
+    positions, _ = _braiding_block_positions(Nijk)
+    pos = positions[(i, j, k)]
+    K = parent(R_values[1])
+    M = zero_matrix(K, n, n)
+    for a in 1:n, b in 1:n
+        M[a, b] = R_values[pos[(a - 1) * n + b]]
+    end
+    return M
+end
+
+function _trace_exact(M)
+    n = nrows(M)
+    t = zero(base_ring(M))
+    for i in 1:n
+        t += M[i, i]
+    end
+    return t
+end
+
 function _fusion_automorphisms_fixing_unit(Nijk::Array{Int,3})
     r = size(Nijk, 1)
     r == 1 && return [Int[1]]
@@ -442,368 +486,90 @@ function _fusion_automorphisms_fixing_unit(Nijk::Array{Int,3})
     return autos
 end
 
-_maxabs(M::AbstractArray{<:Number}) = isempty(M) ? 0.0 : maximum(abs.(M))
-
-function _normalize_twists(T::Vector{ComplexF64})
-    Tn = copy(T)
-    if !iszero(Tn[1])
-        Tn ./= Tn[1]
-    end
-    for i in eachindex(Tn)
-        if !iszero(Tn[i])
-            Tn[i] /= abs(Tn[i])
-        end
-    end
-    return Tn
-end
-
-function _normalize_smatrix(S::Matrix{ComplexF64})
-    Sn = copy(S)
-    if !iszero(Sn[1, 1])
-        Sn ./= Sn[1, 1]
-    end
-    return Sn
-end
-
-function _smatrix_has_fusion_dimension_character(Sn::Matrix{ComplexF64},
-                                                 Nijk::Array{Int,3};
-                                                 atol::Float64 = 1e-6)
+function _modular_data_roundtrip(F_values::Vector,
+                                 R_values::Vector,
+                                 Nijk::Array{Int,3},
+                                 S_target,
+                                 T_target,
+                                 N::Int)
     r = size(Nijk, 1)
-    size(Sn) == (r, r) || return false
-    iszero(Sn[1, 1]) && return false
-    d = Sn[:, 1] ./ Sn[1, 1]
-    for i in 1:r, j in 1:r
-        lhs = sum(Nijk[i, j, k] * d[k] for k in 1:r)
-        rhs = d[i] * d[j]
-        abs(lhs - rhs) <= atol || return false
-    end
-    return true
-end
+    dims = _matrix_dim(S_target)
+    dims == (r, r) || error("S_target has shape $dims; expected ($r, $r)")
+    length(T_target) == r || error("T_target has length $(length(T_target)); expected $r")
 
-function _forward_r_var_count(Nijk::Array{Int,3})
-    r = size(Nijk, 1)
-    return sum(Nijk[i, j, k]^2 for i in 1:r, j in 1:r, k in 1:r
-               if Nijk[i, j, k] > 0)
-end
-
-function _forward_R_values(R_values::Vector{ComplexF64}, Nijk::Array{Int,3})
-    r_var_count = _forward_r_var_count(Nijk)
-    if length(R_values) == r_var_count
-        return R_values
-    elseif length(R_values) == 2 * r_var_count
-        return R_values[1:r_var_count]
-    end
-    error("R_values has length $(length(R_values)); expected $r_var_count " *
-          "(forward only) or $(2 * r_var_count) (forward + reverse).")
-end
-
-function _monodromy_trace(R_fwd::Vector{ComplexF64},
-                          Nijk::Array{Int,3},
-                          a::Int, b::Int, c::Int)
-    N_abc = Nijk[a, b, c]
-    N_abc == 0 && return 0.0 + 0.0im
-    N_bac = Nijk[b, a, c]
-    N_bac == N_abc || error("Fusion multiplicity not symmetric: " *
-                            "N[$a,$b,$c]=$N_abc vs N[$b,$a,$c]=$N_bac")
-    R_ab = extract_R_block(R_fwd, Nijk, a, b, c)
-    R_ba = extract_R_block(R_fwd, Nijk, b, a, c)
-    return tr(R_ba * R_ab)
-end
-
-function _monodromy_phase_from_trace(R_fwd::Vector{ComplexF64},
-                                     Nijk::Array{Int,3},
-                                     a::Int, b::Int, c::Int)
-    z = _monodromy_trace(R_fwd, Nijk, a, b, c) / Nijk[a, b, c]
-    return iszero(z) ? z : z / abs(z)
-end
-
-function _quantum_dimensions_from_fusion(Nijk::Array{Int,3})
-    r = size(Nijk, 1)
-    A = zeros(Float64, r, r)
-    for i in 1:r
-        A .+= Float64.(Nijk[i, :, :])
-    end
-    eig = eigen(A)
-    idx = argmax(real(eig.values))
-    d = abs.(real(eig.vectors[:, idx]))
-    d ./= d[1]
-    return d
-end
-
-function _fusion_dimension_characters(Nijk::Array{Int,3};
-                                      atol::Float64 = 1e-7)
-    r = size(Nijk, 1)
-    Ms = [ComplexF64.(Nijk[i, :, :]) for i in 1:r]
-    combo = zeros(ComplexF64, r, r)
-    for i in 1:r
-        combo .+= (sqrt(i + 1) + im / (i + 2)) .* Ms[i]
-    end
-    eig = eigen(combo)
-    chars = Vector{Vector{ComplexF64}}()
-    for col in 1:r
-        v = eig.vectors[:, col]
-        abs(v[1]) > atol || continue
-        d = v ./ v[1]
-        ok = true
-        for i in 1:r
-            res = Ms[i] * d - d[i] * d
-            if _maxabs(res) > atol
-                ok = false
-                break
-            end
-        end
-        ok || continue
-        if !any(_maxabs(d .- old) < 1e-6 for old in chars)
-            push!(chars, ComplexF64.(d))
-        end
-    end
-    if isempty(chars)
-        push!(chars, ComplexF64.(_quantum_dimensions_from_fusion(Nijk)))
-    end
-    return chars
-end
-
-function _twists_from_braiding_trace(R_values::Vector{ComplexF64},
-                                     Nijk::Array{Int,3},
-                                     d::Vector{<:Number})
-    r = size(Nijk, 1)
+    K = parent(_matrix_entry(S_target, 1, 1))
     R_fwd = _forward_R_values(R_values, Nijk)
-    T = Vector{ComplexF64}(undef, r)
+    d = [_matrix_entry(S_target, a, 1) / _matrix_entry(S_target, 1, 1) for a in 1:r]
+    D = inv(_matrix_entry(S_target, 1, 1))
+
+    S_from_R = zero_matrix(K, r, r)
+    for a in 1:r, b in 1:r
+        acc = zero(K)
+        for c in 1:r
+            Nijk[a, b, c] == 0 && continue
+            Rab = _extract_R_block_exact(R_fwd, Nijk, a, b, c)
+            Rba = _extract_R_block_exact(R_fwd, Nijk, b, a, c)
+            acc += d[c] * _trace_exact(Rba * Rab)
+        end
+        S_from_R[a, b] = acc / D
+    end
+
+    T_from_R = Vector{typeof(K(1))}(undef, r)
     for a in 1:r
-        acc = 0.0 + 0.0im
+        acc = zero(K)
         for c in 1:r
             Nijk[a, a, c] == 0 && continue
-            R_aa_c = extract_R_block(R_fwd, Nijk, a, a, c)
-            acc += d[c] * tr(R_aa_c)
+            Raa = _extract_R_block_exact(R_fwd, Nijk, a, a, c)
+            acc += d[c] * _trace_exact(Raa)
         end
-        θ = acc / d[a]
-        T[a] = iszero(θ) ? θ : θ / abs(θ)
+        T_from_R[a] = acc / d[a]
     end
-    return _normalize_twists(T)
-end
+    if !iszero(T_from_R[1])
+        t0 = T_from_R[1]
+        T_from_R = [t / t0 for t in T_from_R]
+    end
 
-function _twist_candidates_from_braiding_trace(R_values::Vector{ComplexF64},
-                                               Nijk::Array{Int,3})
-    return [_twists_from_braiding_trace(R_values, Nijk, d)
-            for d in _fusion_dimension_characters(Nijk)]
-end
-
-function _st_signature_under_gauge(S::Matrix{ComplexF64},
-                                   T::Vector{ComplexF64},
-                                   automorphisms::Vector{Vector{Int}};
-                                   digits::Int = 8)
+    automorphisms = _fusion_automorphisms_fixing_unit(Nijk)
     best = nothing
     for perm in automorphisms
-        S_p = S[perm, perm]
-        T_p = T[perm]
-        for sgn in (1.0, -1.0)
-            S_use = sgn > 0 ? S_p : -S_p
-            words = String[]
-            push!(words, join([string(round(real(z), digits = digits), ",",
-                                      round(imag(z), digits = digits)) for z in T_p], ";"))
-            push!(words, join([string(round(real(z), digits = digits), ",",
-                                      round(imag(z), digits = digits)) for z in vec(S_use)], ";"))
-            sig = join(words, "|")
-            if best === nothing || sig < best
-                best = sig
-            end
+        S_diffs = [S_from_R[perm[i], perm[j]] - _matrix_entry(S_target, i, j)
+                   for i in 1:r, j in 1:r]
+        T_diffs = [T_from_R[perm[i]] - T_target[i] for i in 1:r]
+        S_ok = all(iszero, S_diffs)
+        T_ok = all(iszero, T_diffs)
+        S_err = S_ok ? zero(K) : first(x for x in S_diffs if !iszero(x))
+        T_err = T_ok ? zero(K) : first(x for x in T_diffs if !iszero(x))
+        score = (ok = S_ok && T_ok,
+                 S_max = S_err,
+                 T_max = T_err,
+                 best_perm = perm,
+                 S_roundtrip = S_from_R,
+                 T_roundtrip = T_from_R)
+        if best === nothing || (score.ok && !best.ok)
+            best = score
         end
     end
     return best
 end
 
-"""
-    _modular_data_roundtrip(F_values, R_values, Nijk, S_target, T_target, N) -> NamedTuple
-
-Reconstruct `(S,T)` from `(F,R)` using the note's balancing/Hopf-link form:
-- reconstruct twists from the braiding trace formula
-  `θ_a = d_a⁻¹ Σ_c d_c Tr_{V_aa^c}(R^{aa}_c)`,
-- rebuild `S` from
-  `S_ab = (1/D) Σ_c d_c Tr_{V_ab^c}(R^{ba}_c R^{ab}_c)`.
-
-Then compare reconstructed data against targets while accounting for
-non-Galois gauge freedom (fusion-rule automorphisms fixing the unit and
-the global `S ↦ -S` convention). We also allow complex-conjugate
-convention matching `(S,T) ↔ (conj(S), conj(T))`.
-"""
-function _modular_data_roundtrip(F_values::Vector{ComplexF64},
-                                 R_values::Vector{ComplexF64},
-                                 Nijk::Array{Int,3},
-                                 S_target::Matrix{ComplexF64},
-                                 T_target::Vector{ComplexF64},
-                                 N::Int)
-    _ = F_values
-    r = size(Nijk, 1)
-    R_fwd = _forward_R_values(R_values, Nijk)
-
-    # Quantum dimensions from PF eigenvector of Σ_i N_i.
-    d = _quantum_dimensions_from_fusion(Nijk)
-    D = sqrt(sum(d .^ 2))
-
-    T_target_n = _normalize_twists(T_target)
-    S_target_n = _normalize_smatrix(S_target)
-    compare_S_target = _smatrix_has_fusion_dimension_character(S_target_n, Nijk)
-
-    function reconstruct_S_from_R()
-        S = Matrix{ComplexF64}(undef, r, r)
-        for a in 1:r, b in 1:r
-            acc = 0.0 + 0.0im
-            for c in 1:r
-                Nijk[a, b, c] == 0 && continue
-                # Hopf-link trace form. In multiplicity-free channels this is
-                # d_c * R^{ba}_c R^{ab}_c; in general it is the trace on V_ab^c.
-                acc += d[c] * _monodromy_trace(R_fwd, Nijk, a, b, c)
-            end
-            S[a, b] = acc / D
-        end
-        return S
-    end
-
-    automorphisms = _fusion_automorphisms_fixing_unit(Nijk)
-    best_perm = automorphisms[1]
-    best_s = Inf
-    best_t = Inf
-    Sn_from_R = _normalize_smatrix(reconstruct_S_from_R())
-    best_Sn = Sn_from_R
-    best_Tn = copy(T_target_n)
-
-    for T_raw in _twist_candidates_from_braiding_trace(R_values, Nijk)
-        Tn = _normalize_twists(T_raw)
-        Sn = Sn_from_R
-        for perm in automorphisms
-            S_p = Sn[perm, perm]
-            T_p = Tn[perm]
-            for use_conj in (false, true)
-                S_cmp = use_conj ? conj.(S_p) : S_p
-                T_cmp = use_conj ? conj.(T_p) : T_p
-                s_err = compare_S_target ?
-                    min(_maxabs(S_cmp .- S_target_n), _maxabs(-S_cmp .- S_target_n)) :
-                    0.0
-                t_err = _maxabs(T_cmp .- T_target_n)
-                if (t_err < best_t) || (isapprox(t_err, best_t; atol = 1e-12) && s_err < best_s)
-                    best_s = s_err
-                    best_t = t_err
-                    best_perm = perm
-                    best_Sn = use_conj ? conj.(Sn) : Sn
-                    best_Tn = use_conj ? conj.(Tn) : Tn
-                end
-            end
-        end
-    end
-
-    ok = best_s < 5e-2 && best_t < 5e-2
-    return (ok = ok,
-            S_max = best_s,
-            T_max = best_t,
-            best_perm = best_perm,
-            S_from = best_Sn,
-            T_from = best_Tn,
-            st_signature = _st_signature_under_gauge(best_Sn, best_Tn, automorphisms))
-end
-
-"""
-    _score_fr_st_match(F_values, R_values, Nijk, S_target, T_target, N;
-                       candidate_index)
-        -> NamedTuple
-
-Phase-5 API to score `(F,R)` against `(S,T)`.
-
-Returns:
-- `ok`: whether roundtrip errors are within threshold
-- `S_max`: maximum S-side error
-- `T_max`: maximum T-side error
-- `order_key`: key for deterministic total ordering
-- `candidate_index`: input candidate index (final tie-break)
-"""
-function _score_fr_st_match(F_values::Vector{ComplexF64},
-                            R_values::Vector{ComplexF64},
+function _score_fr_st_match(F_values::Vector,
+                            R_values::Vector,
                             Nijk::Array{Int,3},
-                            S_target::Matrix{ComplexF64},
-                            T_target::Vector{ComplexF64},
+                            S_target,
+                            T_target,
                             N::Int;
                             candidate_index::Int)
     md = _modular_data_roundtrip(F_values, R_values, Nijk, S_target, T_target, N)
-    # Fixed comparison rule for Phase 5:
-    #   1) prioritize ok=true
-    #   2) smaller T_max
-    #   3) smaller S_max
-    #   4) smaller candidate_index
-    # Since false < true for Bool, place !ok first to prefer ok=true.
-    order_key = (!md.ok, md.T_max, md.S_max, candidate_index)
-    return (ok = md.ok,
-            S_max = md.S_max,
-            T_max = md.T_max,
-            best_perm = md.best_perm,
-            st_signature = md.st_signature,
-            order_key = order_key,
-            candidate_index = candidate_index)
-end
-
-function _build_fr_st_dictionary(candidates::Vector{<:NamedTuple},
-                                 Nijk::Array{Int,3},
-                                 N::Int)
-    table = Dict{String, Vector{Int}}()
-    reconstructed = NamedTuple[]
-    for (ci, cand) in enumerate(candidates)
-        md = _modular_data_roundtrip(cand.F, cand.R, Nijk,
-                                     zeros(ComplexF64, size(Nijk, 1), size(Nijk, 1)),
-                                     ones(ComplexF64, size(Nijk, 1)),
-                                     N)
-        push!(get!(table, md.st_signature, Int[]), ci)
-        push!(reconstructed, (candidate_index = ci,
-                              signature = md.st_signature,
-                              S = md.S_from,
-                              T = md.T_from))
-    end
-    return (dictionary = table, reconstructed = reconstructed)
-end
-
-"""
-    _select_fr_for_st(candidates, Nijk, S_target, T_target, N)
-        -> (selected, score, selected_index, selected_ok, all_scores)
-
-Phase-5 candidate selection API.
-Selects one `(F,R)` candidate using total ordering by
-`order_key = (!ok, S_max, T_max, candidate_index)`.
-
-Fallback policy:
-- If at least one candidate has `ok=true`, choose the minimal `order_key`.
-- If none has `ok=true`, do not raise an explicit error; choose the
-  minimum-error candidate (`S_max/T_max`, then index) and expose
-  `selected_ok=false` to callers.
-"""
-function _select_fr_for_st(candidates::Vector{<:NamedTuple},
-                           Nijk::Array{Int,3},
-                           S_target::Matrix{ComplexF64},
-                           T_target::Vector{ComplexF64},
-                           N::Int)
-    isempty(candidates) && error("cannot select (F,R): empty candidate list")
-    fr_st = _build_fr_st_dictionary(candidates, Nijk, N)
-
-    all_scores = NamedTuple[]
-    best_idx = 0
-    best_score = nothing
-    for (ci, cand) in enumerate(candidates)
-        score = _score_fr_st_match(cand.F, cand.R, Nijk, S_target, T_target, N;
-                                   candidate_index = ci)
-        push!(all_scores, score)
-        if best_score === nothing || score.order_key < best_score.order_key
-            best_score = score
-            best_idx = ci
-        end
-    end
-
-    return (selected = candidates[best_idx],
-            score = best_score,
-            selected_index = best_idx,
-            selected_ok = best_score.ok,
-            all_scores = all_scores,
-            fr_st_dictionary = fr_st.dictionary)
+    return merge(md, (candidate_index = candidate_index,
+                      order_key = (md.ok ? 0 : 1,
+                                   string(md.T_max),
+                                   string(md.S_max),
+                                   candidate_index)))
 end
 
 function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCandidate}},
                                       anchor_prime::Int,
-                                      scale_d::Int,
+                                      quadratic_d::Int,
                                       sqrtd_fn;
                                       reconstruction_bound::Int = 50,
                                       branch_sign_getter = nothing,
@@ -836,8 +602,8 @@ function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCand
                         branch_sign_setter(p, sgn)
                     end
                     try
-                        s_anchor = sqrtd_fn(scale_d, anchor_prime)
-                        s_p = sqrtd_fn(scale_d, p)
+                        s_anchor = sqrtd_fn(quadratic_d, anchor_prime)
+                        s_p = sqrtd_fn(quadratic_d, p)
                         two_s_anchor = mod(2 * s_anchor, anchor_prime)
                         two_s_p = mod(2 * s_p, p)
                         matrix_by_prime = Dict(
@@ -845,7 +611,7 @@ function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCand
                                              for i in 1:nrow, j in 1:ncol],
                             p => [mod(two_s_p * c.S_Fp[i, j], p)
                                   for i in 1:nrow, j in 1:ncol])
-                        reconstruct_matrix_in_Z_sqrt_d(matrix_by_prime, scale_d;
+                        reconstruct_matrix_in_Z_sqrt_d(matrix_by_prime, quadratic_d;
                                                        bound = reconstruction_bound, sqrtd_fn = sqrtd_fn)
                         any_sign_ok = true
                     catch
@@ -901,182 +667,46 @@ function Base.show(io::IO, m::ClassifiedMTC)
 end
 
 # ============================================================
-#  compute_FR_from_ST: Phase 4 wrapper
+#  compute_FR_from_ST: exact Phase 4 over Q(ζ_N)
 # ============================================================
 
-"""
-    compute_FR_from_ST(Nijk;
-                        return_all = false,
-                        pentagon_slice = 1, show_progress = false,
-                        verbose = false)
-        -> NamedTuple{(:F, :R, :report, :n_pentagon, :n_tried, :n_matches,
-                       :f_idx, :r_idx)}
-
-Given a fusion tensor `Nijk`, find a pair `(F, R)` of complex
-F- and R-symbols satisfying pentagon and hexagon.
-
-This stage solves pentagon/hexagon from fusion data only. Branch
-selection against reconstructed modular data is done afterwards by
-`_modular_data_roundtrip` in `classify_from_group`.
-
-Algorithm:
-1. Set up pentagon system from `Nijk` (via TensorCategories).
-2. Solve pentagon via F_p reduction, Groebner preprocessing, and
-   CRT-compatible reconstruction, optionally with deterministic linear
-   slices to break gauge symmetry.
-3. For each pentagon solution `F`:
-   - Polish with damped Newton.
-   - Build hexagon system with F fixed.
-   - Solve hexagon through the same algebraic route.
-   - Keep the `(F,R)` pair with the smallest pentagon/hexagon residual
-     score.
-4. Return the best numerical pentagon/hexagon solution.
-
-Caveats:
-- Phase-4 algebraic solving is feasible only for small fusion rings
-  (~10 F-variables in practice; Ising-sized rings with ~14 F-vars may
-  require hours).
-- Multiple inequivalent braided branches can share the same fusion ring.
-  This function does not disambiguate them via `T`; modular-data
-  equivalence is handled in the Phase 4 roundtrip check.
-
-Returns a NamedTuple with:
-- `F`:            best `Vector{ComplexF64}` or `nothing`
-- `R`:            best `Vector{ComplexF64}` or `nothing`
-- `report`:       `VerifyReport` or `nothing`
-- `n_pentagon`:   number of pentagon solutions found
-- `n_tried`:      total `(F, R)` pairs examined
-- `n_matches`:    how many candidates were numerically valid
-- `f_idx`, `r_idx`: indices of the chosen pair (0 if none)
-- `candidates`:   present only when `return_all=true`; contains all
-                  numerically valid `(F,R)` candidates with reports.
-
-"""
-function compute_FR_from_ST(Nijk::Array{Int, 3};
+function compute_FR_from_ST(Nijk::Array{Int,3};
+                            context = nothing,
+                            conductor = nothing,
+                            N = nothing,
+                            S = nothing,
+                            T = nothing,
                             return_all::Bool = false,
-                            pentagon_slice::Int = 1,
-                            show_progress::Bool = false,
-                            verbose::Bool = false)
+                            primes::Vector{Int} = [101, 103, 107, 109],
+                            verbose::Bool = false,
+                            kwargs...)
+    isempty(kwargs) || error("unsupported keyword arguments: $(collect(keys(kwargs)))")
+    ctx = _default_context_from_kwargs(context = context, conductor = conductor, N = N)
     r = size(Nijk, 1)
-
-    # Rank-1 (trivial) MTC: the only fusion category structure is the
-    # unit object with F = R = [1]. Pentagon / hexagon hold vacuously.
-    # `TensorCategories.pentagon_equations` emits no non-
-    # trivial polynomials at rank 1, so we short-circuit here rather
-    # than let `get_pentagon_system` error.
-    if r == 1
-        F_trivial = ComplexF64[1.0]
-        R_trivial = ComplexF64[1.0]
-        report = VerifyReport(0.0, 0.0, 0, 0, 1)
-        cand = (F = F_trivial, R = R_trivial, report = report,
-                f_idx = 1, r_idx = 1)
-        if return_all
-            return (F = F_trivial, R = R_trivial, report = report,
-                    n_pentagon = 1, n_tried = 1, n_matches = 1,
-                    f_idx = 1, r_idx = 1,
-                    candidates = [cand])
-        end
-        return (F = F_trivial, R = R_trivial, report = report,
-                n_pentagon = 1, n_tried = 1, n_matches = 1,
-                f_idx = 1, r_idx = 1)
-    end
-
-    # Pentagon system
-    local _R, eqs, n
-    try
-        _R, eqs, n = get_pentagon_system(Nijk, r)
-    catch err
-        msg = sprint(showerror, err)
-        if occursin("Object not rigid", msg)
-            error("fusion ring is not rigid at rank $r; rejecting candidate")
-        end
-        rethrow(err)
-    end
-    verbose && println("  Pentagon: $n variables, $(length(eqs)) equations")
-
-    F_sols = solve_pentagon_homotopy(eqs, n;
-                                             slice = pentagon_slice,
-                                             include_singular = false,
-                                             show_progress = show_progress)
-    verbose && println("  Pentagon modular solver: $(length(F_sols)) solutions")
-
-    best = (F = nothing,
-            R = nothing,
-            report = nothing,
-            n_pentagon = length(F_sols),
-            n_tried = 0,
-            n_matches = 0,
-            f_idx = 0,
-            r_idx = 0,
-            score = Inf)
-    all_candidates = NamedTuple{(:F, :R, :report, :f_idx, :r_idx),
-                                Tuple{Vector{ComplexF64}, Vector{ComplexF64},
-                                      VerifyReport, Int, Int}}[]
-
-    for (fi, F_raw) in enumerate(F_sols)
-        local F
-        try
-            F = refine_solution_newton(eqs, F_raw; tol = 1e-14)
-        catch err
-            verbose && println("    F[$fi] Newton refinement failed: $err")
-            continue
-        end
-
-        local R_sols
-        try
-            _R_ring, hex_eqs, n_r = get_hexagon_system(Nijk, r, F)
-            R_sols = solve_hexagon_homotopy(hex_eqs, n_r;
-                                                    show_progress = show_progress)
-        catch err
-            verbose && println("    F[$fi] hexagon failed: $err")
-            continue
-        end
-
-        verbose && println("    F[$fi]: $(length(R_sols)) hexagon sols")
-
-        for (ri, R_vals) in enumerate(R_sols)
-            best = (; best..., n_tried = best.n_tried + 1)
-
-            local rep
-            try
-                # First pass verifies pentagon/hexagon consistency.
-                rep = verify_mtc(F, R_vals, Nijk)
-            catch err
-                verbose && println("      R[$ri] verify failed: $err")
-                continue
-            end
-            score = max(rep.pentagon_max, rep.hexagon_max)
-            if !isfinite(score)
-                verbose && println("      R[$ri] non-finite pent/hex score: $score")
-                continue
-            end
-
-            # Keep counters for API compatibility. n_matches now counts
-            # numerically valid pentagon+hexagon candidates.
-            best = (; best..., n_matches = best.n_matches + 1)
-            push!(all_candidates, (F = F, R = R_vals, report = rep,
-                                   f_idx = fi, r_idx = ri))
-            if score < best.score
-                best = (; best...,
-                        F = F, R = R_vals, report = rep,
-                        f_idx = fi, r_idx = ri,
-                        score = score)
-            end
+    _, pentagon_eqs, nF = get_pentagon_system(Nijk, r)
+    F_solutions = solve_pentagon_modular_crt(pentagon_eqs, nF;
+                                             Nijk = Nijk,
+                                             context = ctx,
+                                             primes = primes,
+                                             show_progress = verbose)
+    candidates = NamedTuple[]
+    for F in F_solutions
+        _, hex_eqs, nR = get_hexagon_system(Nijk, r, F; context = ctx)
+        R_solutions = solve_hexagon_modular_crt(hex_eqs, nR;
+                                                Nijk = Nijk,
+                                                context = ctx,
+                                                primes = primes,
+                                                show_progress = verbose)
+        for R in R_solutions
+            push!(candidates, (F = F, R = R, report = nothing))
         end
     end
-
-    # Drop the internal score field from the public return
-    if return_all
-        return (F = best.F, R = best.R, report = best.report,
-                n_pentagon = best.n_pentagon, n_tried = best.n_tried,
-                n_matches = best.n_matches,
-                f_idx = best.f_idx, r_idx = best.r_idx,
-                candidates = all_candidates)
-    end
-    return (F = best.F, R = best.R, report = best.report,
-            n_pentagon = best.n_pentagon, n_tried = best.n_tried,
-            n_matches = best.n_matches,
-            f_idx = best.f_idx, r_idx = best.r_idx)
+    isempty(candidates) && _phase4_removed_error()
+    selected = candidates[1]
+    return (F = selected.F,
+            R = selected.R,
+            report = selected.report,
+            candidates = candidates)
 end
 
 # ============================================================
@@ -1085,7 +715,7 @@ end
 
 """
     classify_from_group(group, N, stratum, all_primes;
-                        scale_d, scale_factor = 2,
+                        quadratic_d, scale_factor = 2,
                         sqrtd_fn = compute_sqrt_d_mod_p,
                         reconstruction_bound = 50,
                         galois_sector = 1,
@@ -1095,18 +725,18 @@ end
         -> ClassifiedMTC
 
 Given a single Galois-coherent group from `group_mtcs_galois_aware`,
-perform Phase 3 CRT reconstruction, Phase 4 (F, R) solve, and return
-a `ClassifiedMTC`.
+perform Phase 3 CRT reconstruction, lift `(S, T)` to `Q(ζ_N)`, and
+return a `ClassifiedMTC`.
 
 Arguments:
 - `group::Dict{Int, MTCCandidate}`:  a single group (one sector)
 - `N::Int`:                          conductor
 - `stratum::Stratum`:                the stratum the group came from
 - `all_primes::Vector{Int}`:         primes present in `group`
-- `scale_d::Int`:                    `d` for ℤ[√d]
+- `quadratic_d::Int`:                    `d` for ℤ[√d]
 - `scale_factor::Int = 2`:           scalar multiplying S before recon
 - `sqrtd_fn`:                        `(d, p) -> Int` returning √d mod p.
-                                     For SU(2)_4 / d = 3 /scale_d = 3,
+                                     For SU(2)_4 / d = 3 /quadratic_d = 3,
                                      use `compute_sqrt3_cyclotomic_mod_p`
                                      to ensure Galois-consistent choice.
 - `reconstruction_bound::Int = 50`:  ℤ[√d] coefficient bound for rational
@@ -1116,10 +746,8 @@ Arguments:
                                      If `nothing`, uses first
                                      `max(2, length(all_primes) ÷ 2)`
                                      primes; remaining are fresh.
-- `skip_FR::Bool = false`:           if true, only do Phase 0–3 and leave
-                                     (F, R) as `nothing`. Useful for
-                                     rank/complexity beyond the Phase-4
-                                     solver limit (~10 F-vars).
+- `skip_FR::Bool = false`:           when true, stop after exact
+                                     cyclotomic modular-data lift.
 - `verbose::Bool = false`:           print progress.
 """
 function classify_from_group(group::Dict{Int, MTCCandidate},
@@ -1127,14 +755,16 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                              stratum::Stratum,
                              all_primes::Vector{Int};
                              N_input::Int = N,
-                             scale_d::Int,
+                             quadratic_d::Int = last(_quadratic_candidates_for_conductor(N)),
                              scale_factor::Int = 2,
                              sqrtd_fn = compute_sqrt_d_mod_p,
                              reconstruction_bound::Int = 50,
                              galois_sector::Int = 1,
                              test_primes::Union{Vector{Int}, Nothing} = nothing,
-                             skip_FR::Bool = false,
-                             verbose::Bool = false)
+                            skip_FR::Bool = false,
+                             verbose::Bool = false,
+                             kwargs...)
+    isempty(kwargs) || error("unsupported keyword arguments: $(collect(keys(kwargs)))")
     group_primes = sort(collect(keys(group)))
 
     if test_primes === nothing
@@ -1155,7 +785,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     # -------- Phase 3: CRT in ℤ[√d] --------
     used_subgroup = Dict(p => group[p] for p in used)
     recon_S = reconstruct_S_matrix(used_subgroup;
-                                    scale_d = scale_d,
+                                    quadratic_d = quadratic_d,
                                     bound = reconstruction_bound,
                                     sqrtd_fn = sqrtd_fn)
 
@@ -1164,7 +794,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     if !isempty(fresh)
         all_ok = true
         for p in fresh
-            ok = verify_reconstruction(recon_S, group[p], scale_d;
+            ok = verify_reconstruction(recon_S, group[p], quadratic_d;
                                         scale = scale_factor,
                                         sqrtd_fn = sqrtd_fn)
             all_ok &= ok
@@ -1173,41 +803,44 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
         verify_fresh = all_ok
     end
 
-    # -------- Phase 4 input: lift (S, T) to ℂ --------
+    # -------- Phase 4 input: exact lift (S, T) to Q(ζ_N) --------
     rep = first(values(group))
     zeta_Fp = find_zeta_in_Fp(N, rep.p)
-    S_ℂ, T_ℂ, Nijk = lift_mtc_candidate(rep, recon_S;
-                                                d = scale_d,
-                                                N = N,
-                                                zeta_Fp = zeta_Fp,
-                                                scale = scale_factor)
+    S_cyc, T_cyc, Nijk = lift_mtc_candidate(rep, recon_S;
+                                            d = quadratic_d,
+                                            N = N,
+                                            zeta_Fp = zeta_Fp,
+                                            scale = scale_factor)
     recon_S_phase4 = recon_S
 
     # TensorCategories assumes the unit object is at index 1.
     # MTCCandidate stores `unit_index` explicitly and may keep a different
     # basis ordering; permute all lifted data coherently before Phase 4.
     if rep.unit_index != 1
-        perm = vcat(rep.unit_index, [i for i in 1:length(T_ℂ) if i != rep.unit_index])
-        S_ℂ = S_ℂ[perm, perm]
-        T_ℂ = T_ℂ[perm]
+        perm = vcat(rep.unit_index, [i for i in 1:length(T_cyc) if i != rep.unit_index])
+        S_cyc = S_cyc[perm, perm]
+        T_cyc = T_cyc[perm]
         Nijk = Nijk[perm, perm, perm]
         recon_S_phase4 = recon_S[perm, perm]
     end
-    T_for_phase4 = T_ℂ
+    T_for_phase4 = T_cyc
 
-    # -------- Phase 4: (F, R) solve + verify --------
+    # -------- Exact (F, R) layer --------
     rank = size(Nijk, 1)
 
     if skip_FR
         return ClassifiedMTC(N, N_input, rank, stratum, Nijk,
-                             recon_S_phase4, scale_d, scale_factor,
+                             recon_S_phase4, quadratic_d, scale_factor,
                              used, fresh, verify_fresh,
-                             S_ℂ, T_for_phase4, nothing, nothing, nothing,
+                             S_cyc, T_for_phase4, nothing, nothing, nothing,
                              galois_sector)
     end
-    verbose && println("  running pentagon/hexagon on rank=$rank...")
+    verbose && println("  exact (F,R) layer requested on rank=$rank...")
 
     fr_result = compute_FR_from_ST(Nijk;
+                                   context = CyclotomicContext(N),
+                                   S = S_cyc,
+                                   T = T_for_phase4,
                                    return_all = true,
                                    verbose = verbose)
     fr_result.F === nothing && error("Phase 4 could not produce any (F,R) solution")
@@ -1215,7 +848,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
 
     # OBSOLETE: candidate loop with direct `_modular_data_roundtrip`
     # calls is replaced by Phase 5 API `_select_fr_for_st`.
-    selection = _select_fr_for_st(fr_result.candidates, Nijk, S_ℂ, T_for_phase4, N)
+    selection = _select_fr_for_st(fr_result.candidates, Nijk, S_cyc, T_for_phase4, N)
     selected = selection.selected
     md_roundtrip = selection.score
     verbose && println("  modular-data roundtrip: perm=$(md_roundtrip.best_perm), " *
@@ -1223,9 +856,9 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                        "ok=$(md_roundtrip.ok)")
 
     return ClassifiedMTC(N, N_input, rank, stratum, Nijk, recon_S_phase4,
-                         scale_d, scale_factor,
+                         quadratic_d, scale_factor,
                          used, fresh, verify_fresh,
-                         S_ℂ, T_for_phase4,
+                         S_cyc, T_for_phase4,
                          selected.F, selected.R, selected.report,
                          galois_sector)
 end
@@ -1236,7 +869,7 @@ end
 
 """
     classify_mtcs_at_conductor(N; max_rank = 5, primes = nothing, strata = nothing,
-                                scale_d = 3, scale_factor = 2,
+                                quadratic_d = 3, scale_factor = 2,
                                 conductor_mode = :full_mtc,
                                 min_primes = 4, prime_start = 29, prime_window = 2000,
                                 sqrtd_fn = nothing,
@@ -1256,27 +889,18 @@ Pipeline:
   Phase 1: enumerate strata (m_λ) with Σ m_λ d_λ = r for each r ≤ max_rank
   Phase 2: for each stratum, sweep block-U at each prime → MTC candidates
   Phase 3: Galois-aware grouping + CRT reconstruction in ℤ[√d]
-  Phase 4: lift to ℂ, solve pentagon/hexagon
+  Phase 4: lift to Q(ζ_N), then compute exact `(F, R)`
 
 Returns one `ClassifiedMTC` per Galois sector per stratum that yields a
-valid MTC. If `skip_FR = true`, Phase 4 is skipped and `(F, R)` is left
-as `nothing` (useful for large ranks where Phase-4 solving is infeasible).
+valid modular-data candidate and exact cyclotomic `(F, R)` data.
 
-Note on conductor: `N` is an input indicator (typically the T-order
-conductor). Internally, the pipeline searches at `N_effective`
-determined by `conductor_mode`; `:full_mtc` uses
-`N_effective = lcm(N, cyclotomic_requirement(scale_d))` where
-`cyclotomic_requirement(2|3)=24`, `cyclotomic_requirement(5)=5`, else `1`.
-An MTC's S-matrix may
-live in a larger cyclotomic field than ℚ(ζ_N); in NRWW's convention the
-full MTC conductor is `max(cond(S), cond(T))`. Fibonacci, for example,
-has `cond(T) = 5` but its S involves `D = √(2+φ)` which is NOT in ℚ(ζ_5).
-Using only the T-order conductor can miss such MTCs — they often appear
-only when `N_effective` is large enough to accommodate `S` too.
+Note on conductor: `N` is the cyclotomic base conductor. Internally,
+`N_effective = N`; the conductor is not enlarged after discovering an
+S-field.
 
 Arguments:
-- `N::Int`:                        input conductor indicator. Internal
-                                   search runs at `N_effective`.
+- `N::Int`:                        cyclotomic base conductor. Internal
+                                   search uses `N_effective = N`.
 - `max_rank::Int = 5`:             maximum rank to consider
 - `primes::Union{Nothing, Vector{Int}} = nothing`:
                                    good primes (must satisfy `N_effective | p-1`).
@@ -1292,23 +916,20 @@ Arguments:
                                    `enumerate_strata`. Otherwise uses
                                    the given strata directly (faster for
                                    targeted re-runs).
-- `scale_d::Int = 3`:              ℤ[√d] the S-matrix is expected to
+- `quadratic_d::Int = 3`:              ℤ[√d] the S-matrix is expected to
                                    live in. Must be chosen to match the
                                    MTC's quadratic field: e.g. 3 for
                                    SU(2)_4 / Ising, 5 for MTCs involving
                                    the golden ratio, 2 for √2-pointed
-                                   MTCs. A wrong `scale_d` will silently
+                                   MTCs. A wrong `quadratic_d` will silently
                                    return 0 classified MTCs.
 - `scale_factor::Int = 2`:         scalar multiplying `S` at
                                    reconstruction (matches
                                    `reconstruct_S_matrix` convention).
 - `conductor_mode::Symbol = :full_mtc`:
-                                   interpretation of `N`. In v0.5.0,
-                                   only `:full_mtc` is supported, using
-                                   `N_effective = lcm(N, cyclotomic_requirement(scale_d))`
-                                   (typically equal to `N`) so
-                                   S-side field constraints are
-                                   conservatively included.
+                                   compatibility option. Only
+                                   `:full_mtc` is supported, and it fixes
+                                   `N_effective = N`.
 - `min_primes::Int = 4`:           when `primes = nothing`, number of
                                    admissible primes to auto-select.
 - `prime_start::Int = 29`:         when `primes = nothing`, start of
@@ -1316,17 +937,17 @@ Arguments:
 - `prime_window::Int = 2000`:      when `primes = nothing`, scan width.
 - `sqrtd_fn`:                      custom √d-in-F_p function. If
                                    `nothing` (default), chooses:
-                                   cyclotomic variant for `scale_d ∈
+                                   cyclotomic variant for `quadratic_d ∈
                                    {2,3,5}` and anchored mode for
-                                   other `scale_d` (anchor prime +
+                                   other `quadratic_d` (anchor prime +
                                    branch-transform layer over raw
                                    Tonelli roots):
                                    `compute_sqrt3_cyclotomic_mod_p`
-                                   (needs 24 | p-1) for `scale_d = 3`,
+                                   (needs 24 | p-1) for `quadratic_d = 3`,
                                    `compute_sqrt2_cyclotomic_mod_p`
-                                   (needs 24 | p-1) for `scale_d = 2`,
+                                   (needs 24 | p-1) for `quadratic_d = 2`,
                                    `compute_sqrt5_cyclotomic_mod_p`
-                                   (needs 5 | p-1) for `scale_d = 5`,
+                                   (needs 5 | p-1) for `quadratic_d = 5`,
                                    else anchored mode (with per-prime
                                    sign alignment and pre-group
                                    contradiction check/split).
@@ -1355,16 +976,15 @@ Arguments:
                                    Phase 2 candidate loop.
 - `reconstruction_bound::Int = 50`: coefficient bound for ℤ[√d]
                                    rational reconstruction.
-- `skip_FR::Bool = false`:         skip Phase 4. Useful if
-                                   `max_rank ≥ 5` and Phase-4 solving would
-                                   blow up.
+- `skip_FR::Bool = false`:         when true, stop after exact
+                                   cyclotomic modular-data lift.
 - `verbose::Bool = true`:          print per-phase progress.
 """
 function classify_mtcs_at_conductor(N::Int;
                                     max_rank::Int = 5,
                                     primes::Union{Nothing, Vector{Int}} = nothing,
                                     strata::Union{Nothing, Vector{Stratum}} = nothing,
-                                    scale_d::Int = 3,
+                                    quadratic_d::Union{Int, Nothing} = nothing,
                                     scale_factor::Int = 2,
                                     conductor_mode::Symbol = :full_mtc,
                                     min_primes::Int = 4,
@@ -1379,10 +999,37 @@ function classify_mtcs_at_conductor(N::Int;
                                     precheck_unit_axiom::Bool = true,
                                     reconstruction_bound::Int = 50,
                                     skip_FR::Bool = false,
-                                    verbose::Bool = true)
+                                    verbose::Bool = true,
+                                    kwargs...)
     user_sqrtd_fn = sqrtd_fn
-    N_effective = compute_effective_conductor(N, scale_d;
-                                              conductor_mode = conductor_mode)
+    N_effective = compute_effective_conductor(N; conductor_mode = conductor_mode)
+    isempty(kwargs) || error("unsupported keyword arguments: $(collect(keys(kwargs)))")
+    if quadratic_d === nothing
+        out = ClassifiedMTC[]
+        for d in _quadratic_candidates_for_conductor(N_effective)
+            append!(out, classify_mtcs_at_conductor(N;
+                                                    max_rank = max_rank,
+                                                    primes = primes,
+                                                    strata = strata,
+                                                    quadratic_d = d,
+                                                    scale_factor = scale_factor,
+                                                    conductor_mode = conductor_mode,
+                                                    min_primes = min_primes,
+                                                    prime_start = prime_start,
+                                                    prime_window = prime_window,
+                                                    sqrtd_fn = sqrtd_fn,
+                                                    verlinde_threshold = verlinde_threshold,
+                                                    max_block_dim = max_block_dim,
+                                                    search_mode = search_mode,
+                                                    max_units_for_groebner = max_units_for_groebner,
+                                                    groebner_allow_fallback = groebner_allow_fallback,
+                                                    precheck_unit_axiom = precheck_unit_axiom,
+                                                    reconstruction_bound = reconstruction_bound,
+                                                    skip_FR = skip_FR,
+                                                    verbose = verbose))
+        end
+        return out
+    end
 
     chosen_primes = primes === nothing ?
         select_admissible_primes(N_effective;
@@ -1497,15 +1144,15 @@ function classify_mtcs_at_conductor(N::Int;
         branch_sign_getter = nothing
         branch_sign_setter = nothing
         if active_sqrtd_fn === nothing
-            selector = build_sqrtd_selector(scale_d, present_primes, anchor; verbose = verbose)
+            selector = build_sqrtd_selector(quadratic_d, present_primes, anchor; verbose = verbose)
             active_sqrtd_fn = selector.sqrtd_fn
             selector_mode = selector.mode
             branch_sign_getter = selector.branch_sign_getter
             branch_sign_setter = selector.branch_sign_setter
         end
-        verbose && println("  d=$scale_d, sqrt-branch mode=$(selector_mode == :custom ? "custom" : String(selector_mode)), grouping bound=$reconstruction_bound")
+        verbose && println("  d=$quadratic_d, sqrt-branch mode=$(selector_mode == :custom ? "custom" : String(selector_mode)), grouping bound=$reconstruction_bound")
 
-        contradictory = _branch_consistency_precheck(results_by_prime, anchor, scale_d, active_sqrtd_fn;
+        contradictory = _branch_consistency_precheck(results_by_prime, anchor, quadratic_d, active_sqrtd_fn;
                                                      reconstruction_bound = reconstruction_bound,
                                                      branch_sign_getter = branch_sign_getter,
                                                      branch_sign_setter = branch_sign_setter,
@@ -1539,7 +1186,7 @@ function classify_mtcs_at_conductor(N::Int;
         for chunk in results_chunks
             try
                 append!(groups, group_mtcs_galois_aware(chunk, anchor;
-                                                        scale_d = scale_d,
+                                                        quadratic_d = quadratic_d,
                                                         reconstruction_bound = reconstruction_bound,
                                                         sqrtd_fn = active_sqrtd_fn,
                                                         branch_sign_getter = branch_sign_getter,
@@ -1575,7 +1222,7 @@ function classify_mtcs_at_conductor(N::Int;
                 try
                     cmtc = classify_from_group(group, N_effective, st, group_primes;
                                                 N_input = N,
-                                                scale_d = scale_d,
+                                                quadratic_d = quadratic_d,
                                                 scale_factor = scale_factor,
                                                 sqrtd_fn = active_sqrtd_fn,
                                                 reconstruction_bound = reconstruction_bound,
@@ -1614,12 +1261,12 @@ function classify_mtcs_at_conductor(N::Int;
         return out
     end
 
-    # ------- Phase 4: aggregate by fusion rule and run (F,R) once per key -------
-    verbose && println("\n=== Phase 4: fusion-rule aggregation + (F, R) classification ===")
+    # ------- Exact (F,R) layer -------
+    verbose && println("\n=== Exact (F, R) layer requested ===")
     grouped = _classify_modular_data_by_fusion_rule(out)
-    key_to_members = Dict{String, Vector{Tuple{Matrix{ComplexF64}, Vector{ComplexF64}}}}()
+    key_to_members = Dict{String, Vector{Tuple{Any, Any}}}()
     for (key, idxs) in grouped
-        key_to_members[key] = [(out[i].S_complex, out[i].T_complex) for i in idxs]
+        key_to_members[key] = [(out[i].S_cyclotomic, out[i].T_cyclotomic) for i in idxs]
     end
     verbose && println("  modular-data groups: $(length(out)) (S,T) results → " *
                        "$(length(grouped)) fusion-rule keys")
@@ -1629,6 +1276,9 @@ function classify_mtcs_at_conductor(N::Int;
         rep = out[rep_idx]
         verbose && println("  key=$key: members=$(length(idxs)), rank=$(rep.rank)")
         fr_result = compute_FR_from_ST(rep.Nijk;
+                                       context = CyclotomicContext(rep.N),
+                                       S = rep.S_cyclotomic,
+                                       T = rep.T_cyclotomic,
                                        return_all = true,
                                        verbose = verbose)
         fr_result.F === nothing && error("Phase 4 could not produce any (F,R) solution for key=$key")
@@ -1640,7 +1290,7 @@ function classify_mtcs_at_conductor(N::Int;
         for i in idxs
             mtc_i = out[i]
             selection = _select_fr_for_st(fr_result.candidates, mtc_i.Nijk,
-                                          mtc_i.S_complex, mtc_i.T_complex, mtc_i.N)
+                                          mtc_i.S_cyclotomic, mtc_i.T_cyclotomic, mtc_i.N)
             selected = selection.selected
             best_md = selection.score
             verbose && println("    member[$i] branch: cand=$(selection.selected_index), " *
