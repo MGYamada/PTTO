@@ -556,7 +556,8 @@ Reconstruct `(S,T)` from `(F,R)` using the note's balancing/Hopf-link form:
 
 Then compare reconstructed data against targets while accounting for
 non-Galois gauge freedom (fusion-rule automorphisms fixing the unit and
-the global `S ↦ -S` convention).
+the global `S ↦ -S` convention). We also allow complex-conjugate
+convention matching `(S,T) ↔ (conj(S), conj(T))`.
 """
 function _modular_data_roundtrip(F_values::Vector{ComplexF64},
                                  R_values::Vector{ComplexF64},
@@ -610,14 +611,18 @@ function _modular_data_roundtrip(F_values::Vector{ComplexF64},
         for perm in automorphisms
             S_p = Sn[perm, perm]
             T_p = Tn[perm]
-            s_err = min(_maxabs(S_p .- S_target_n), _maxabs(-S_p .- S_target_n))
-            t_err = _maxabs(T_p .- T_target_n)
-            if (s_err < best_s) || (isapprox(s_err, best_s; atol = 1e-12) && t_err < best_t)
-                best_s = s_err
-                best_t = t_err
-                best_perm = perm
-                best_Sn = Sn
-                best_Tn = Tn
+            for use_conj in (false, true)
+                S_cmp = use_conj ? conj.(S_p) : S_p
+                T_cmp = use_conj ? conj.(T_p) : T_p
+                s_err = min(_maxabs(S_cmp .- S_target_n), _maxabs(-S_cmp .- S_target_n))
+                t_err = _maxabs(T_cmp .- T_target_n)
+                if (s_err < best_s) || (isapprox(s_err, best_s; atol = 1e-12) && t_err < best_t)
+                    best_s = s_err
+                    best_t = t_err
+                    best_perm = perm
+                    best_Sn = use_conj ? conj.(Sn) : Sn
+                    best_Tn = use_conj ? conj.(Tn) : Tn
+                end
             end
         end
     end
