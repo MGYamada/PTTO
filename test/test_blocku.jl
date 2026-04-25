@@ -33,7 +33,7 @@ Group 1 is implemented here; Group 2 is in test_blocku_oscar.jl (TODO).
         zeta5 = find_zeta_in_Fp(5, 41)
         @test powermod(zeta5, 5, 41) == 1
         @test powermod(zeta5, 1, 41) != 1  # primitive
-        # Known value from test_fibonacci: ζ_5 = 10 at p=41
+        # Known value: ζ_5 = 10 at p=41
         @test zeta5 == 10
 
         # N=16, p=17: 16 | 16, so ζ_16 exists
@@ -123,7 +123,7 @@ Group 1 is implemented here; Group 2 is in test_blocku_oscar.jl (TODO).
     end
 
     @testset "verlinde_find_unit on Fibonacci" begin
-        # Hand-built Fibonacci in F_41 from test_fibonacci
+        # Hand-built Fibonacci in F_41
         # S = [14 16; 16 27], expected unit = 1 (index 1), d = [1, φ]
         p = 41
         S = [14 16; 16 27]

@@ -99,7 +99,7 @@ det_2x2(M) = M[1, 1] * M[2, 2] - M[1, 2] * M[2, 1]
     end
 
     @testset "verlinde groebner equation builder shape" begin
-        # Pure shape/count sanity using numeric placeholders.
+        # Pure shape/count sanity using small finite-field matrices.
         # n_block=2 => orthogonality equations: 3
         # r=2 => inverse witness equations: 2
         # r=2 => unit axiom equations: 4

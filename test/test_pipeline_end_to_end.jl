@@ -6,7 +6,6 @@ using ACMG
         classified = ACMG.classify_mtcs_at_conductor(1;
                                                      max_rank = 1,
                                                      primes = [73, 97],
-                                                     scale_d = 2,
                                                      skip_FR = true,
                                                      verbose = false)
         @test classified isa Vector{ACMG.ClassifiedMTC}

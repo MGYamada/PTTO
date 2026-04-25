@@ -16,9 +16,8 @@ Based on v5's `build_atomic_catalog` (mtc_pipeline.jl). Helpers that were in
 v5's unavailable `mtc_types.jl` are reimplemented here:
 - matrix_conductor: min N such that entries of M lie in Q(ζ_N)
 - gap_to_oscar_matrix: convert GAP cyclotomic matrix to Oscar matrix over Q(ζ_N)
-- matrix_to_complex: numerical complex approximation of Oscar matrix
 - compute_parity: extract sign ε in S² = ε·C (charge conjugation sign)
-- numeric_order: order of matrix T (= conductor of its eigenvalues)
+- exact_order: order of matrix T (= conductor of its eigenvalues)
 """
 
 using Oscar
@@ -127,31 +126,7 @@ function gap_to_oscar_matrix(M_gap, r::Int, K, N::Int)
 end
 
 """
-    matrix_to_complex(M_oscar, ζ::ComplexF64, deg::Int) -> Matrix{ComplexF64}
-
-Convert an Oscar matrix over Q(ζ_N) to a numerical complex matrix by
-substituting ζ_N = e^(2πi/N).
-
-`deg` is φ(N), the dimension of Q(ζ_N) over Q.
-"""
-function matrix_to_complex(M_oscar, ζ::ComplexF64, deg::Int)
-    r = nrows(M_oscar)
-    r_c = ncols(M_oscar)
-    result = zeros(ComplexF64, r, r_c)
-    for i in 1:r, j in 1:r_c
-        coeffs = Oscar.coordinates(M_oscar[i, j])
-        # coordinates returns coefficients in integral basis {1, ζ, ζ², ..., ζ^(deg-1)}
-        val = zero(ComplexF64)
-        for k in 1:length(coeffs)
-            val += Float64(Rational{BigInt}(coeffs[k])) * ζ^(k - 1)
-        end
-        result[i, j] = val
-    end
-    return result
-end
-
-"""
-    compute_parity(S_num::Matrix{ComplexF64}) -> Int
+    compute_parity(S) -> Int
 
 Compute ε ∈ {+1, -1} such that S² = ε · C for some permutation matrix C.
 The parity distinguishes two classes of SL(2, ℤ/N) irreducibles.
@@ -159,15 +134,17 @@ The parity distinguishes two classes of SL(2, ℤ/N) irreducibles.
 Returns +1 if S² is close to a permutation matrix with +1 entries,
 -1 if entries are -1. Throws if neither.
 """
-function compute_parity(S_num::Matrix{ComplexF64}; tol::Float64 = 1e-8)
-    r = size(S_num, 1)
-    S2 = S_num * S_num
+function compute_parity(S)
+    r = nrows(S)
+    S2 = S * S
+    K = base_ring(S)
     # Each row should have exactly one non-zero entry, value ±1
+    first_sign = 0
     for i in 1:r
         non_zero_idx = 0
-        non_zero_val = 0.0 + 0.0im
+        non_zero_val = zero(K)
         for j in 1:r
-            if abs(S2[i, j]) > tol
+            if !iszero(S2[i, j])
                 if non_zero_idx != 0
                     error("S² row $i has multiple non-zero entries; not a (signed) permutation")
                 end
@@ -176,35 +153,34 @@ function compute_parity(S_num::Matrix{ComplexF64}; tol::Float64 = 1e-8)
             end
         end
         non_zero_idx == 0 && error("S² row $i is all zero")
-        # Check value is ±1
-        if abs(non_zero_val - 1) < tol
-            # +1 entry
-        elseif abs(non_zero_val + 1) < tol
-            # -1 entry
+        sign = if non_zero_val == one(K)
+            1
+        elseif non_zero_val == -one(K)
+            -1
         else
             error("S² entry ($i, $non_zero_idx) = $non_zero_val; not ±1")
         end
+        first_sign == 0 && (first_sign = sign)
+        sign == first_sign || error("S² has mixed signs")
     end
-    # All entries should have same sign
-    first_entry = S2[1, findfirst(j -> abs(S2[1, j]) > tol, 1:r)]
-    return real(first_entry) > 0 ? +1 : -1
+    return first_sign
 end
 
 """
-    numeric_order(T_num::Matrix{ComplexF64}, r::Int, N::Int) -> Int
+    exact_order(T, r::Int, N::Int) -> Int
 
 Compute the order of the diagonal matrix T (= lcm of orders of its diagonal
 entries as N-th roots of unity).
 """
-function numeric_order(T_num::Matrix{ComplexF64}, r::Int, N::Int; tol::Float64 = 1e-8)
+function exact_order(T, r::Int, N::Int)
+    K = base_ring(T)
+    z = gen(K)
     ord = 1
     for i in 1:r
-        θ = T_num[i, i]
-        # θ is an N-th root of unity: θ = exp(2πi k / N) for some k
-        angle_val = angle(θ)
-        k_float = angle_val * N / (2π)
-        k = round(Int, k_float)
-        k = mod(k, N)
+        θ = T[i, i]
+        k = findfirst(j -> θ == z^(j - 1), 1:N)
+        k === nothing && error("T[$i,$i] is not a power of ζ_$N")
+        k = k - 1
         # Order of ζ_N^k in μ_N is N / gcd(k, N)
         d = gcd(k, N)
         entry_ord = N ÷ d
@@ -254,8 +230,6 @@ function build_atomic_catalog(N::Int; max_rank::Int = 20, verbose::Bool = true)
     load_sl2reps_package()
 
     K, z = cyclotomic_field(N)
-    ζ_num = exp(2π * im / N)
-    deg = degree(K)
 
     catalog = AtomicIrrep[]
     seen = Set{UInt64}()
@@ -274,17 +248,15 @@ function build_atomic_catalog(N::Int; max_rank::Int = 20, verbose::Bool = true)
 
             S = gap_to_oscar_matrix(rep.S, r, K, N)
             T = gap_to_oscar_matrix(rep.T, r, K, N)
-            S_num = matrix_to_complex(S, ζ_num, deg)
-            T_num = matrix_to_complex(T, ζ_num, deg)
 
-            # Dedup signature: (dim, sorted T-phases)
-            t_phases = sort([round(angle(T_num[k, k]); digits = 8) for k in 1:r])
-            sig = hash((r, t_phases))
+            # Dedup signature: (dim, sorted exact T eigenvalues)
+            t_entries = sort([string(T[k, k]) for k in 1:r])
+            sig = hash((r, t_entries))
             sig in seen && continue
             push!(seen, sig)
 
-            par = compute_parity(S_num)
-            level = numeric_order(T_num, r, N)
+            par = compute_parity(S)
+            level = exact_order(T, r, N)
             label = "$(r)d_$level"
             push!(catalog, AtomicIrrep(r, level, label, S, T, par, K, N))
         end
