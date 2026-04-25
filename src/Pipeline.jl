@@ -7,14 +7,13 @@ MTCs, each carrying:
 - the SL(2, ℤ/N) stratum (m_λ) decomposition (Phase 0/1),
 - F_p-validated modular data (Phase 2),
 - Galois-coherent, arithmetic S-matrix in ℤ[√d] (Phase 3),
-- `(F, R)` symbols in ℂ satisfying pentagon + hexagon + ribbon (Phase 4),
+- `(F, R)` symbols in ℂ satisfying pentagon + hexagon (Phase 4),
 - a `VerifyReport` summarising residuals.
 
 This module also provides two mid-level helpers:
 
-- `compute_FR_from_ST(Nijk, T_complex; ...)`: given a fusion tensor
-  and complex T-eigenvalues, finds a `(F, R)` pair realising that
-  modular data via pentagon HC → hexagon HC → ribbon match.
+- `compute_FR_from_ST(Nijk; ...)`: given a fusion tensor,
+  solve for `(F, R)` via pentagon HC → hexagon HC.
 
 - `classify_from_group(group, all_primes; ...)`: given a Galois-coherent
   group from `group_mtcs_galois_aware`, performs Phase 3 CRT + Phase 4
@@ -75,7 +74,7 @@ Complex-lifted modular data (Phase 4 input):
 - `R_values`:       hexagon solution in ℂ, `Vector{ComplexF64}` of
                     length `2 · r_var_count` (forward ⊕ reverse).
                     `nothing` if no match was found.
-- `verify_report`:  `VerifyReport` with pentagon, hexagon, ribbon
+- `verify_report`:  `VerifyReport` with pentagon/hexagon residuals
                     max-residuals. `nothing` if no match was found.
 
 Provenance:
@@ -101,6 +100,89 @@ struct ClassifiedMTC
     R_values::Union{Vector{ComplexF64}, Nothing}
     verify_report::Union{VerifyReport, Nothing}
     galois_sector::Int
+end
+
+function _permute_fusion_tensor(Nijk::Array{Int, 3}, perm::Vector{Int})
+    return Nijk[perm, perm, perm]
+end
+
+function _all_permutations(v::Vector{Int})
+    if length(v) <= 1
+        return [copy(v)]
+    end
+    out = Vector{Vector{Int}}()
+    for i in eachindex(v)
+        head = v[i]
+        tail = Vector{Int}(undef, length(v) - 1)
+        ti = 1
+        for j in eachindex(v)
+            if j != i
+                tail[ti] = v[j]
+                ti += 1
+            end
+        end
+        for rest in _all_permutations(tail)
+            push!(out, vcat(head, rest))
+        end
+    end
+    return out
+end
+
+function _lex_less(a::Vector{Int}, b::Vector{Int})
+    @inbounds for i in eachindex(a, b)
+        if a[i] < b[i]
+            return true
+        elseif a[i] > b[i]
+            return false
+        end
+    end
+    return false
+end
+
+"""
+    fusion_rule_key(Nijk) -> String
+
+Create a unique, type-normalized, order-normalized key for a fusion rule.
+Normalization fixes unit index 1 and minimizes over all permutations of
+labels `2:r`, so equivalent relabelings map to the same key.
+"""
+function fusion_rule_key(Nijk::AbstractArray{<:Integer, 3})
+    size(Nijk, 1) == size(Nijk, 2) == size(Nijk, 3) ||
+        error("fusion_rule_key expects a rank-r cubic tensor")
+    N_int = Array{Int, 3}(Nijk)
+    r = size(N_int, 1)
+    labels = collect(2:r)
+    perms = isempty(labels) ? [Int[]] : _all_permutations(labels)
+    best = nothing
+    for p in perms
+        perm = isempty(labels) ? [1] : vcat(1, p)
+        candidate = vec(_permute_fusion_tensor(N_int, perm))
+        if best === nothing || _lex_less(candidate, best)
+            best = candidate
+        end
+    end
+    payload = join(best, ",")
+    return "r=$(r)|$payload"
+end
+
+function _classify_modular_data_by_fusion_rule(classified::Vector{ClassifiedMTC})
+    grouped = Dict{String, Vector{Int}}()
+    for (i, cmtc) in enumerate(classified)
+        key = fusion_rule_key(cmtc.Nijk)
+        push!(get!(grouped, key, Int[]), i)
+    end
+    return grouped
+end
+
+function _with_fr_result(c::ClassifiedMTC,
+                         F::Union{Vector{ComplexF64}, Nothing},
+                         R::Union{Vector{ComplexF64}, Nothing},
+                         report::Union{VerifyReport, Nothing})
+    return ClassifiedMTC(c.N, c.N_input, c.rank, c.stratum, c.Nijk,
+                         c.S_Zsqrtd, c.scale_d, c.scale_factor,
+                         c.used_primes, c.fresh_primes, c.verify_fresh,
+                         c.S_complex, c.T_complex,
+                         F, R, report, c.galois_sector)
 end
 
 # ============================================================
@@ -140,7 +222,6 @@ end
                        groebner_allow_fallback = true,
                        precheck_unit_axiom = true,
                        reconstruction_bound = 50,
-                       ribbon_atol = 1e-8,
                        skip_FR = false,
                        verbose = true)
         -> NamedTuple
@@ -204,8 +285,6 @@ function classify_mtcs_auto(N::Int;
                             groebner_allow_fallback::Bool = true,
                             precheck_unit_axiom::Bool = true,
                             reconstruction_bound::Int = 50,
-                            ribbon_atol::Float64 = 1e-8,
-                            require_ribbon_match::Bool = false,
                             skip_FR::Bool = false,
                             verbose::Bool = true)
     N >= 1 || error("N must be positive, got $N")
@@ -302,8 +381,6 @@ function classify_mtcs_auto(N::Int;
                                                             groebner_allow_fallback = groebner_allow_fallback,
                                                             precheck_unit_axiom = precheck_unit_axiom,
                                                             reconstruction_bound = reconstruction_bound,
-                                                            ribbon_atol = ribbon_atol,
-                                                            require_ribbon_match = require_ribbon_match,
                                                             skip_FR = skip_FR,
                                                             verbose = verbose)
 
@@ -485,8 +562,8 @@ function _modular_data_roundtrip_up_to_galois(F_values::Vector{ComplexF64},
 
     T_from_FR_candidates = infer_T_candidates_from_R(R_values)
     isempty(T_from_FR_candidates) && return (ok = false, best_a = 1,
-                                             ribbon_max = NaN, S_max = Inf,
-                                             T_max = Inf, T_best = best_T)
+                                             S_max = Inf, T_max = Inf,
+                                             T_best = best_T)
 
     for T_from_FR in T_from_FR_candidates
         S_from = reconstruct_S_from_T(T_from_FR)
@@ -513,7 +590,7 @@ function _modular_data_roundtrip_up_to_galois(F_values::Vector{ComplexF64},
     # comparing against CRT-lifted targets up to Galois.
     _ = F_values
     ok = best_s < 5e-2 && best_t < 5e-2
-    return (ok = ok, best_a = best_a, ribbon_max = NaN,
+    return (ok = ok, best_a = best_a,
             S_max = best_s, T_max = best_t, T_best = best_T)
 end
 
@@ -606,9 +683,7 @@ function Base.show(io::IO, m::ClassifiedMTC)
         rep = m.verify_report
         pent = rep === nothing ? "?" : string(round(rep.pentagon_max, sigdigits = 2))
         hex = rep === nothing ? "?" : string(round(rep.hexagon_max, sigdigits = 2))
-        rib = rep === nothing || rep.ribbon_max === nothing ? "?" :
-            string(round(rep.ribbon_max, sigdigits = 2))
-        "(F,R) pent=$pent hex=$hex rib=$rib"
+        "(F,R) pent=$pent hex=$hex"
     end
     fresh_str = isempty(m.fresh_primes) ? "no fresh" :
         (m.verify_fresh ? "fresh✓" : "fresh✗")
@@ -623,8 +698,7 @@ end
 # ============================================================
 
 """
-    compute_FR_from_ST(Nijk, T_complex; ribbon_atol = 1e-8,
-                        require_ribbon_match = true,
+    compute_FR_from_ST(Nijk;
                         return_all = false,
                         pentagon_slice = 1, show_progress = false,
                         verbose = false)
@@ -634,8 +708,8 @@ end
 Given a fusion tensor `Nijk`, find a pair `(F, R)` of complex
 F- and R-symbols satisfying pentagon and hexagon.
 
-`T_complex` is accepted for API compatibility but is not used to select
-an `(F,R)` branch. Consistency with modular data is checked afterwards by
+This stage solves pentagon/hexagon from fusion data only. Branch
+selection against reconstructed modular data is done afterwards by
 `_modular_data_roundtrip_up_to_galois` in `classify_from_group`.
 
 Algorithm:
@@ -670,28 +744,21 @@ Returns a NamedTuple with:
                   numerically valid `(F,R)` candidates with reports.
 
 """
-function compute_FR_from_ST(Nijk::Array{Int, 3},
-                            T_complex::Vector{ComplexF64};
-                            ribbon_atol::Float64 = 1e-8,
-                            require_ribbon_match::Bool = true,
+function compute_FR_from_ST(Nijk::Array{Int, 3};
                             return_all::Bool = false,
                             pentagon_slice::Int = 1,
                             show_progress::Bool = false,
                             verbose::Bool = false)
     r = size(Nijk, 1)
-    length(T_complex) == r || error(
-        "T_complex length $(length(T_complex)) does not match rank $r")
 
     # Rank-1 (trivial) MTC: the only fusion category structure is the
-    # unit object with F = R = [1]. Pentagon / hexagon / ribbon hold
-    # vacuously. `TensorCategories.pentagon_equations` emits no non-
+    # unit object with F = R = [1]. Pentagon / hexagon hold vacuously.
+    # `TensorCategories.pentagon_equations` emits no non-
     # trivial polynomials at rank 1, so we short-circuit here rather
     # than let `get_pentagon_system` error.
     if r == 1
         F_trivial = ComplexF64[1.0]
         R_trivial = ComplexF64[1.0]
-        # Fields in order: pentagon_max, hexagon_max, ribbon_max,
-        # n_pentagon_eqs, n_hexagon_eqs, rank
         report = VerifyReport(0.0, 0.0, nothing, 0, 0, 1)
         cand = (F = F_trivial, R = R_trivial, report = report,
                 f_idx = 1, r_idx = 1)
@@ -776,13 +843,6 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
                 continue
             end
 
-            rep_with_t = try
-                verify_mtc(F, R_vals, Nijk; T = T_complex)
-            catch
-                rep
-            end
-            ribbon_score = rep_with_t.ribbon_max === nothing ? Inf : rep_with_t.ribbon_max
-
             # Keep counters for API compatibility. n_matches now counts
             # numerically valid pentagon+hexagon candidates.
             best = (; best..., n_matches = best.n_matches + 1)
@@ -796,11 +856,6 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
             end
         end
     end
-
-    # Backward-compatible knobs kept in signature (deprecated path).
-    _ = ribbon_atol
-    _ = require_ribbon_match
-    _ = T_complex
 
     # Drop the internal score field from the public return
     if return_all
@@ -827,8 +882,6 @@ end
                         reconstruction_bound = 50,
                         galois_sector = 1,
                         test_primes = nothing,
-                        ribbon_atol = 1e-8,
-                        require_ribbon_match = false,
                         skip_FR = false,
                         verbose = false)
         -> ClassifiedMTC
@@ -855,12 +908,6 @@ Arguments:
                                      If `nothing`, uses first
                                      `max(2, length(all_primes) ÷ 2)`
                                      primes; remaining are fresh.
-- `ribbon_atol::Float64 = 1e-8`:     tolerance for the Phase 4 ribbon
-                                     match.
-- `require_ribbon_match::Bool=false`: if true, reject candidates with
-                                     no ribbon match below
-                                     `ribbon_atol`; if false, accept
-                                     minimum-ribbon-residual `(F,R)`.
 - `skip_FR::Bool = false`:           if true, only do Phase 0–3 and leave
                                      (F, R) as `nothing`. Useful for
                                      rank/complexity beyond the pentagon
@@ -878,8 +925,6 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                              reconstruction_bound::Int = 50,
                              galois_sector::Int = 1,
                              test_primes::Union{Vector{Int}, Nothing} = nothing,
-                             ribbon_atol::Float64 = 1e-8,
-                             require_ribbon_match::Bool = false,
                              skip_FR::Bool = false,
                              verbose::Bool = false)
     group_primes = sort(collect(keys(group)))
@@ -954,15 +999,14 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     end
     verbose && println("  running pentagon/hexagon on rank=$rank...")
 
-    fr_result = compute_FR_from_ST(Nijk, T_for_phase4;
-                                   ribbon_atol = ribbon_atol,
+    fr_result = compute_FR_from_ST(Nijk;
                                    return_all = true,
                                    verbose = verbose)
     fr_result.F === nothing && error("Phase 4 could not produce any (F,R) solution")
     isempty(fr_result.candidates) && error("Phase 4 produced no valid (F,R) candidates")
 
     # Select branch by modular-data equivalence after reconstruction,
-    # not by direct ribbon fitting against the input T.
+    # selection is based on modular-data roundtrip consistency.
     best_idx = 0
     best_md = nothing
     for (ci, cand) in enumerate(fr_result.candidates)
@@ -1003,8 +1047,6 @@ end
                                 verlinde_threshold = 3,
                                 max_block_dim = 3,
                                 reconstruction_bound = 50,
-                                ribbon_atol = 1e-8,
-                                require_ribbon_match = false,
                                 skip_FR = false,
                                 verbose = true)
         -> Vector{ClassifiedMTC}
@@ -1018,7 +1060,7 @@ Pipeline:
   Phase 1: enumerate strata (m_λ) with Σ m_λ d_λ = r for each r ≤ max_rank
   Phase 2: for each stratum, sweep block-U at each prime → MTC candidates
   Phase 3: Galois-aware grouping + CRT reconstruction in ℤ[√d]
-  Phase 4: lift to ℂ, solve pentagon/hexagon, verify ribbon against T
+  Phase 4: lift to ℂ, solve pentagon/hexagon
 
 Returns one `ClassifiedMTC` per Galois sector per stratum that yields a
 valid MTC. If `skip_FR = true`, Phase 4 is skipped and `(F, R)` is left
@@ -1117,8 +1159,6 @@ Arguments:
                                    Phase 2 candidate loop.
 - `reconstruction_bound::Int = 50`: coefficient bound for ℤ[√d]
                                    rational reconstruction.
-- `ribbon_atol::Float64 = 1e-8`:   Phase 4 ribbon residual tolerance
-                                   used only for diagnostic counting.
 - `skip_FR::Bool = false`:         skip Phase 4. Useful if
                                    `max_rank ≥ 5` and pentagon HC would
                                    blow up.
@@ -1142,8 +1182,6 @@ function classify_mtcs_at_conductor(N::Int;
                                     groebner_allow_fallback::Bool = true,
                                     precheck_unit_axiom::Bool = true,
                                     reconstruction_bound::Int = 50,
-                                    ribbon_atol::Float64 = 1e-8,
-                                    require_ribbon_match::Bool = false,
                                     skip_FR::Bool = false,
                                     verbose::Bool = true)
     user_sqrtd_fn = sqrtd_fn
@@ -1241,8 +1279,8 @@ function classify_mtcs_at_conductor(N::Int;
         end
     end
 
-    # ------- Phase 3 + 4: per-stratum, per-sector -------
-    verbose && println("\n=== Phase 3 + 4: CRT + (F, R) classification ===")
+    # ------- Phase 3: per-stratum, per-sector modular-data reconstruction -------
+    verbose && println("\n=== Phase 3: CRT modular-data reconstruction ===")
 
     out = ClassifiedMTC[]
     for (st, results_by_prime) in stratum_results
@@ -1334,8 +1372,6 @@ function classify_mtcs_at_conductor(N::Int;
             half = max(2, length(group_primes) ÷ 2)
             used = copy(group_primes[1:half])
             extra_idx = half + 1
-            cur_ribbon_atol = ribbon_atol
-
             local cmtc
             local sector_ok = false
             local last_err_msg = ""
@@ -1349,9 +1385,7 @@ function classify_mtcs_at_conductor(N::Int;
                                                 reconstruction_bound = reconstruction_bound,
                                                 galois_sector = gi,
                                                 test_primes = used,
-                                                ribbon_atol = cur_ribbon_atol,
-                                                require_ribbon_match = require_ribbon_match,
-                                                skip_FR = skip_FR,
+                                                skip_FR = true,
                                                 verbose = verbose)
                     sector_ok = true
                     break
@@ -1375,6 +1409,53 @@ function classify_mtcs_at_conductor(N::Int;
             end
             push!(out, cmtc)
             verbose && println("    → $cmtc")
+        end
+    end
+
+    if skip_FR
+        verbose && println("\n=== Phase 4 skipped: returning modular-data results only ===")
+        verbose && println("\n=== Done: $(length(out)) ClassifiedMTC(s) ===")
+        return out
+    end
+
+    # ------- Phase 4: aggregate by fusion rule and run (F,R) once per key -------
+    verbose && println("\n=== Phase 4: fusion-rule aggregation + (F, R) classification ===")
+    grouped = _classify_modular_data_by_fusion_rule(out)
+    key_to_members = Dict{String, Vector{Tuple{Matrix{ComplexF64}, Vector{ComplexF64}}}}()
+    for (key, idxs) in grouped
+        key_to_members[key] = [(out[i].S_complex, out[i].T_complex) for i in idxs]
+    end
+    verbose && println("  modular-data groups: $(length(out)) (S,T) results → " *
+                       "$(length(grouped)) fusion-rule keys")
+
+    for (key, idxs) in grouped
+        rep_idx = idxs[1]
+        rep = out[rep_idx]
+        verbose && println("  key=$key: members=$(length(idxs)), rank=$(rep.rank)")
+        fr_result = compute_FR_from_ST(rep.Nijk;
+                                       return_all = true,
+                                       verbose = verbose)
+        fr_result.F === nothing && error("Phase 4 could not produce any (F,R) solution for key=$key")
+        isempty(fr_result.candidates) && error("Phase 4 produced no valid (F,R) candidates for key=$key")
+
+        best_idx = 0
+        best_md = nothing
+        for (ci, cand) in enumerate(fr_result.candidates)
+            md = _modular_data_roundtrip_up_to_galois(cand.F, cand.R,
+                                                      rep.Nijk, rep.S_complex, rep.T_complex, rep.N)
+            if best_md === nothing ||
+               (md.S_max < best_md.S_max) ||
+               (isapprox(md.S_max, best_md.S_max; atol = 1e-12) && md.T_max < best_md.T_max)
+                best_md = md
+                best_idx = ci
+            end
+        end
+
+        selected = fr_result.candidates[best_idx]
+        verbose && println("    selected branch: galois a=$(best_md.best_a), " *
+                           "S_err=$(best_md.S_max), T_err=$(best_md.T_max), ok=$(best_md.ok)")
+        for i in idxs
+            out[i] = _with_fr_result(out[i], selected.F, selected.R, selected.report)
         end
     end
 
