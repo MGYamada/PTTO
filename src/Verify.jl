@@ -17,8 +17,8 @@ additional MTC-level consistency checks:
 
 All residuals are reported in the ∞-norm (`maximum(abs.(…))`).
 
-This module is **purely downstream**: it does not depend on
-HomotopyContinuation or KrylovKit. Only Oscar (for polynomial evaluation
+This module is **purely downstream**: it does not depend on external
+path-tracking or Krylov solvers. Only Oscar (for polynomial evaluation
 using `eval_poly_complex`) and TensorCategories (for rebuilding a
 category with numerical F and R to extract block structure).
 """

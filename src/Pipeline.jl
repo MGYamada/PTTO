@@ -13,7 +13,7 @@ MTCs, each carrying:
 This module also provides two mid-level helpers:
 
 - `compute_FR_from_ST(Nijk; ...)`: given a fusion tensor,
-  solve for `(F, R)` via pentagon HC → hexagon HC.
+  solve for `(F, R)` via F_p Groebner/CRT pentagon → hexagon.
 
 - `classify_from_group(group, all_primes; ...)`: given a Galois-coherent
   group from `group_mtcs_galois_aware`, performs Phase 3 CRT + Phase 4
@@ -921,19 +921,20 @@ selection against reconstructed modular data is done afterwards by
 
 Algorithm:
 1. Set up pentagon system from `Nijk` (via TensorCategories).
-2. Solve pentagon via homotopy continuation, optionally with random
-   linear slice to break gauge symmetry.
+2. Solve pentagon via F_p reduction, Groebner preprocessing, and
+   CRT-compatible reconstruction, optionally with deterministic linear
+   slices to break gauge symmetry.
 3. For each pentagon solution `F`:
    - Polish with damped Newton.
    - Build hexagon system with F fixed.
-   - Solve hexagon via HC.
+   - Solve hexagon through the same algebraic route.
    - Keep the `(F,R)` pair with the smallest pentagon/hexagon residual
      score.
 4. Return the best numerical pentagon/hexagon solution.
 
 Caveats:
-- Pentagon HC is feasible only for small fusion rings (~10 F-variables
-  before mixed-volume blow-up; Ising-sized rings with ~14 F-vars may
+- Phase-4 algebraic solving is feasible only for small fusion rings
+  (~10 F-variables in practice; Ising-sized rings with ~14 F-vars may
   require hours).
 - Multiple inequivalent braided branches can share the same fusion ring.
   This function does not disambiguate them via `T`; modular-data
@@ -997,7 +998,7 @@ function compute_FR_from_ST(Nijk::Array{Int, 3};
                                              slice = pentagon_slice,
                                              include_singular = false,
                                              show_progress = show_progress)
-    verbose && println("  Pentagon HC: $(length(F_sols)) solutions")
+    verbose && println("  Pentagon modular solver: $(length(F_sols)) solutions")
 
     best = (F = nothing,
             R = nothing,
@@ -1117,8 +1118,8 @@ Arguments:
                                      primes; remaining are fresh.
 - `skip_FR::Bool = false`:           if true, only do Phase 0–3 and leave
                                      (F, R) as `nothing`. Useful for
-                                     rank/complexity beyond the pentagon
-                                     HC limit (~10 F-vars).
+                                     rank/complexity beyond the Phase-4
+                                     solver limit (~10 F-vars).
 - `verbose::Bool = false`:           print progress.
 """
 function classify_from_group(group::Dict{Int, MTCCandidate},
@@ -1259,7 +1260,7 @@ Pipeline:
 
 Returns one `ClassifiedMTC` per Galois sector per stratum that yields a
 valid MTC. If `skip_FR = true`, Phase 4 is skipped and `(F, R)` is left
-as `nothing` (useful for large ranks where pentagon HC is infeasible).
+as `nothing` (useful for large ranks where Phase-4 solving is infeasible).
 
 Note on conductor: `N` is an input indicator (typically the T-order
 conductor). Internally, the pipeline searches at `N_effective`
@@ -1355,7 +1356,7 @@ Arguments:
 - `reconstruction_bound::Int = 50`: coefficient bound for ℤ[√d]
                                    rational reconstruction.
 - `skip_FR::Bool = false`:         skip Phase 4. Useful if
-                                   `max_rank ≥ 5` and pentagon HC would
+                                   `max_rank ≥ 5` and Phase-4 solving would
                                    blow up.
 - `verbose::Bool = true`:          print per-phase progress.
 """
