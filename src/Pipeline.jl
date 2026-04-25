@@ -565,9 +565,10 @@ function _modular_data_roundtrip(F_values::Vector{ComplexF64},
 
         assignments = fill(-1, vars)  # t_2 ... t_r
         sols = Vector{Vector{Int}}()
-        get_t(idx::Int) = idx == 1 ? 0 : assignments[idx - 1]
+        nextval = fill(0, vars)
 
-        function eq_satisfied_or_pending(a::Int, b::Int, c::Int, m::Int)
+        get_t(idx::Int) = idx == 1 ? 0 : assignments[idx - 1]
+        eq_satisfied_or_pending(a::Int, b::Int, c::Int, m::Int) = begin
             ta = get_t(a)
             tb = get_t(b)
             tc = get_t(c)
@@ -580,31 +581,38 @@ function _modular_data_roundtrip(F_values::Vector{ComplexF64},
     return best
 end
 
-        function backtrack(pos::Int)
-            length(sols) >= max_candidates && return
+        pos = 1
+        while pos >= 1
+            length(sols) >= max_candidates && break
             if pos > vars
-                for (a, b, c, m) in eqs
-                    eq_satisfied_or_pending(a, b, c, m) || return
-                end
                 push!(sols, copy(assignments))
-                return
+                pos -= 1
+                pos >= 1 && (nextval[pos] += 1)
+                continue
             end
-            for v in 0:(N - 1)
-                assignments[pos] = v
-                local ok = true
-                for (a, b, c, m) in eqs
-                    if !eq_satisfied_or_pending(a, b, c, m)
-                        ok = false
-                        break
-                    end
-                end
-                ok && backtrack(pos + 1)
-                length(sols) >= max_candidates && return
-            end
-            assignments[pos] = -1
-        end
 
-        backtrack(1)
+            if nextval[pos] >= N
+                nextval[pos] = 0
+                assignments[pos] = -1
+                pos -= 1
+                pos >= 1 && (nextval[pos] += 1)
+                continue
+            end
+
+            assignments[pos] = nextval[pos]
+            local ok = true
+            for (a, b, c, m) in eqs
+                if !eq_satisfied_or_pending(a, b, c, m)
+                    ok = false
+                    break
+                end
+            end
+            if ok
+                pos += 1
+            else
+                nextval[pos] += 1
+            end
+        end
         T_candidates = Vector{Vector{ComplexF64}}()
         for sol in sols
             Tvals = Vector{ComplexF64}(undef, r)
