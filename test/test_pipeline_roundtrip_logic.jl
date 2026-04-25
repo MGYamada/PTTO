@@ -3,7 +3,7 @@ using LinearAlgebra
 using ACMG
 
 @testset "Pipeline modular-data roundtrip logic" begin
-    @testset "_modular_data_roundtrip_up_to_galois aligns S/T under same Galois action" begin
+    @testset "_modular_data_roundtrip reconstructs S/T from Kitaev (211)(223)" begin
         # Fibonacci fusion ring (rank 2, τ self-dual).
         Nijk = zeros(Int, 2, 2, 2)
         Nijk[1, 1, 1] = 1
@@ -12,61 +12,36 @@ using ACMG
         Nijk[2, 2, 1] = 1
         Nijk[2, 2, 2] = 1
 
-        # Same S-from-T reconstruction formula as the pipeline helper.
-        function reconstruct_S_from_T_fib(Tvals::Vector{ComplexF64})
-            r = size(Nijk, 1)
-            A = zeros(Float64, r, r)
-            for i in 1:r
-                A .+= Float64.(Nijk[i, :, :])
-            end
-            eig = eigen(A)
-            idx = argmax(real(eig.values))
-            d = abs.(real(eig.vectors[:, idx]))
-            d ./= d[1]
-            D = sqrt(sum(d .^ 2))
+        φ = (1 + sqrt(5.0)) / 2
+        D = sqrt(1 + φ^2)
+        S_target = ComplexF64[
+            1 / D   φ / D;
+            φ / D  -1 / D
+        ]
+        T_target = ComplexF64[1.0, exp(4π * im / 5)]
 
-            S = Matrix{ComplexF64}(undef, r, r)
-            for i in 1:r, j in 1:r
-                acc = 0.0 + 0.0im
-                for k in 1:r
-                    Nijk[i, j, k] == 0 && continue
-                    acc += Nijk[i, j, k] * (Tvals[k] / (Tvals[i] * Tvals[j])) * d[k]
-                end
-                S[i, j] = acc / D
-            end
-            return S
-        end
-
-        N = 5
-        T_target = ComplexF64[1.0, exp(2π * im / N)]
-        S_target = reconstruct_S_from_T_fib(T_target)
-
-        # Build an R vector whose inferred twist is T_target^2.
-        T_from = ComplexF64[1.0, exp(2π * im * 2 / N)]
-        t2 = 2
-        m_by_triple = Dict(
-            (1, 1, 1) => 0,
-            (1, 2, 2) => 0,
-            (2, 1, 2) => 0,
-            (2, 2, 1) => mod(2 * t2, N),
-            (2, 2, 2) => t2,
-        )
+        # One valid Fibonacci braiding branch.
         positions = block_positions_R(Nijk)
         r_var_count = sum(Nijk[i, j, k]^2 for i in 1:2, j in 1:2, k in 1:2 if Nijk[i, j, k] > 0)
-        R_fwd = Vector{ComplexF64}(undef, r_var_count)
-        for (ijk, m) in m_by_triple
+        R_fwd = fill(0.0 + 0.0im, r_var_count)
+        R_by_triple = Dict(
+            (1, 1, 1) => 1.0 + 0.0im,
+            (1, 2, 2) => 1.0 + 0.0im,
+            (2, 1, 2) => 1.0 + 0.0im,
+            (2, 2, 1) => exp(-4π * im / 5),
+            (2, 2, 2) => exp(3π * im / 5),
+        )
+        for (ijk, z) in R_by_triple
             idx = positions[ijk][1]
-            # infer_T_candidates_from_R uses z = R^2
-            R_fwd[idx] = exp((π * im * m) / N)
+            R_fwd[idx] = z
         end
 
-        out = ACMG._modular_data_roundtrip_up_to_galois(ComplexF64[1.0], R_fwd,
-                                                        Nijk, S_target, T_target, N)
+        out = ACMG._modular_data_roundtrip(ComplexF64[1.0], R_fwd,
+                                           Nijk, S_target, T_target, 5)
         @test out.ok
-        @test out.best_a == 2
         @test out.T_max < 1e-8
         @test out.S_max < 1e-8
-        @test isapprox(out.T_best[2], T_from[2]; atol = 1e-8)
+        @test isapprox(out.T_from[2], T_target[2]; atol = 1e-8)
     end
 end
 
