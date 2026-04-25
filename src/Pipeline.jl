@@ -103,6 +103,89 @@ struct ClassifiedMTC
     galois_sector::Int
 end
 
+function _permute_fusion_tensor(Nijk::Array{Int, 3}, perm::Vector{Int})
+    return Nijk[perm, perm, perm]
+end
+
+function _all_permutations(v::Vector{Int})
+    if length(v) <= 1
+        return [copy(v)]
+    end
+    out = Vector{Vector{Int}}()
+    for i in eachindex(v)
+        head = v[i]
+        tail = Vector{Int}(undef, length(v) - 1)
+        ti = 1
+        for j in eachindex(v)
+            if j != i
+                tail[ti] = v[j]
+                ti += 1
+            end
+        end
+        for rest in _all_permutations(tail)
+            push!(out, vcat(head, rest))
+        end
+    end
+    return out
+end
+
+function _lex_less(a::Vector{Int}, b::Vector{Int})
+    @inbounds for i in eachindex(a, b)
+        if a[i] < b[i]
+            return true
+        elseif a[i] > b[i]
+            return false
+        end
+    end
+    return false
+end
+
+"""
+    fusion_rule_key(Nijk) -> String
+
+Create a unique, type-normalized, order-normalized key for a fusion rule.
+Normalization fixes unit index 1 and minimizes over all permutations of
+labels `2:r`, so equivalent relabelings map to the same key.
+"""
+function fusion_rule_key(Nijk::AbstractArray{<:Integer, 3})
+    size(Nijk, 1) == size(Nijk, 2) == size(Nijk, 3) ||
+        error("fusion_rule_key expects a rank-r cubic tensor")
+    N_int = Array{Int, 3}(Nijk)
+    r = size(N_int, 1)
+    labels = collect(2:r)
+    perms = isempty(labels) ? [Int[]] : _all_permutations(labels)
+    best = nothing
+    for p in perms
+        perm = isempty(labels) ? [1] : vcat(1, p)
+        candidate = vec(_permute_fusion_tensor(N_int, perm))
+        if best === nothing || _lex_less(candidate, best)
+            best = candidate
+        end
+    end
+    payload = join(best, ",")
+    return "r=$(r)|$payload"
+end
+
+function _classify_modular_data_by_fusion_rule(classified::Vector{ClassifiedMTC})
+    grouped = Dict{String, Vector{Int}}()
+    for (i, cmtc) in enumerate(classified)
+        key = fusion_rule_key(cmtc.Nijk)
+        push!(get!(grouped, key, Int[]), i)
+    end
+    return grouped
+end
+
+function _with_fr_result(c::ClassifiedMTC,
+                         F::Union{Vector{ComplexF64}, Nothing},
+                         R::Union{Vector{ComplexF64}, Nothing},
+                         report::Union{VerifyReport, Nothing})
+    return ClassifiedMTC(c.N, c.N_input, c.rank, c.stratum, c.Nijk,
+                         c.S_Zsqrtd, c.scale_d, c.scale_factor,
+                         c.used_primes, c.fresh_primes, c.verify_fresh,
+                         c.S_complex, c.T_complex,
+                         F, R, report, c.galois_sector)
+end
+
 # ============================================================
 #  classify_mtcs_auto: user-friendly auto-parameter wrapper
 # ============================================================
@@ -1241,8 +1324,8 @@ function classify_mtcs_at_conductor(N::Int;
         end
     end
 
-    # ------- Phase 3 + 4: per-stratum, per-sector -------
-    verbose && println("\n=== Phase 3 + 4: CRT + (F, R) classification ===")
+    # ------- Phase 3: per-stratum, per-sector modular-data reconstruction -------
+    verbose && println("\n=== Phase 3: CRT modular-data reconstruction ===")
 
     out = ClassifiedMTC[]
     for (st, results_by_prime) in stratum_results
@@ -1334,8 +1417,6 @@ function classify_mtcs_at_conductor(N::Int;
             half = max(2, length(group_primes) ÷ 2)
             used = copy(group_primes[1:half])
             extra_idx = half + 1
-            cur_ribbon_atol = ribbon_atol
-
             local cmtc
             local sector_ok = false
             local last_err_msg = ""
@@ -1349,9 +1430,9 @@ function classify_mtcs_at_conductor(N::Int;
                                                 reconstruction_bound = reconstruction_bound,
                                                 galois_sector = gi,
                                                 test_primes = used,
-                                                ribbon_atol = cur_ribbon_atol,
+                                                ribbon_atol = ribbon_atol,
                                                 require_ribbon_match = require_ribbon_match,
-                                                skip_FR = skip_FR,
+                                                skip_FR = true,
                                                 verbose = verbose)
                     sector_ok = true
                     break
@@ -1375,6 +1456,54 @@ function classify_mtcs_at_conductor(N::Int;
             end
             push!(out, cmtc)
             verbose && println("    → $cmtc")
+        end
+    end
+
+    if skip_FR
+        verbose && println("\n=== Phase 4 skipped: returning modular-data results only ===")
+        verbose && println("\n=== Done: $(length(out)) ClassifiedMTC(s) ===")
+        return out
+    end
+
+    # ------- Phase 4: aggregate by fusion rule and run (F,R) once per key -------
+    verbose && println("\n=== Phase 4: fusion-rule aggregation + (F, R) classification ===")
+    grouped = _classify_modular_data_by_fusion_rule(out)
+    key_to_members = Dict{String, Vector{Tuple{Matrix{ComplexF64}, Vector{ComplexF64}}}}()
+    for (key, idxs) in grouped
+        key_to_members[key] = [(out[i].S_complex, out[i].T_complex) for i in idxs]
+    end
+    verbose && println("  modular-data groups: $(length(out)) (S,T) results → " *
+                       "$(length(grouped)) fusion-rule keys")
+
+    for (key, idxs) in grouped
+        rep_idx = idxs[1]
+        rep = out[rep_idx]
+        verbose && println("  key=$key: members=$(length(idxs)), rank=$(rep.rank)")
+        fr_result = compute_FR_from_ST(rep.Nijk, rep.T_complex;
+                                       ribbon_atol = ribbon_atol,
+                                       return_all = true,
+                                       verbose = verbose)
+        fr_result.F === nothing && error("Phase 4 could not produce any (F,R) solution for key=$key")
+        isempty(fr_result.candidates) && error("Phase 4 produced no valid (F,R) candidates for key=$key")
+
+        best_idx = 0
+        best_md = nothing
+        for (ci, cand) in enumerate(fr_result.candidates)
+            md = _modular_data_roundtrip_up_to_galois(cand.F, cand.R,
+                                                      rep.Nijk, rep.S_complex, rep.T_complex, rep.N)
+            if best_md === nothing ||
+               (md.S_max < best_md.S_max) ||
+               (isapprox(md.S_max, best_md.S_max; atol = 1e-12) && md.T_max < best_md.T_max)
+                best_md = md
+                best_idx = ci
+            end
+        end
+
+        selected = fr_result.candidates[best_idx]
+        verbose && println("    selected branch: galois a=$(best_md.best_a), " *
+                           "S_err=$(best_md.S_max), T_err=$(best_md.T_max), ok=$(best_md.ok)")
+        for i in idxs
+            out[i] = _with_fr_result(out[i], selected.F, selected.R, selected.report)
         end
     end
 
