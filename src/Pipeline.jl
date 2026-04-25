@@ -465,6 +465,92 @@ function _normalize_smatrix(S::Matrix{ComplexF64})
     return Sn
 end
 
+function _infer_T_candidates_from_monodromy(R_values::Vector{ComplexF64},
+                                            Nijk::Array{Int,3},
+                                            N::Int;
+                                            max_candidates::Int = 64)
+    r = size(Nijk, 1)
+    vars = max(0, r - 1)
+    vars == 0 && return [ComplexF64[1.0 + 0.0im]]
+
+    # equations: t_a + t_b - t_c = m (mod N), where
+    # exp(2πim/N) approximates monodromy M^{ab}_c = R^{ba}_c R^{ab}_c.
+    eqs = Tuple{Int, Int, Int, Int}[]
+    for a in 1:r, b in 1:r, c in 1:r
+        Nijk[a, b, c] == 0 && continue
+        R_ab = extract_R_block(R_values, Nijk, a, b, c)
+        R_ba = extract_R_block(R_values, Nijk, b, a, c)
+        size(R_ab) == (1, 1) || continue
+        size(R_ba) == (1, 1) || continue
+        z = R_ba[1, 1] * R_ab[1, 1]
+        z = iszero(z) ? z : z / abs(z)
+        m = mod(round(Int, (N * angle(z)) / (2π)), N)
+        push!(eqs, (a, b, c, m))
+    end
+    isempty(eqs) && return [vcat(ComplexF64[1.0 + 0.0im], fill(1.0 + 0.0im, r - 1))]
+
+    assignments = fill(-1, vars)  # t_2 ... t_r
+    sols = Vector{Vector{Int}}()
+    nextval = fill(0, vars)
+
+    pos = 1
+    while pos >= 1
+        length(sols) >= max_candidates && break
+        if pos > vars
+            push!(sols, copy(assignments))
+            pos -= 1
+            if pos >= 1
+                nextval[pos] += 1
+            end
+            continue
+        end
+    end
+    return best
+end
+
+        if nextval[pos] >= N
+            nextval[pos] = 0
+            assignments[pos] = -1
+            pos -= 1
+            if pos >= 1
+                nextval[pos] += 1
+            end
+            continue
+        end
+
+        assignments[pos] = nextval[pos]
+        ok = true
+        for (a, b, c, m) in eqs
+            ta = a == 1 ? 0 : assignments[a - 1]
+            tb = b == 1 ? 0 : assignments[b - 1]
+            tc = c == 1 ? 0 : assignments[c - 1]
+            if ta >= 0 && tb >= 0 && tc >= 0
+                if mod(ta + tb - tc - m, N) != 0
+                    ok = false
+                    break
+                end
+            end
+        end
+        if ok
+            pos += 1
+        else
+            nextval[pos] += 1
+        end
+    end
+
+    T_candidates = Vector{Vector{ComplexF64}}()
+    for sol in sols
+        Tvals = Vector{ComplexF64}(undef, r)
+        Tvals[1] = 1.0 + 0.0im
+        for i in 2:r
+            Tvals[i] = exp((2π * im * sol[i - 1]) / N)
+        end
+        push!(T_candidates, Tvals)
+    end
+    isempty(T_candidates) && push!(T_candidates, vcat(ComplexF64[1.0 + 0.0im], fill(1.0 + 0.0im, r - 1)))
+    return T_candidates
+end
+
 function _st_signature_under_gauge(S::Matrix{ComplexF64},
                                    T::Vector{ComplexF64},
                                    automorphisms::Vector{Vector{Int}};
@@ -542,90 +628,6 @@ function _modular_data_roundtrip(F_values::Vector{ComplexF64},
         return S
     end
 
-    function infer_T_candidates_from_monodromy(; max_candidates::Int = 64)
-        vars = max(0, r - 1)
-        vars == 0 && return [ComplexF64[1.0 + 0.0im]]
-
-        # equations: t_a + t_b - t_c = m (mod N), where
-        # exp(2πim/N) approximates the monodromy eigenvalue
-        # M^{ab}_c = R^{ba}_c R^{ab}_c (multiplicity-free channels).
-        eqs = Tuple{Int, Int, Int, Int}[]
-        for a in 1:r, b in 1:r, c in 1:r
-            Nijk[a, b, c] == 0 && continue
-            R_ab = extract_R_block(R_values, Nijk, a, b, c)
-            R_ba = extract_R_block(R_values, Nijk, b, a, c)
-            size(R_ab) == (1, 1) || continue
-            size(R_ba) == (1, 1) || continue
-            z = R_ba[1, 1] * R_ab[1, 1]
-            z = iszero(z) ? z : z / abs(z)
-            m = mod(round(Int, (N * angle(z)) / (2π)), N)
-            push!(eqs, (a, b, c, m))
-        end
-        isempty(eqs) && return [ComplexF64[1.0 + 0.0im; fill(1.0 + 0.0im, r - 1)]]
-
-        assignments = fill(-1, vars)  # t_2 ... t_r
-        sols = Vector{Vector{Int}}()
-        nextval = fill(0, vars)
-
-        get_t(idx::Int) = idx == 1 ? 0 : assignments[idx - 1]
-        eq_satisfied_or_pending(a::Int, b::Int, c::Int, m::Int) = begin
-            ta = get_t(a)
-            tb = get_t(b)
-            tc = get_t(c)
-            if ta < 0 || tb < 0 || tc < 0
-                return true
-            end
-            return mod(ta + tb - tc - m, N) == 0
-        end
-    end
-    return best
-end
-
-        pos = 1
-        while pos >= 1
-            length(sols) >= max_candidates && break
-            if pos > vars
-                push!(sols, copy(assignments))
-                pos -= 1
-                pos >= 1 && (nextval[pos] += 1)
-                continue
-            end
-
-            if nextval[pos] >= N
-                nextval[pos] = 0
-                assignments[pos] = -1
-                pos -= 1
-                pos >= 1 && (nextval[pos] += 1)
-                continue
-            end
-
-            assignments[pos] = nextval[pos]
-            local ok = true
-            for (a, b, c, m) in eqs
-                if !eq_satisfied_or_pending(a, b, c, m)
-                    ok = false
-                    break
-                end
-            end
-            if ok
-                pos += 1
-            else
-                nextval[pos] += 1
-            end
-        end
-        T_candidates = Vector{Vector{ComplexF64}}()
-        for sol in sols
-            Tvals = Vector{ComplexF64}(undef, r)
-            Tvals[1] = 1.0 + 0.0im
-            for i in 2:r
-                Tvals[i] = exp((2π * im * sol[i - 1]) / N)
-            end
-            push!(T_candidates, Tvals)
-        end
-        isempty(T_candidates) && push!(T_candidates, ComplexF64[1.0 + 0.0im; fill(1.0 + 0.0im, r - 1)])
-        return T_candidates
-    end
-
     automorphisms = _fusion_automorphisms_fixing_unit(Nijk)
     best_perm = automorphisms[1]
     best_s = Inf
@@ -633,7 +635,7 @@ end
     best_Sn = _normalize_smatrix(reconstruct_S_from_T(T_target_n))
     best_Tn = copy(T_target_n)
 
-    for T_raw in infer_T_candidates_from_monodromy()
+    for T_raw in _infer_T_candidates_from_monodromy(R_values, Nijk, N)
         Tn = _normalize_twists(T_raw)
         Sn = _normalize_smatrix(reconstruct_S_from_T(Tn))
         for perm in automorphisms
