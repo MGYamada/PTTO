@@ -423,151 +423,144 @@ end
 # Directly calling this function for candidate comparison is deprecated.
 # Use `_score_fr_st_match` / `_select_fr_for_st`, which centralize
 # comparison rules and fallback behavior.
-function _modular_data_roundtrip_up_to_galois(F_values::Vector{ComplexF64},
-                                              R_values::Vector{ComplexF64},
-                                              Nijk::Array{Int,3},
-                                              S_target::Matrix{ComplexF64},
-                                              T_target::Vector{ComplexF64},
-                                              N::Int)
-    function reconstruct_S_from_T(Tvals::Vector{ComplexF64})
-        rloc = size(Nijk, 1)
-        fr = FusionRule(Nijk)
-        dual = fr.dual
-        A = zeros(Float64, rloc, rloc)
-        for i in 1:rloc
-            A .+= Float64.(Nijk[i, :, :])
-        end
-        eig = eigen(A)
-        idx = argmax(real(eig.values))
-        d = abs.(real(eig.vectors[:, idx]))
-        d ./= d[1]
-        D = sqrt(sum(d .^ 2))
-
-        S_from = Matrix{ComplexF64}(undef, rloc, rloc)
-        for i in 1:rloc, j in 1:rloc
-            acc = 0.0 + 0.0im
-            jdual = dual[j]
-            for k in 1:rloc
-                Nijk[i, jdual, k] == 0 && continue
-                acc += Nijk[i, jdual, k] * (Tvals[k] / (Tvals[i] * Tvals[jdual])) * d[k]
-            end
-            S_from[i, j] = acc / D
-        end
-        return S_from
-    end
-
-    function infer_T_candidates_from_R(Rvals::Vector{ComplexF64};
-                                       max_candidates::Int = 32)
-        rloc = size(Nijk, 1)
-        vars = max(0, rloc - 1)  # t_2, ..., t_r in Z/NZ (t_1 = 0)
-        if vars == 0
-            return [ComplexF64[1.0]]
-        end
-
-        eqs = Tuple{Int, Int, Int, Int}[]
-        for i in 1:rloc, j in 1:rloc, k in 1:rloc
-            Nijk[i, j, k] == 0 && continue
-            R_block = extract_R_block(Rvals, Nijk, i, j, k)
-            size(R_block) == (1, 1) || continue
-            z = R_block[1, 1]^2
-            # Project to unit circle to reduce HC numerical drift.
-            z = iszero(z) ? z : z / abs(z)
-            m = mod(round(Int, (N * angle(z)) / (2π)), N)
-            push!(eqs, (i, j, k, m))
-        end
-
-        assignments = fill(-1, vars)  # -1 = unassigned
-        sols = Vector{Vector{Int}}()
-
-        get_t(idx::Int) = idx == 1 ? 0 : assignments[idx - 1]
-
-        function eq_satisfied_or_pending(i::Int, j::Int, k::Int, m::Int)
-            ti = get_t(i)
-            tj = get_t(j)
-            tk = get_t(k)
-            if ti < 0 || tj < 0 || tk < 0
-                return true
-            end
-            return mod(ti + tj - tk - m, N) == 0
-        end
-
-        function backtrack(pos::Int)
-            length(sols) >= max_candidates && return
-            if pos > vars
-                for (i, j, k, m) in eqs
-                    eq_satisfied_or_pending(i, j, k, m) || return
-                end
-                push!(sols, copy(assignments))
-                return
-            end
-            for v in 0:(N - 1)
-                assignments[pos] = v
-                local ok = true
-                for (i, j, k, m) in eqs
-                    if !(eq_satisfied_or_pending(i, j, k, m))
-                        ok = false
-                        break
-                    end
-                end
-                ok && backtrack(pos + 1)
-                length(sols) >= max_candidates && return
-            end
-            assignments[pos] = -1
-        end
-
-        backtrack(1)
-        T_candidates = Vector{Vector{ComplexF64}}()
-        for sol in sols
-            Tvals = Vector{ComplexF64}(undef, rloc)
-            Tvals[1] = 1.0 + 0.0im
-            for i in 2:rloc
-                t = sol[i - 1]
-                Tvals[i] = exp((2π * im * t) / N)
-            end
-            push!(T_candidates, Tvals)
-        end
-        return T_candidates
-    end
-
+function _fusion_automorphisms_fixing_unit(Nijk::Array{Int,3})
     r = size(Nijk, 1)
-    units = [a for a in 1:N if gcd(a, N) == 1]
+    r == 1 && return [Int[1]]
+    autos = Vector{Vector{Int}}()
+    for rest in _all_permutations(collect(2:r))
+        perm = vcat(1, rest)
+        ok = true
+        @inbounds for i in 1:r, j in 1:r, k in 1:r
+            if Nijk[perm[i], perm[j], perm[k]] != Nijk[i, j, k]
+                ok = false
+                break
+            end
+        end
+        ok && push!(autos, perm)
+    end
+    isempty(autos) && push!(autos, collect(1:r))
+    return autos
+end
+
+_maxabs(M::AbstractArray{<:Number}) = isempty(M) ? 0.0 : maximum(abs.(M))
+
+function _st_signature_under_gauge(S::Matrix{ComplexF64},
+                                   T::Vector{ComplexF64},
+                                   automorphisms::Vector{Vector{Int}};
+                                   digits::Int = 8)
+    best = nothing
+    for perm in automorphisms
+        S_p = S[perm, perm]
+        T_p = T[perm]
+        for sgn in (1.0, -1.0)
+            S_use = sgn > 0 ? S_p : -S_p
+            words = String[]
+            push!(words, join([string(round(real(z), digits = digits), ",",
+                                      round(imag(z), digits = digits)) for z in T_p], ";"))
+            push!(words, join([string(round(real(z), digits = digits), ",",
+                                      round(imag(z), digits = digits)) for z in vec(S_use)], ";"))
+            sig = join(words, "|")
+            if best === nothing || sig < best
+                best = sig
+            end
+        end
+    end
+    return best
+end
+
+"""
+    _modular_data_roundtrip(F_values, R_values, Nijk, S_target, T_target, N) -> NamedTuple
+
+Reconstruct `(S,T)` from `(F,R)` using Kitaev definitions:
+- (211): `θ_a = d_a^{-1} Σ_c d_c Tr(R^{aa}_c)`
+- (223): `S_ab = (1/D) Σ_c d_c Tr(R^{\bar b a}_c R^{a \bar b}_c)`
+
+Then compare reconstructed data against targets while accounting for
+non-Galois gauge freedom (fusion-rule automorphisms fixing the unit and
+the global `S ↦ -S` convention).
+"""
+function _modular_data_roundtrip(F_values::Vector{ComplexF64},
+                                 R_values::Vector{ComplexF64},
+                                 Nijk::Array{Int,3},
+                                 S_target::Matrix{ComplexF64},
+                                 T_target::Vector{ComplexF64},
+                                 N::Int)
+    _ = (F_values, N)
+    r = size(Nijk, 1)
+    fr = FusionRule(Nijk)
+    dual = fr.dual
+
+    # Quantum dimensions from PF eigenvector of Σ_i N_i.
+    A = zeros(Float64, r, r)
+    for i in 1:r
+        A .+= Float64.(Nijk[i, :, :])
+    end
+    eig = eigen(A)
+    idx = argmax(real(eig.values))
+    d = abs.(real(eig.vectors[:, idx]))
+    d ./= d[1]
+    D = sqrt(sum(d .^ 2))
+
+    # Kitaev (211): twists from partial quantum trace of R^{aa}.
+    T_from = Vector{ComplexF64}(undef, r)
+    for a in 1:r
+        acc = 0.0 + 0.0im
+        for c in 1:r
+            Nijk[a, a, c] == 0 && continue
+            block = extract_R_block(R_values, Nijk, a, a, c)
+            acc += d[c] * tr(block)
+        end
+        T_from[a] = acc / d[a]
+    end
+    # Normalize so the unit twist is exactly 1.
+    if !iszero(T_from[1])
+        T_from ./= T_from[1]
+    end
+    # Project to unit circle to stabilize numerical drift.
+    for a in 1:r
+        if !iszero(T_from[a])
+            T_from[a] /= abs(T_from[a])
+        end
+    end
+
+    # Kitaev (223): S from monodromy trace.
+    S_from = Matrix{ComplexF64}(undef, r, r)
+    for a in 1:r, b in 1:r
+        bdual = dual[b]
+        acc = 0.0 + 0.0im
+        for c in 1:r
+            Nijk[a, bdual, c] == 0 && continue
+            R_ba = extract_R_block(R_values, Nijk, bdual, a, c)
+            R_ab = extract_R_block(R_values, Nijk, a, bdual, c)
+            acc += d[c] * tr(R_ba * R_ab)
+        end
+        S_from[a, b] = acc / D
+    end
+
+    automorphisms = _fusion_automorphisms_fixing_unit(Nijk)
+    best_perm = automorphisms[1]
     best_s = Inf
     best_t = Inf
-    best_a = 1
-    best_T = copy(T_target)
-
-    T_from_FR_candidates = infer_T_candidates_from_R(R_values)
-    isempty(T_from_FR_candidates) && return (ok = false, best_a = 1,
-                                             S_max = Inf, T_max = Inf,
-                                             T_best = best_T)
-
-    for T_from_FR in T_from_FR_candidates
-        S_from = reconstruct_S_from_T(T_from_FR)
-        for a in units
-            T_trial = a == 1 ? T_target : (T_target .^ a)
-            S_trial = reconstruct_S_from_T(T_trial)
-            s_err = min(maximum(abs.(S_from .- S_trial)),
-                        maximum(abs.(S_from .+ S_trial)))
-            t_err = maximum(abs.(T_from_FR .- T_trial))
-            # Lexicographic selection on each (T_from_FR, a) pair:
-            # prioritize S reconstruction consistency under the same
-            # Galois action, then T match.
-            if (s_err < best_s) ||
-               (isapprox(s_err, best_s; atol = 1e-12) && t_err < best_t)
-                best_s = s_err
-                best_t = t_err
-                best_a = a
-                best_T = T_from_FR
-            end
+    for perm in automorphisms
+        S_p = S_from[perm, perm]
+        T_p = T_from[perm]
+        s_err = min(_maxabs(S_p .- S_target), _maxabs(-S_p .- S_target))
+        t_err = _maxabs(T_p .- T_target)
+        if (s_err < best_s) || (isapprox(s_err, best_s; atol = 1e-12) && t_err < best_t)
+            best_s = s_err
+            best_t = t_err
+            best_perm = perm
         end
     end
 
-    # `(F, R)` is matched by reconstructing (S, T) directly from R and
-    # comparing against CRT-lifted targets up to Galois.
-    _ = F_values
     ok = best_s < 5e-2 && best_t < 5e-2
-    return (ok = ok, best_a = best_a,
-            S_max = best_s, T_max = best_t, T_best = best_T)
+    return (ok = ok,
+            S_max = best_s,
+            T_max = best_t,
+            best_perm = best_perm,
+            S_from = S_from,
+            T_from = T_from,
+            st_signature = _st_signature_under_gauge(S_from, T_from, automorphisms))
 end
 
 """
@@ -581,7 +574,6 @@ Returns:
 - `ok`: whether roundtrip errors are within threshold
 - `S_max`: maximum S-side error
 - `T_max`: maximum T-side error
-- `best_a`: best Galois exponent
 - `order_key`: key for deterministic total ordering
 - `candidate_index`: input candidate index (final tie-break)
 """
@@ -592,7 +584,7 @@ function _score_fr_st_match(F_values::Vector{ComplexF64},
                             T_target::Vector{ComplexF64},
                             N::Int;
                             candidate_index::Int)
-    md = _modular_data_roundtrip_up_to_galois(F_values, R_values, Nijk, S_target, T_target, N)
+    md = _modular_data_roundtrip(F_values, R_values, Nijk, S_target, T_target, N)
     # Fixed comparison rule for Phase 5:
     #   1) prioritize ok=true
     #   2) smaller S_max
@@ -603,9 +595,29 @@ function _score_fr_st_match(F_values::Vector{ComplexF64},
     return (ok = md.ok,
             S_max = md.S_max,
             T_max = md.T_max,
-            best_a = md.best_a,
+            best_perm = md.best_perm,
+            st_signature = md.st_signature,
             order_key = order_key,
             candidate_index = candidate_index)
+end
+
+function _build_fr_st_dictionary(candidates::Vector{<:NamedTuple},
+                                 Nijk::Array{Int,3},
+                                 N::Int)
+    table = Dict{String, Vector{Int}}()
+    reconstructed = NamedTuple[]
+    for (ci, cand) in enumerate(candidates)
+        md = _modular_data_roundtrip(cand.F, cand.R, Nijk,
+                                     zeros(ComplexF64, size(Nijk, 1), size(Nijk, 1)),
+                                     ones(ComplexF64, size(Nijk, 1)),
+                                     N)
+        push!(get!(table, md.st_signature, Int[]), ci)
+        push!(reconstructed, (candidate_index = ci,
+                              signature = md.st_signature,
+                              S = md.S_from,
+                              T = md.T_from))
+    end
+    return (dictionary = table, reconstructed = reconstructed)
 end
 
 """
@@ -628,6 +640,7 @@ function _select_fr_for_st(candidates::Vector{<:NamedTuple},
                            T_target::Vector{ComplexF64},
                            N::Int)
     isempty(candidates) && error("cannot select (F,R): empty candidate list")
+    fr_st = _build_fr_st_dictionary(candidates, Nijk, N)
 
     all_scores = NamedTuple[]
     best_idx = 0
@@ -646,7 +659,8 @@ function _select_fr_for_st(candidates::Vector{<:NamedTuple},
             score = best_score,
             selected_index = best_idx,
             selected_ok = best_score.ok,
-            all_scores = all_scores)
+            all_scores = all_scores,
+            fr_st_dictionary = fr_st.dictionary)
 end
 
 function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCandidate}},
@@ -765,7 +779,7 @@ F- and R-symbols satisfying pentagon and hexagon.
 
 This stage solves pentagon/hexagon from fusion data only. Branch
 selection against reconstructed modular data is done afterwards by
-`_modular_data_roundtrip_up_to_galois` in `classify_from_group`.
+`_modular_data_roundtrip` in `classify_from_group`.
 
 Algorithm:
 1. Set up pentagon system from `Nijk` (via TensorCategories).
@@ -1060,12 +1074,12 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     fr_result.F === nothing && error("Phase 4 could not produce any (F,R) solution")
     isempty(fr_result.candidates) && error("Phase 4 produced no valid (F,R) candidates")
 
-    # OBSOLETE: candidate loop with direct `_modular_data_roundtrip_up_to_galois`
+    # OBSOLETE: candidate loop with direct `_modular_data_roundtrip`
     # calls is replaced by Phase 5 API `_select_fr_for_st`.
     selection = _select_fr_for_st(fr_result.candidates, Nijk, S_ℂ, T_for_phase4, N)
     selected = selection.selected
     md_roundtrip = selection.score
-    verbose && println("  modular-data roundtrip: galois a=$(md_roundtrip.best_a), " *
+    verbose && println("  modular-data roundtrip: perm=$(md_roundtrip.best_perm), " *
                        "S_err=$(md_roundtrip.S_max), T_err=$(md_roundtrip.T_max), " *
                        "ok=$(md_roundtrip.ok)")
 
@@ -1491,7 +1505,7 @@ function classify_mtcs_at_conductor(N::Int;
             selected = selection.selected
             best_md = selection.score
             verbose && println("    member[$i] branch: cand=$(selection.selected_index), " *
-                               "galois a=$(best_md.best_a), " *
+                               "perm=$(best_md.best_perm), " *
                                "S_err=$(best_md.S_max), T_err=$(best_md.T_max), ok=$(best_md.ok)")
             out[i] = _with_fr_result(out[i], selected.F, selected.R, selected.report)
         end
