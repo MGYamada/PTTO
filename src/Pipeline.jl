@@ -731,7 +731,7 @@ function compute_FR_from_ST(Nijk::Array{Int, 3};
     if r == 1
         F_trivial = ComplexF64[1.0]
         R_trivial = ComplexF64[1.0]
-        report = VerifyReport(0.0, 0.0, nothing, 0, 0, 1)
+        report = VerifyReport(0.0, 0.0, 0, 0, 1)
         cand = (F = F_trivial, R = R_trivial, report = report,
                 f_idx = 1, r_idx = 1)
         if return_all

@@ -259,27 +259,24 @@ Summary struct for verification output.
 struct VerifyReport
     pentagon_max::Float64
     hexagon_max::Float64
-    ribbon_max::Union{Float64, Nothing}
     n_pentagon_eqs::Int
     n_hexagon_eqs::Int
     rank::Int
 end
 
 function Base.show(io::IO, r::VerifyReport)
-    ribstr = r.ribbon_max === nothing ? "n/a" : string(r.ribbon_max)
     print(io, "VerifyReport(rank=$(r.rank), ",
           "pentagon_max=$(r.pentagon_max) over $(r.n_pentagon_eqs) eqs, ",
-          "hexagon_max=$(r.hexagon_max) over $(r.n_hexagon_eqs) eqs, ",
-          "ribbon_max=$ribstr)")
+          "hexagon_max=$(r.hexagon_max) over $(r.n_hexagon_eqs) eqs)")
 end
 
 """
     verify_mtc(F_values, R_values, Nijk; T=nothing) -> VerifyReport
 
-Run all three residual checks and return a summary.
+Run pentagon/hexagon residual checks and return a summary.
 
 If `T` is supplied, the ribbon check ((R^{ij}_k)² = θ_i θ_j / θ_k) is
-included. Otherwise it is skipped (ribbon_max = nothing).
+still evaluated for validation, but not stored in `VerifyReport`.
 """
 function verify_mtc(F_values::Vector{ComplexF64},
                     R_values::Vector{ComplexF64},
@@ -288,19 +285,15 @@ function verify_mtc(F_values::Vector{ComplexF64},
     pent = pentagon_residuals(F_values, Nijk)
     hex = hexagon_residuals(F_values, R_values, Nijk)
 
-    ribbon_max = nothing
     if T !== nothing
-        rib = ribbon_residuals(R_values, T, Nijk)
-        ribbon_max = maximum(rib)
+        ribbon_residuals(R_values, T, Nijk)
     end
 
     return VerifyReport(
         maximum(pent),
         maximum(hex),
-        ribbon_max,
         length(pent),
         length(hex),
         size(Nijk, 1),
     )
 end
-

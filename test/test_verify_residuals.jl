@@ -135,8 +135,7 @@ end
         @test report.rank == 2
         @test report.pentagon_max < 1e-8
         @test report.hexagon_max < 1e-8
-        @test report.ribbon_max !== nothing
-        @test report.ribbon_max < 1e-8
+        @test maximum(ribbon_residuals(R, T_expected, Nijk)) < 1e-8
         println("  $report")
     end
 
