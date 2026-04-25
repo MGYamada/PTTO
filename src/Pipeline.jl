@@ -566,6 +566,84 @@ function _modular_data_roundtrip_up_to_galois(F_values::Vector{ComplexF64},
             S_max = best_s, T_max = best_t, T_best = best_T)
 end
 
+"""
+    _score_fr_st_match(F_values, R_values, Nijk, S_target, T_target, N;
+                       candidate_index)
+        -> NamedTuple
+
+Phase 5 用の `(F,R)` vs `(S,T)` マッチ判定 API。
+
+返り値:
+- `ok`:     roundtrip が閾値内か
+- `S_max`:  `S` 側の最大誤差
+- `T_max`:  `T` 側の最大誤差
+- `best_a`: 最良な Galois 指数
+- `order_key`: candidate の total ordering 用キー
+- `candidate_index`: 入力 candidate index（最終 tie-break 用）
+"""
+function _score_fr_st_match(F_values::Vector{ComplexF64},
+                            R_values::Vector{ComplexF64},
+                            Nijk::Array{Int,3},
+                            S_target::Matrix{ComplexF64},
+                            T_target::Vector{ComplexF64},
+                            N::Int;
+                            candidate_index::Int)
+    md = _modular_data_roundtrip_up_to_galois(F_values, R_values, Nijk, S_target, T_target, N)
+    # Phase 5 で固定する比較規則:
+    #   1) ok=true を最優先
+    #   2) S_max が小さいもの
+    #   3) T_max が小さいもの
+    #   4) candidate_index が小さいもの
+    # Bool は false < true なので、ok 優先のため !ok を先頭に置く。
+    order_key = (!md.ok, md.S_max, md.T_max, candidate_index)
+    return (ok = md.ok,
+            S_max = md.S_max,
+            T_max = md.T_max,
+            best_a = md.best_a,
+            order_key = order_key,
+            candidate_index = candidate_index)
+end
+
+"""
+    _select_fr_for_st(candidates, Nijk, S_target, T_target, N)
+        -> (selected, score, selected_index, selected_ok, all_scores)
+
+Phase 5 用の candidate 選択 API。
+`order_key = (!ok, S_max, T_max, candidate_index)` による total ordering で
+`(F,R)` candidate を 1 つ選ぶ。
+
+fallback 方針:
+- `ok=true` が 1 つ以上あれば、その中で最小 `order_key` を採用。
+- 1 つも無い場合は明示エラーにせず、`S_max/T_max` 最小（同率は index 最小）
+  を採用し、呼び出し側が `selected_ok=false` を参照できるようにする。
+"""
+function _select_fr_for_st(candidates::Vector{<:NamedTuple},
+                           Nijk::Array{Int,3},
+                           S_target::Matrix{ComplexF64},
+                           T_target::Vector{ComplexF64},
+                           N::Int)
+    isempty(candidates) && error("cannot select (F,R): empty candidate list")
+
+    all_scores = NamedTuple[]
+    best_idx = 0
+    best_score = nothing
+    for (ci, cand) in enumerate(candidates)
+        score = _score_fr_st_match(cand.F, cand.R, Nijk, S_target, T_target, N;
+                                   candidate_index = ci)
+        push!(all_scores, score)
+        if best_score === nothing || score.order_key < best_score.order_key
+            best_score = score
+            best_idx = ci
+        end
+    end
+
+    return (selected = candidates[best_idx],
+            score = best_score,
+            selected_index = best_idx,
+            selected_ok = best_score.ok,
+            all_scores = all_scores)
+end
+
 function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCandidate}},
                                       anchor_prime::Int,
                                       scale_d::Int,
@@ -977,23 +1055,11 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     fr_result.F === nothing && error("Phase 4 could not produce any (F,R) solution")
     isempty(fr_result.candidates) && error("Phase 4 produced no valid (F,R) candidates")
 
-    # Select branch by modular-data equivalence after reconstruction,
-    # selection is based on modular-data roundtrip consistency.
-    best_idx = 0
-    best_md = nothing
-    for (ci, cand) in enumerate(fr_result.candidates)
-        md = _modular_data_roundtrip_up_to_galois(cand.F, cand.R,
-                                                  Nijk, S_ℂ, T_for_phase4, N)
-        if best_md === nothing ||
-           (md.S_max < best_md.S_max) ||
-           (isapprox(md.S_max, best_md.S_max; atol = 1e-12) && md.T_max < best_md.T_max)
-            best_md = md
-            best_idx = ci
-        end
-    end
-
-    selected = fr_result.candidates[best_idx]
-    md_roundtrip = best_md
+    # OBSOLETE: candidate loop with direct `_modular_data_roundtrip_up_to_galois`
+    # calls is replaced by Phase 5 API `_select_fr_for_st`.
+    selection = _select_fr_for_st(fr_result.candidates, Nijk, S_ℂ, T_for_phase4, N)
+    selected = selection.selected
+    md_roundtrip = selection.score
     verbose && println("  modular-data roundtrip: galois a=$(md_roundtrip.best_a), " *
                        "S_err=$(md_roundtrip.S_max), T_err=$(md_roundtrip.T_max), " *
                        "ok=$(md_roundtrip.ok)")
@@ -1410,20 +1476,12 @@ function classify_mtcs_at_conductor(N::Int;
         fr_result.F === nothing && error("Phase 4 could not produce any (F,R) solution for key=$key")
         isempty(fr_result.candidates) && error("Phase 4 produced no valid (F,R) candidates for key=$key")
 
-        best_idx = 0
-        best_md = nothing
-        for (ci, cand) in enumerate(fr_result.candidates)
-            md = _modular_data_roundtrip_up_to_galois(cand.F, cand.R,
-                                                      rep.Nijk, rep.S_complex, rep.T_complex, rep.N)
-            if best_md === nothing ||
-               (md.S_max < best_md.S_max) ||
-               (isapprox(md.S_max, best_md.S_max; atol = 1e-12) && md.T_max < best_md.T_max)
-                best_md = md
-                best_idx = ci
-            end
-        end
-
-        selected = fr_result.candidates[best_idx]
+        # OBSOLETE: direct roundtrip-based candidate loop.
+        # Use Phase 5 API to centralize selection/fallback policy.
+        selection = _select_fr_for_st(fr_result.candidates, rep.Nijk,
+                                      rep.S_complex, rep.T_complex, rep.N)
+        selected = selection.selected
+        best_md = selection.score
         verbose && println("    selected branch: galois a=$(best_md.best_a), " *
                            "S_err=$(best_md.S_max), T_err=$(best_md.T_max), ok=$(best_md.ok)")
         for i in idxs

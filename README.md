@@ -339,9 +339,14 @@ scores < 1e-10 on both pentagon and hexagon.
   hexagon for each F, and return numerically valid `(F, R)` candidates.
   Returns a NamedTuple with the selected pair and a `VerifyReport`.
 - `classify_from_group(group, N, stratum, primes; ...)`: CRT + ℂ-lift
-  + Phase 4, producing one `ClassifiedMTC`.
+  + Phase 4, producing one `ClassifiedMTC`. In this stage, candidate
+  selection is handled by a dedicated Phase 5 API that scores each
+  `(F,R)` against the lifted `(S,T)` and assigns one `(F,R)` per `(S,T)`.
 - `classify_mtcs_at_conductor(N; max_rank = 5, primes = nothing, ...)`: full driver,
-  iterating over strata and Galois sectors.
+  iterating over strata and Galois sectors. After fusion-rule
+  aggregation, it assigns `(F,R)` inside each fusion-rule group for
+  each `(S,T)` using the same Phase 5 selection API (not a single
+  representative-only pick).
   - Note: using an incorrect `scale_d` can produce **zero candidates**.
     For Fibonacci conductor search (`N = 20`), we recommend `scale_d = 5`.
 
