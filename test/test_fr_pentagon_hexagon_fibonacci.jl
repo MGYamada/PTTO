@@ -10,7 +10,7 @@ Fibonacci fusion ring:
 
 Expected (known from literature):
 - Pentagon: non-trivial system with finitely many gauge classes;
-  HC typically returns 4 solutions (before gauge quotient).
+  the deterministic algebraic slice returns representatives.
 - Hexagon: two braided structures (Fibonacci and its complex conjugate),
   characterised by R^{ττ}_1 = e^{±4πi/5}, R^{ττ}_τ = e^{∓3πi/5}.
 
@@ -36,7 +36,7 @@ to Q(ζ_20)) and gauge equivalence classification are deferred.
         println("  Fibonacci pentagon: $n variables, $(length(eqs)) equations")
     end
 
-    @testset "Pentagon HC solve" begin
+    @testset "Pentagon algebraic solve" begin
         R, eqs, n = get_pentagon_system(Nijk, 2)
 
         # Pentagon has gauge freedom; slice=1 typically reduces to a
@@ -47,7 +47,7 @@ to Q(ζ_20)) and gauge equivalence classification are deferred.
                                                 show_progress = false)
         @test !isempty(F_sols)
         @test all(s -> length(s) == n, F_sols)
-        println("  Pentagon HC returned $(length(F_sols)) solutions")
+        println("  Pentagon algebraic solver returned $(length(F_sols)) solutions")
 
         # Sanity: each solution should numerically satisfy all equations
         for (k, s) in enumerate(F_sols)
@@ -81,6 +81,6 @@ to Q(ζ_20)) and gauge equivalence classification are deferred.
         R_sols = solve_hexagon_homotopy(hex_eqs, n_r;
                                                show_progress = false)
         @test !isempty(R_sols)
-        println("  Hexagon HC returned $(length(R_sols)) braidings")
+        println("  Hexagon algebraic solver returned $(length(R_sols)) braidings")
     end
 end

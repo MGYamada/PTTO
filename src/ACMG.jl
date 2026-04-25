@@ -25,9 +25,9 @@ Module organisation (all at ACMG top level — no submodules):
                        grouping                               [Phase 3]
 - PentagonEquations:   pentagon equations from fusion rule
                        (TensorCategories wrapper)             [Phase 4]
-- PentagonSolver:      HC + damped Newton pentagon solvers    [Phase 4]
+- PentagonSolver:      F_p + Groebner + CRT pentagon solvers  [Phase 4]
 - HexagonEquations:    hexagon equations with F baked in      [Phase 4]
-- HexagonSolver:       HC solver for R                        [Phase 4]
+- HexagonSolver:       F_p + Groebner + CRT solver for R      [Phase 4]
 - ModularDataLift:     F_p / ℤ[√d] → ℂ lift                   [Phase 4]
 - Verify:              pentagon / hexagon / ribbon residuals,
                        `VerifyReport`, `verify_mtc`           [Phase 4]
@@ -115,14 +115,13 @@ export verify_reconstruction, describe_matrix
 
 # Phase 4: (F, R) classification
 export get_pentagon_system
+export solve_pentagon_modular_crt
 export solve_pentagon_newton, solve_pentagon_homotopy, refine_solution_newton
 export eval_poly_complex, sparse_jacobian
-export oscar_poly_to_hc, build_hc_system
 export hexagon_equations, get_hexagon_system
 export number_of_variables_in_hexagon_equations
 export coerce_complex, invert_associator_numeric, assign_F_to_associator!
-export solve_hexagon_homotopy
-export oscar_poly_to_hc_complex, build_hc_system_complex
+export solve_hexagon_modular_crt, solve_hexagon_homotopy
 export DiscreteLogTable, lift_T_Fp_to_complex, lift_S_sqrtd_to_complex
 export lift_mtc_candidate
 export pentagon_residuals, hexagon_residuals

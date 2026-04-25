@@ -38,7 +38,7 @@ Under the hood this calls `classify_mtcs_at_conductor(N; ...)`:
     ├─ Phase 3:  CRT → ℤ[√d]               (Galois-aware, cross-validated)
     │
     └─ Phase 4:  Pentagon + Hexagon over ℂ
-                                           (TensorCategories + HC)
+                                           (F_p + Groebner + CRT)
   ↓
   Vector{ClassifiedMTC}
 ```
@@ -69,8 +69,6 @@ ACMG depends on:
 
 - **Oscar.jl** — cyclotomic fields and GAP/SL2Reps access (Phase 0)
 - **TensorCategories.jl** — pentagon equation generator (Phase 4)
-- **HomotopyContinuation.jl** — pentagon/hexagon solver (Phase 4)
-- **KrylovKit.jl** — damped Newton refinement (Phase 4)
 - **Primes.jl**, **LinearAlgebra**, **SparseArrays**
 
 Julia ≥ 1.9 required.
@@ -92,9 +90,9 @@ the hexagon system has 2 variables once F is fixed.
 
 `compute_FR_from_ST` takes only a fusion tensor and performs:
 
-1. Pentagon HC on `Nijk` — returns 4 F-solutions, split into 2
-   gauge classes.
-2. For each F: hexagon HC — each pentagon solution yields 2 R-solutions.
+1. Pentagon solving on `Nijk` via F_p reduction, Groebner bases, and
+   CRT-compatible reconstruction.
+2. For each F: hexagon solving through the same algebraic route.
 3. Returns numerically valid pentagon/hexagon `(F, R)` candidates.
    Modular-data branch selection against `T` is done later in the
    pipeline roundtrip step.
@@ -103,7 +101,7 @@ the hexagon system has 2 variables once F is fixed.
 result = compute_FR_from_ST(Nijk; verbose = true)
 
 # Result
-#   pentagon HC: 4 solutions
+#   pentagon modular solver: 2 solutions
 #   n_matches: number of numerically valid pentagon/hexagon pairs
 #   chosen pair: F[2] × R[2]
 #   VerifyReport(rank=2,
@@ -223,11 +221,11 @@ Phase 4 takes `(S, T)` in ℂ and a fusion tensor `Nijk`, and returns
 `(F, R)` symbols satisfying:
 
 - **Pentagon**: `TensorCategories.pentagon_equations(Nijk)` →
-  homotopy continuation with a random linear slice to break gauge
-  symmetry → damped Newton refinement.
+  F_p reduction + Groebner preprocessing + CRT-compatible reconstruction,
+  with deterministic slices to break gauge symmetry.
 - **Hexagon**: `hexagon_equations(Nijk, one_vec, F)` (ACMG's own
   implementation with F baked in and the `R·S = I` constraint) →
-  HC again.
+  the same algebraic solver route.
 - **Modular-data roundtrip check**: from `(F, R, N)` we evaluate
   consistency of reproduced modular data `(S, T)` against the Phase 3
   lifted target `(S, T)` up to cyclotomic Galois action (diagnostic log).
@@ -313,14 +311,15 @@ Six files, all at `src/` top level:
 
 - `PentagonEquations.jl`: thin wrapper over
   `TensorCategories.pentagon_equations`.
-- `PentagonSolver.jl`: HC (`solve_pentagon_homotopy`) and damped Newton
-  (`solve_pentagon_newton` / `refine_solution_newton`).
+- `PentagonSolver.jl`: F_p + Groebner + CRT solver
+  (`solve_pentagon_modular_crt`; `solve_pentagon_homotopy` is a
+  compatibility alias) and Newton polishing.
 - `HexagonEquations.jl`: custom generator that bakes numerical F-values
   into the coefficient ring (`AcbField`), adds the `R · S = I` constraint.
   Public helper functions are `coerce_complex` and
   `number_of_variables_in_hexagon_equations` (internal `_`-prefixed
   variants are no longer exported).
-- `HexagonSolver.jl`: HC for the R-system.
+- `HexagonSolver.jl`: F_p + Groebner + CRT solver for the R-system.
 - `ModularDataLift.jl`: discrete-log table `DiscreteLogTable(N, p, ζ_Fp)`
   to lift T from F_p back to ℂ; `ℤ[√d] → ℂ` for S.
 - `Verify.jl`:
@@ -335,8 +334,9 @@ scores < 1e-10 on both pentagon and hexagon.
 
 `Pipeline.jl`.
 
-- `compute_FR_from_ST(Nijk; ...)`: solve pentagon via HC, solve
-  hexagon for each F, and return numerically valid `(F, R)` candidates.
+- `compute_FR_from_ST(Nijk; ...)`: solve pentagon via F_p + Groebner +
+  CRT reconstruction, solve hexagon for each F, and return numerically
+  valid `(F, R)` candidates.
   Returns a NamedTuple with the selected pair and a `VerifyReport`.
 - `classify_from_group(group, N, stratum, primes; ...)`: CRT + ℂ-lift
   + Phase 4, producing one `ClassifiedMTC`. In this stage, candidate
@@ -379,15 +379,15 @@ was passed (or Phase 4 couldn't find a match).
 
 ## Complexity frontier
 
-Pentagon HC scales with the number of F-variables via the mixed volume
-of the polynomial system; this is the current bottleneck of the
-pipeline.
+The Phase-4 algebraic solve scales with the number of F-variables and
+the size of the resulting Groebner systems; this is the current
+bottleneck of the pipeline.
 
-At rank 2 (5 F-vars) pentagon HC finishes in tens of seconds and has
-been validated end-to-end on Fibonacci and its sign-conjugate
-Yang-Lee. Rank-3 systems (~14 F-vars) have mixed volume above `10⁵`
-and push HC to the practical edge. At rank 5 (~238 F-vars) the
-mixed volume blows up further; running Phase 4 at this scale requires
+At rank 2 (5 F-vars) Phase 4 finishes in seconds to tens of seconds and
+has been validated end-to-end on Fibonacci and its sign-conjugate
+Yang-Lee. Rank-3 systems (~14 F-vars) already push Groebner solving to
+the practical edge. At rank 5 (~238 F-vars) the polynomial systems are
+much larger; running Phase 4 at this scale requires
 a gauge-fixed pentagon formulation that is on the roadmap but not yet
 implemented. When this is the case, `classify_mtcs_at_conductor` can
 be called with `skip_FR = true` to produce modular data (Phases 0–3
@@ -409,7 +409,7 @@ Test suite (`julia --project=. -e 'using Pkg; Pkg.test()'`) covers:
 - O(n) Cayley parametrisation and single-prime block-U sweep.
 - CRT primitives, Galois-aware grouping, ℤ[√d] reconstruction with
   fresh-prime cross-validation.
-- Pentagon HC + hexagon HC on Fibonacci.
+- F_p + Groebner + CRT pentagon/hexagon solving on Fibonacci.
 - `DiscreteLogTable`, T and S complex lifts.
 - **Phase 5**: `compute_FR_from_ST` on Fibonacci plus a multi-prime
   integration smoke test of the Phase 0 → 3 driver at larger conductor
@@ -445,9 +445,9 @@ src/
   BlockU.jl               — Phase 2: O(n) Cayley + single-prime driver
   CRT.jl                  — Phase 3: CRT + Galois-aware grouping
   PentagonEquations.jl    — Phase 4: TensorCategories wrapper
-  PentagonSolver.jl       — Phase 4: HC + damped Newton
+  PentagonSolver.jl       — Phase 4: F_p + Groebner + CRT solver
   HexagonEquations.jl     — Phase 4: custom generator with F fixed
-  HexagonSolver.jl        — Phase 4: HC for R-system
+  HexagonSolver.jl        — Phase 4: F_p + Groebner + CRT solver for R
   ModularDataLift.jl      — Phase 4: F_p / ℤ[√d] → ℂ
   Verify.jl               — Phase 4: residuals, VerifyReport
   Pipeline.jl             — end-to-end pipeline: classify_mtcs_at_conductor and friends
@@ -462,7 +462,7 @@ test/
   test_blocku.jl            — pure F_p helpers
   test_block_u_general.jl   — general O(n) Cayley
   test_crt.jl               — CRT + ℤ[√d] reconstruction
-  test_fr_pentagon_hexagon_fibonacci.jl  — pentagon + hexagon HC
+  test_fr_pentagon_hexagon_fibonacci.jl  — pentagon + hexagon algebraic solve
   test_modular_data_lift.jl               — DiscreteLogTable, T and S lifts
   test_verify_residuals.jl                — residuals and VerifyReport
   test_pipeline_end_to_end.jl             — pipeline end-to-end and FR integration
@@ -488,7 +488,7 @@ scripts/
 **Medium-term**
 
 - Gauge-fixed pentagon formulation to bring rank-3 and rank-5 systems
-  into HC range.
+  into practical Groebner range.
 - Multiple degenerate eigenspaces handled simultaneously (Cartesian
   product of O(n_θ) sweeps).
 

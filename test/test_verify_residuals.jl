@@ -4,13 +4,10 @@ using ACMG
 """
 Phase 4 Verify tests.
 
-Important finding: Pentagon HC with slice=1 returns 4 F-solutions that
-are NOT all gauge-equivalent. Empirically:
-- 2 of them (F[1] ≈ -1/φ, F[4] ≈ +1/φ) yield hexagons that produce
-  Fibonacci MTC and its complex conjugate.
-- 2 of them (F[1] ≈ +φ, F[4] ≈ -φ) yield hexagons for a DIFFERENT MTC
-  with the same fusion ring (likely the Yang-Lee-type variant or a
-  different F gauge-class giving inequivalent braided categories).
+Important finding: the pentagon algebraic solver can return multiple
+gauge representatives for the same fusion ring. Some representatives
+yield the Fibonacci MTC and its complex conjugate, while others can yield
+Yang-Lee-type braided data with the same fusion ring.
 
 Strategy: iterate over every (F, R) pair and find the one matching
 T_expected via ribbon. This reflects how Phase 4 will be used in
@@ -88,11 +85,9 @@ end
     end
 
     @testset "A Fibonacci realisation exists" begin
-        # Whatever random slice HC used, SOME (F, R) pair must realise
-        # Fibonacci. Historically pentagon returns 4 F-solutions and at
-        # least 2 of them give Fibonacci hexagons (another 2 give a
-        # different MTC), so we expect >= 2 matches, but we only *require*
-        # >= 1 to keep the test robust.
+        # Whatever deterministic slice is used, SOME (F, R) pair must
+        # realise Fibonacci. We only require >= 1 to keep the test robust
+        # across gauge choices.
         @test best.n_matches >= 1
         @test best.F !== nothing
         @test best.R !== nothing

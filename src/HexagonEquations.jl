@@ -22,8 +22,9 @@ kinds of equations:
 α⁻¹ is precomputed numerically block-by-block via `invert_associator_numeric`.
 
 The resulting polynomial system has `2 · r_var_count` variables over
-AcbField() (Arb complex field). Solved by `HexagonSolver` via
-HomotopyContinuation.
+AcbField() (Arb complex field). It is consumed by `HexagonSolver`, whose
+Phase-4 route uses modular Groebner preprocessing and CRT-compatible
+ComplexF64 reconstruction.
 
 Depends on: Oscar, TensorCategories.
 """
