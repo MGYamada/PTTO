@@ -37,7 +37,7 @@ Under the hood this calls `classify_mtcs_at_conductor(N; ...)`:
     │
     ├─ Phase 3:  CRT → ℤ[√d]               (Galois-aware, cross-validated)
     │
-    └─ Phase 4:  Pentagon + Hexagon + Ribbon over ℂ
+    └─ Phase 4:  Pentagon + Hexagon over ℂ
                                            (TensorCategories + HC)
   ↓
   Vector{ClassifiedMTC}
@@ -228,10 +228,6 @@ Phase 4 takes `(S, T)` in ℂ and a fusion tensor `Nijk`, and returns
 - **Hexagon**: `hexagon_equations(Nijk, one_vec, F)` (ACMG's own
   implementation with F baked in and the `R·S = I` constraint) →
   HC again.
-- **Ribbon residual diagnostic**: the multiplicity-free relation
-  `(R^{ij}_k)² = θ_i · θ_j / θ_k`
-  is evaluated for all hexagon solutions, and the minimum-residual pair
-  is selected.
 - **Modular-data roundtrip check**: from `(F, R, N)` we evaluate
   consistency of reproduced modular data `(S, T)` against the Phase 3
   lifted target `(S, T)` up to cyclotomic Galois action (diagnostic log).
@@ -514,5 +510,5 @@ scripts/
 | 1     | Stratum enumeration                     | ✅     |
 | 2     | Block-U sweep + Verlinde (F_p)          | ✅     |
 | 3     | CRT + Galois-aware reconstruction       | ✅     |
-| 4     | Pentagon + Hexagon + Ribbon (ℂ)         | ✅     |
+| 4     | Pentagon + Hexagon (ℂ)                  | ✅     |
 | 5     | End-to-end `classify_mtcs_at_conductor` | ✅     |
