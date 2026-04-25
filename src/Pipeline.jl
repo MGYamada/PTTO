@@ -12,7 +12,7 @@ MTCs, each carrying:
 
 This module also provides two mid-level helpers:
 
-- `compute_FR_from_ST(Nijk, T_complex; ...)`: given a fusion tensor
+- `compute_FR_from_ST(Nijk; ...)`: given a fusion tensor
   and complex T-eigenvalues, finds a `(F, R)` pair realising that
   modular data via pentagon HC → hexagon HC → ribbon match.
 
@@ -706,7 +706,7 @@ end
 # ============================================================
 
 """
-    compute_FR_from_ST(Nijk, T_complex; ribbon_atol = 1e-8,
+    compute_FR_from_ST(Nijk; ribbon_atol = 1e-8,
                         require_ribbon_match = true,
                         return_all = false,
                         pentagon_slice = 1, show_progress = false,
@@ -717,8 +717,8 @@ end
 Given a fusion tensor `Nijk`, find a pair `(F, R)` of complex
 F- and R-symbols satisfying pentagon and hexagon.
 
-`T_complex` is accepted for API compatibility but is not used to select
-an `(F,R)` branch. Consistency with modular data is checked afterwards by
+This stage solves pentagon/hexagon from fusion data only. Branch
+selection against reconstructed modular data is done afterwards by
 `_modular_data_roundtrip_up_to_galois` in `classify_from_group`.
 
 Algorithm:
@@ -753,8 +753,7 @@ Returns a NamedTuple with:
                   numerically valid `(F,R)` candidates with reports.
 
 """
-function compute_FR_from_ST(Nijk::Array{Int, 3},
-                            T_complex::Vector{ComplexF64};
+function compute_FR_from_ST(Nijk::Array{Int, 3};
                             ribbon_atol::Float64 = 1e-8,
                             require_ribbon_match::Bool = true,
                             return_all::Bool = false,
@@ -762,8 +761,6 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
                             show_progress::Bool = false,
                             verbose::Bool = false)
     r = size(Nijk, 1)
-    length(T_complex) == r || error(
-        "T_complex length $(length(T_complex)) does not match rank $r")
 
     # Rank-1 (trivial) MTC: the only fusion category structure is the
     # unit object with F = R = [1]. Pentagon / hexagon / ribbon hold
@@ -859,13 +856,6 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
                 continue
             end
 
-            rep_with_t = try
-                verify_mtc(F, R_vals, Nijk; T = T_complex)
-            catch
-                rep
-            end
-            ribbon_score = rep_with_t.ribbon_max === nothing ? Inf : rep_with_t.ribbon_max
-
             # Keep counters for API compatibility. n_matches now counts
             # numerically valid pentagon+hexagon candidates.
             best = (; best..., n_matches = best.n_matches + 1)
@@ -883,7 +873,6 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
     # Backward-compatible knobs kept in signature (deprecated path).
     _ = ribbon_atol
     _ = require_ribbon_match
-    _ = T_complex
 
     # Drop the internal score field from the public return
     if return_all
@@ -1037,7 +1026,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     end
     verbose && println("  running pentagon/hexagon on rank=$rank...")
 
-    fr_result = compute_FR_from_ST(Nijk, T_for_phase4;
+    fr_result = compute_FR_from_ST(Nijk;
                                    ribbon_atol = ribbon_atol,
                                    return_all = true,
                                    verbose = verbose)
@@ -1479,7 +1468,7 @@ function classify_mtcs_at_conductor(N::Int;
         rep_idx = idxs[1]
         rep = out[rep_idx]
         verbose && println("  key=$key: members=$(length(idxs)), rank=$(rep.rank)")
-        fr_result = compute_FR_from_ST(rep.Nijk, rep.T_complex;
+        fr_result = compute_FR_from_ST(rep.Nijk;
                                        ribbon_atol = ribbon_atol,
                                        return_all = true,
                                        verbose = verbose)
