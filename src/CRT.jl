@@ -117,17 +117,6 @@ that serve as a canonical invariant for matching across primes.
 """
 fusion_signature(c::MTCCandidate) = c.N
 
-function _lex_less(a::Vector{Int}, b::Vector{Int})
-    @inbounds for i in eachindex(a, b)
-        if a[i] < b[i]
-            return true
-        elseif a[i] > b[i]
-            return false
-        end
-    end
-    return false
-end
-
 function _label_signature(N::Array{Int, 3}, i::Int)
     r = size(N, 1)
     s1 = 0
@@ -156,6 +145,49 @@ function _label_signature(N::Array{Int, 3}, i::Int)
         d3 += N[j, j, i]
     end
     return (s1, s2, s3, q1, q2, q3, d1, d2, d3)
+end
+
+function _perm_lex_less(N::Array{Int, 3}, perm::Vector{Int}, best::Vector{Int})
+    idx = 1
+    r = size(N, 1)
+    @inbounds for k in 1:r, j in 1:r, i in 1:r
+        v = N[perm[i], perm[j], perm[k]]
+        b = best[idx]
+        if v < b
+            return true
+        elseif v > b
+            return false
+        end
+        idx += 1
+    end
+    return false
+end
+
+function _flatten_permuted(N::Array{Int, 3}, perm::Vector{Int})
+    r = size(N, 1)
+    out = Vector{Int}(undef, r * r * r)
+    idx = 1
+    @inbounds for k in 1:r, j in 1:r, i in 1:r
+        out[idx] = N[perm[i], perm[j], perm[k]]
+        idx += 1
+    end
+    return out
+end
+
+function _for_each_permutation!(v::Vector{Int}, f::F) where {F}
+    function rec(start::Int)
+        if start > length(v)
+            f(v)
+            return
+        end
+        for i in start:length(v)
+            v[start], v[i] = v[i], v[start]
+            rec(start + 1)
+            v[start], v[i] = v[i], v[start]
+        end
+    end
+    rec(1)
+    return nothing
 end
 
 """
@@ -195,25 +227,26 @@ function canonical_rule(rule::AbstractArray{<:Integer, 3})
         i = j + 1
     end
 
-    perms_per_block = [isempty(b) ? [Int[]] : _all_permutations(b) for b in blocks]
     best = nothing
-    current = Int[]
-    function dfs_block(bi::Int)
+    current = Vector{Int}(undef, r)
+
+    function dfs_block(bi::Int, offset::Int)
         if bi > length(blocks)
-            candidate = vec(_permute_fusion_tensor(N_int, current))
-            if best === nothing || _lex_less(candidate, best)
-                best = candidate
+            if best === nothing || _perm_lex_less(N_int, current, best)
+                best = _flatten_permuted(N_int, current)
             end
             return
         end
-        old_len = length(current)
-        for p in perms_per_block[bi]
-            append!(current, p)
-            dfs_block(bi + 1)
-            resize!(current, old_len)
+
+        block = copy(blocks[bi])
+        _for_each_permutation!(block) do p
+            @inbounds for t in eachindex(p)
+                current[offset + t - 1] = p[t]
+            end
+            dfs_block(bi + 1, offset + length(p))
         end
     end
-    dfs_block(1)
+    dfs_block(1, 1)
 
     payload = join(best, ",")
     return "r=$(r)|$payload"
