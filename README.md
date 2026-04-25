@@ -11,13 +11,10 @@ using ACMG
 Nijk = zeros(Int, 2, 2, 2)
 Nijk[1,1,1] = Nijk[1,2,2] = Nijk[2,1,2] = Nijk[2,2,1] = Nijk[2,2,2] = 1
 
-# Fibonacci T
-T = ComplexF64[1.0, exp(4π * im / 5)]
-
 result = compute_FR_from_ST(Nijk)
 # result.F :: Vector{ComplexF64}  pentagon F-symbols
 # result.R :: Vector{ComplexF64}  hexagon R-symbols
-# result.report :: VerifyReport   pentagon/hexagon/ribbon residuals < 1e-14
+# result.report :: VerifyReport   pentagon/hexagon residuals < 1e-14
 ```
 
 At the top level, the recommended entry point is now
@@ -49,7 +46,7 @@ Under the hood this calls `classify_mtcs_at_conductor(N; ...)`:
 Each `ClassifiedMTC` carries the stratum decomposition, the exact
 arithmetic S-matrix in ℤ[√d], its complex-lifted `(S, T)`, the
 `(F, R)` symbols solving pentagon/hexagon over ℂ, and a `VerifyReport`
-with pentagon, hexagon and ribbon residuals.
+with pentagon/hexagon residuals.
 
 ## `conductor_mode`
 
@@ -103,7 +100,7 @@ the hexagon system has 2 variables once F is fixed.
    pipeline roundtrip step.
 
 ```julia
-result = compute_FR_from_ST(Nijk; ribbon_atol = 1e-8, verbose = true)
+result = compute_FR_from_ST(Nijk; verbose = true)
 
 # Result
 #   pentagon HC: 4 solutions
@@ -111,13 +108,11 @@ result = compute_FR_from_ST(Nijk; ribbon_atol = 1e-8, verbose = true)
 #   chosen pair: F[2] × R[2]
 #   VerifyReport(rank=2,
 #                pentagon_max = 3.96e-16 over 12 eqs,
-#                hexagon_max  = 1.37e-15 over 29 eqs,
-#                ribbon_max   = 2.25e-15)
+#                hexagon_max  = 1.37e-15 over 29 eqs)
 ```
 
-The returned `(F, R)` pair can be handed to `verify_mtc(F, R, Nijk; T)`
-independently for ribbon re-verification, or fed into downstream
-algebraic recognition.
+The returned `(F, R)` pair can be handed to `verify_mtc(F, R, Nijk)`
+for residual verification, or fed into downstream algebraic recognition.
 
 For diagnostics, `n_matches` reports how many pentagon/hexagon-valid
 candidates were found for the given fusion ring:
@@ -335,19 +330,18 @@ Six files, all at `src/` top level:
 - `Verify.jl`:
     - `pentagon_residuals(F, Nijk)`
     - `hexagon_residuals(F, R, Nijk)`
-    - `ribbon_residuals(R, T, Nijk)` checking `(R^{ij}_k)² = θ_i θ_j / θ_k`
-    - `verify_mtc(F, R, Nijk; T) -> VerifyReport`
+    - `verify_mtc(F, R, Nijk) -> VerifyReport`
 
 All residuals are ∞-norm at `Float64` precision; a clean solution
-scores < 1e-10 across all three.
+scores < 1e-10 on both pentagon and hexagon.
 
 ### Phase 5 — End-to-end pipeline
 
 `Pipeline.jl`.
 
 - `compute_FR_from_ST(Nijk; ...)`: solve pentagon via HC, solve
-  hexagon for each F, select `(F, R)` with minimum ribbon residual vs.
-  `T`. Returns a NamedTuple with the selected pair and a `VerifyReport`.
+  hexagon for each F, and return numerically valid `(F, R)` candidates.
+  Returns a NamedTuple with the selected pair and a `VerifyReport`.
 - `classify_from_group(group, N, stratum, primes; ...)`: CRT + ℂ-lift
   + Phase 4, producing one `ClassifiedMTC`.
 - `classify_mtcs_at_conductor(N; max_rank = 5, primes = nothing, ...)`: full driver,
@@ -413,11 +407,11 @@ Test suite (`julia --project=. -e 'using Pkg; Pkg.test()'`) covers:
 - O(n) Cayley parametrisation and single-prime block-U sweep.
 - CRT primitives, Galois-aware grouping, ℤ[√d] reconstruction with
   fresh-prime cross-validation.
-- Pentagon HC + hexagon HC on Fibonacci (end-to-end ribbon match).
+- Pentagon HC + hexagon HC on Fibonacci.
 - `DiscreteLogTable`, T and S complex lifts.
-- **Phase 5**: `compute_FR_from_ST` on Fibonacci — including a negative
-  test with wrong T — plus a multi-prime integration smoke test of the
-  Phase 0 → 3 driver at larger conductor with `skip_FR = true`.
+- **Phase 5**: `compute_FR_from_ST` on Fibonacci plus a multi-prime
+  integration smoke test of the Phase 0 → 3 driver at larger conductor
+  with `skip_FR = true`.
 
 ## Design principles
 
@@ -435,8 +429,7 @@ Test suite (`julia --project=. -e 'using Pkg; Pkg.test()'`) covers:
    `group_mtcs_galois_aware` restores sector coherence before CRT.
 
 5. **Necessary conditions first.** Verlinde integrality cuts the
-   continuous block-U moduli to a 0-dimensional locus; ribbon
-   selects a specific `(F, R)` class.
+   continuous block-U moduli to a 0-dimensional locus before Phase 4.
 
 ## Repository layout
 
@@ -469,7 +462,7 @@ test/
   test_crt.jl               — CRT + ℤ[√d] reconstruction
   test_fr_pentagon_hexagon_fibonacci.jl  — pentagon + hexagon HC
   test_modular_data_lift.jl               — DiscreteLogTable, T and S lifts
-  test_verify_residuals.jl                — residuals, ribbon match, VerifyReport
+  test_verify_residuals.jl                — residuals and VerifyReport
   test_pipeline_end_to_end.jl             — pipeline end-to-end and FR integration
   test_pipeline_galois_grouping.jl        — CRT branch consistency + sector grouping
   test_pipeline_primes.jl                 — prime selection and conductor mode checks

@@ -140,10 +140,8 @@ end
         println("  $report")
     end
 
-    @testset "compute_FR_from_ST does not enforce ribbon against input T" begin
+    @testset "compute_FR_from_ST solves from fusion data only" begin
         fr = compute_FR_from_ST(Nijk;
-                                ribbon_atol = 1e-8,
-                                require_ribbon_match = false,
                                 return_all = true,
                                 pentagon_slice = 1,
                                 show_progress = false,
@@ -151,7 +149,6 @@ end
         @test fr.F !== nothing
         @test fr.R !== nothing
         @test fr.report !== nothing
-        @test fr.report.ribbon_max === nothing
         @test length(fr.candidates) >= 1
     end
 end

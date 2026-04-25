@@ -7,14 +7,13 @@ MTCs, each carrying:
 - the SL(2, ℤ/N) stratum (m_λ) decomposition (Phase 0/1),
 - F_p-validated modular data (Phase 2),
 - Galois-coherent, arithmetic S-matrix in ℤ[√d] (Phase 3),
-- `(F, R)` symbols in ℂ satisfying pentagon + hexagon + ribbon (Phase 4),
+- `(F, R)` symbols in ℂ satisfying pentagon + hexagon (Phase 4),
 - a `VerifyReport` summarising residuals.
 
 This module also provides two mid-level helpers:
 
-- `compute_FR_from_ST(Nijk; ...)`: given a fusion tensor
-  and complex T-eigenvalues, finds a `(F, R)` pair realising that
-  modular data via pentagon HC → hexagon HC → ribbon match.
+- `compute_FR_from_ST(Nijk; ...)`: given a fusion tensor,
+  solve for `(F, R)` via pentagon HC → hexagon HC.
 
 - `classify_from_group(group, all_primes; ...)`: given a Galois-coherent
   group from `group_mtcs_galois_aware`, performs Phase 3 CRT + Phase 4
@@ -75,7 +74,7 @@ Complex-lifted modular data (Phase 4 input):
 - `R_values`:       hexagon solution in ℂ, `Vector{ComplexF64}` of
                     length `2 · r_var_count` (forward ⊕ reverse).
                     `nothing` if no match was found.
-- `verify_report`:  `VerifyReport` with pentagon, hexagon, ribbon
+- `verify_report`:  `VerifyReport` with pentagon/hexagon residuals
                     max-residuals. `nothing` if no match was found.
 
 Provenance:
@@ -223,7 +222,6 @@ end
                        groebner_allow_fallback = true,
                        precheck_unit_axiom = true,
                        reconstruction_bound = 50,
-                       ribbon_atol = 1e-8,
                        skip_FR = false,
                        verbose = true)
         -> NamedTuple
@@ -287,8 +285,6 @@ function classify_mtcs_auto(N::Int;
                             groebner_allow_fallback::Bool = true,
                             precheck_unit_axiom::Bool = true,
                             reconstruction_bound::Int = 50,
-                            ribbon_atol::Float64 = 1e-8,
-                            require_ribbon_match::Bool = false,
                             skip_FR::Bool = false,
                             verbose::Bool = true)
     N >= 1 || error("N must be positive, got $N")
@@ -385,8 +381,6 @@ function classify_mtcs_auto(N::Int;
                                                             groebner_allow_fallback = groebner_allow_fallback,
                                                             precheck_unit_axiom = precheck_unit_axiom,
                                                             reconstruction_bound = reconstruction_bound,
-                                                            ribbon_atol = ribbon_atol,
-                                                            require_ribbon_match = require_ribbon_match,
                                                             skip_FR = skip_FR,
                                                             verbose = verbose)
 
@@ -568,8 +562,8 @@ function _modular_data_roundtrip_up_to_galois(F_values::Vector{ComplexF64},
 
     T_from_FR_candidates = infer_T_candidates_from_R(R_values)
     isempty(T_from_FR_candidates) && return (ok = false, best_a = 1,
-                                             ribbon_max = NaN, S_max = Inf,
-                                             T_max = Inf, T_best = best_T)
+                                             S_max = Inf, T_max = Inf,
+                                             T_best = best_T)
 
     for T_from_FR in T_from_FR_candidates
         S_from = reconstruct_S_from_T(T_from_FR)
@@ -596,7 +590,7 @@ function _modular_data_roundtrip_up_to_galois(F_values::Vector{ComplexF64},
     # comparing against CRT-lifted targets up to Galois.
     _ = F_values
     ok = best_s < 5e-2 && best_t < 5e-2
-    return (ok = ok, best_a = best_a, ribbon_max = NaN,
+    return (ok = ok, best_a = best_a,
             S_max = best_s, T_max = best_t, T_best = best_T)
 end
 
@@ -689,9 +683,7 @@ function Base.show(io::IO, m::ClassifiedMTC)
         rep = m.verify_report
         pent = rep === nothing ? "?" : string(round(rep.pentagon_max, sigdigits = 2))
         hex = rep === nothing ? "?" : string(round(rep.hexagon_max, sigdigits = 2))
-        rib = rep === nothing || rep.ribbon_max === nothing ? "?" :
-            string(round(rep.ribbon_max, sigdigits = 2))
-        "(F,R) pent=$pent hex=$hex rib=$rib"
+        "(F,R) pent=$pent hex=$hex"
     end
     fresh_str = isempty(m.fresh_primes) ? "no fresh" :
         (m.verify_fresh ? "fresh✓" : "fresh✗")
@@ -706,8 +698,7 @@ end
 # ============================================================
 
 """
-    compute_FR_from_ST(Nijk; ribbon_atol = 1e-8,
-                        require_ribbon_match = true,
+    compute_FR_from_ST(Nijk;
                         return_all = false,
                         pentagon_slice = 1, show_progress = false,
                         verbose = false)
@@ -754,8 +745,6 @@ Returns a NamedTuple with:
 
 """
 function compute_FR_from_ST(Nijk::Array{Int, 3};
-                            ribbon_atol::Float64 = 1e-8,
-                            require_ribbon_match::Bool = true,
                             return_all::Bool = false,
                             pentagon_slice::Int = 1,
                             show_progress::Bool = false,
@@ -763,15 +752,13 @@ function compute_FR_from_ST(Nijk::Array{Int, 3};
     r = size(Nijk, 1)
 
     # Rank-1 (trivial) MTC: the only fusion category structure is the
-    # unit object with F = R = [1]. Pentagon / hexagon / ribbon hold
-    # vacuously. `TensorCategories.pentagon_equations` emits no non-
+    # unit object with F = R = [1]. Pentagon / hexagon hold vacuously.
+    # `TensorCategories.pentagon_equations` emits no non-
     # trivial polynomials at rank 1, so we short-circuit here rather
     # than let `get_pentagon_system` error.
     if r == 1
         F_trivial = ComplexF64[1.0]
         R_trivial = ComplexF64[1.0]
-        # Fields in order: pentagon_max, hexagon_max, ribbon_max,
-        # n_pentagon_eqs, n_hexagon_eqs, rank
         report = VerifyReport(0.0, 0.0, nothing, 0, 0, 1)
         cand = (F = F_trivial, R = R_trivial, report = report,
                 f_idx = 1, r_idx = 1)
@@ -870,10 +857,6 @@ function compute_FR_from_ST(Nijk::Array{Int, 3};
         end
     end
 
-    # Backward-compatible knobs kept in signature (deprecated path).
-    _ = ribbon_atol
-    _ = require_ribbon_match
-
     # Drop the internal score field from the public return
     if return_all
         return (F = best.F, R = best.R, report = best.report,
@@ -899,8 +882,6 @@ end
                         reconstruction_bound = 50,
                         galois_sector = 1,
                         test_primes = nothing,
-                        ribbon_atol = 1e-8,
-                        require_ribbon_match = false,
                         skip_FR = false,
                         verbose = false)
         -> ClassifiedMTC
@@ -927,12 +908,6 @@ Arguments:
                                      If `nothing`, uses first
                                      `max(2, length(all_primes) ÷ 2)`
                                      primes; remaining are fresh.
-- `ribbon_atol::Float64 = 1e-8`:     tolerance for the Phase 4 ribbon
-                                     match.
-- `require_ribbon_match::Bool=false`: if true, reject candidates with
-                                     no ribbon match below
-                                     `ribbon_atol`; if false, accept
-                                     minimum-ribbon-residual `(F,R)`.
 - `skip_FR::Bool = false`:           if true, only do Phase 0–3 and leave
                                      (F, R) as `nothing`. Useful for
                                      rank/complexity beyond the pentagon
@@ -950,8 +925,6 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                              reconstruction_bound::Int = 50,
                              galois_sector::Int = 1,
                              test_primes::Union{Vector{Int}, Nothing} = nothing,
-                             ribbon_atol::Float64 = 1e-8,
-                             require_ribbon_match::Bool = false,
                              skip_FR::Bool = false,
                              verbose::Bool = false)
     group_primes = sort(collect(keys(group)))
@@ -1027,14 +1000,13 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     verbose && println("  running pentagon/hexagon on rank=$rank...")
 
     fr_result = compute_FR_from_ST(Nijk;
-                                   ribbon_atol = ribbon_atol,
                                    return_all = true,
                                    verbose = verbose)
     fr_result.F === nothing && error("Phase 4 could not produce any (F,R) solution")
     isempty(fr_result.candidates) && error("Phase 4 produced no valid (F,R) candidates")
 
     # Select branch by modular-data equivalence after reconstruction,
-    # not by direct ribbon fitting against the input T.
+    # selection is based on modular-data roundtrip consistency.
     best_idx = 0
     best_md = nothing
     for (ci, cand) in enumerate(fr_result.candidates)
@@ -1075,8 +1047,6 @@ end
                                 verlinde_threshold = 3,
                                 max_block_dim = 3,
                                 reconstruction_bound = 50,
-                                ribbon_atol = 1e-8,
-                                require_ribbon_match = false,
                                 skip_FR = false,
                                 verbose = true)
         -> Vector{ClassifiedMTC}
@@ -1090,7 +1060,7 @@ Pipeline:
   Phase 1: enumerate strata (m_λ) with Σ m_λ d_λ = r for each r ≤ max_rank
   Phase 2: for each stratum, sweep block-U at each prime → MTC candidates
   Phase 3: Galois-aware grouping + CRT reconstruction in ℤ[√d]
-  Phase 4: lift to ℂ, solve pentagon/hexagon, verify ribbon against T
+  Phase 4: lift to ℂ, solve pentagon/hexagon
 
 Returns one `ClassifiedMTC` per Galois sector per stratum that yields a
 valid MTC. If `skip_FR = true`, Phase 4 is skipped and `(F, R)` is left
@@ -1189,8 +1159,6 @@ Arguments:
                                    Phase 2 candidate loop.
 - `reconstruction_bound::Int = 50`: coefficient bound for ℤ[√d]
                                    rational reconstruction.
-- `ribbon_atol::Float64 = 1e-8`:   Phase 4 ribbon residual tolerance
-                                   used only for diagnostic counting.
 - `skip_FR::Bool = false`:         skip Phase 4. Useful if
                                    `max_rank ≥ 5` and pentagon HC would
                                    blow up.
@@ -1214,8 +1182,6 @@ function classify_mtcs_at_conductor(N::Int;
                                     groebner_allow_fallback::Bool = true,
                                     precheck_unit_axiom::Bool = true,
                                     reconstruction_bound::Int = 50,
-                                    ribbon_atol::Float64 = 1e-8,
-                                    require_ribbon_match::Bool = false,
                                     skip_FR::Bool = false,
                                     verbose::Bool = true)
     user_sqrtd_fn = sqrtd_fn
@@ -1419,8 +1385,6 @@ function classify_mtcs_at_conductor(N::Int;
                                                 reconstruction_bound = reconstruction_bound,
                                                 galois_sector = gi,
                                                 test_primes = used,
-                                                ribbon_atol = ribbon_atol,
-                                                require_ribbon_match = require_ribbon_match,
                                                 skip_FR = true,
                                                 verbose = verbose)
                     sector_ok = true
@@ -1469,7 +1433,6 @@ function classify_mtcs_at_conductor(N::Int;
         rep = out[rep_idx]
         verbose && println("  key=$key: members=$(length(idxs)), rank=$(rep.rank)")
         fr_result = compute_FR_from_ST(rep.Nijk;
-                                       ribbon_atol = ribbon_atol,
                                        return_all = true,
                                        verbose = verbose)
         fr_result.F === nothing && error("Phase 4 could not produce any (F,R) solution for key=$key")
