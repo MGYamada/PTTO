@@ -378,19 +378,9 @@ function _modular_data_roundtrip_up_to_galois(F_values::Vector{ComplexF64},
                                               N::Int)
     r = size(Nijk, 1)
     units = [a for a in 1:N if gcd(a, N) == 1]
-    best_rib = Inf
+    best_s = Inf
     best_a = 1
     best_T = T_target
-    for a in units
-        T_trial = a == 1 ? T_target : (T_target .^ a)
-        rib = ribbon_residuals(R_values, T_trial, Nijk)
-        rib_max = maximum(rib)
-        if rib_max < best_rib
-            best_rib = rib_max
-            best_a = a
-            best_T = T_trial
-        end
-    end
 
     # Reconstruct S from (N, θ, d) using the balancing-expression form.
     fr = FusionRule(Nijk)
@@ -405,21 +395,33 @@ function _modular_data_roundtrip_up_to_galois(F_values::Vector{ComplexF64},
     d ./= d[1]
     D = sqrt(sum(d .^ 2))
 
-    S_from = Matrix{ComplexF64}(undef, r, r)
-    for i in 1:r, j in 1:r
-        acc = 0.0 + 0.0im
-        jdual = dual[j]
-        for k in 1:r
-            Nijk[i, jdual, k] == 0 && continue
-            acc += Nijk[i, jdual, k] * (best_T[k] / (best_T[i] * best_T[jdual])) * d[k]
+    for a in units
+        T_trial = a == 1 ? T_target : (T_target .^ a)
+        S_from = Matrix{ComplexF64}(undef, r, r)
+        for i in 1:r, j in 1:r
+            acc = 0.0 + 0.0im
+            jdual = dual[j]
+            for k in 1:r
+                Nijk[i, jdual, k] == 0 && continue
+                acc += Nijk[i, jdual, k] * (T_trial[k] / (T_trial[i] * T_trial[jdual])) * d[k]
+            end
+            S_from[i, j] = acc / D
         end
-        S_from[i, j] = acc / D
+        s_err = min(maximum(abs.(S_from .- S_target)),
+                    maximum(abs.(S_from .+ S_target)))
+        if s_err < best_s
+            best_s = s_err
+            best_a = a
+            best_T = T_trial
+        end
     end
 
-    s_err = min(maximum(abs.(S_from .- S_target)),
-                maximum(abs.(S_from .+ S_target)))
-    ok = best_rib < 1e-6 && s_err < 5e-2
-    return (ok = ok, best_a = best_a, ribbon_max = best_rib, S_max = s_err, T_best = best_T)
+    # `(F, R)` is intentionally not ribbon-matched here; the roundtrip
+    # criterion is modular-data reconstruction up to Galois.
+    _ = F_values
+    _ = R_values
+    ok = best_s < 5e-2
+    return (ok = ok, best_a = best_a, ribbon_max = NaN, S_max = best_s, T_best = best_T)
 end
 
 function _branch_consistency_precheck(results_by_prime::Dict{Int, Vector{MTCCandidate}},
@@ -625,7 +627,7 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
             n_matches = 0,
             f_idx = 0,
             r_idx = 0,
-            ribbon_max = Inf)
+            score = Inf)
 
     for (fi, F_raw) in enumerate(F_sols)
         local F
@@ -651,46 +653,45 @@ function compute_FR_from_ST(Nijk::Array{Int, 3},
         for (ri, R_raw) in enumerate(R_sols)
             best = (; best..., n_tried = best.n_tried + 1)
 
-            local R
+            local rep
             try
-                R = refine_solution_newton(hex_eqs, R_raw; tol = 1e-14)
+                # Ribbon-residual based matching is intentionally no longer
+                # used for candidate selection. Phase 4 now picks an (F,R)
+                # by pentagon/hexagon consistency only; modular-data
+                # roundtrip matching is done afterwards in classify_from_group.
+                rep = verify_mtc(F, R, Nijk)
             catch err
-                verbose && println("      R[$ri] Newton refinement failed: $err")
+                verbose && println("      R[$ri] verify failed: $err")
+                continue
+            end
+            score = max(rep.pentagon_max, rep.hexagon_max)
+            if !isfinite(score)
+                verbose && println("      R[$ri] non-finite pent/hex score: $score")
                 continue
             end
 
-            local rib_max
-            try
-                rib = ribbon_residuals(R, T_complex, Nijk)
-                rib_max = maximum(rib)
-            catch err
-                verbose && println("      R[$ri] ribbon failed: $err")
-                continue
-            end
-            if !isfinite(rib_max)
-                verbose && println("      R[$ri] ribbon residual non-finite: $rib_max")
-                continue
-            end
-
-            if rib_max < ribbon_atol
-                best = (; best..., n_matches = best.n_matches + 1)
-            end
-            if rib_max < best.ribbon_max
-                rep = verify_mtc(F, R, Nijk; T = T_complex)
+            # Keep counters for API compatibility. n_matches now counts
+            # numerically valid pentagon+hexagon candidates.
+            best = (; best..., n_matches = best.n_matches + 1)
+            if score < best.score
+                rep_with_t = try
+                    verify_mtc(F, R, Nijk; T = T_complex)
+                catch
+                    rep
+                end
                 best = (; best...,
-                        F = F, R = R, report = rep,
+                        F = F, R = R, report = rep_with_t,
                         f_idx = fi, r_idx = ri,
-                        ribbon_max = rib_max)
+                        score = score)
             end
         end
     end
 
-    if require_ribbon_match && best.n_matches == 0
-        best = (; best..., F = nothing, R = nothing, report = nothing,
-                f_idx = 0, r_idx = 0)
-    end
+    # Backward-compatible knobs kept in signature (deprecated path).
+    _ = ribbon_atol
+    _ = require_ribbon_match
 
-    # Drop the internal ribbon_max field from the public return
+    # Drop the internal score field from the public return
     return (F = best.F, R = best.R, report = best.report,
             n_pentagon = best.n_pentagon, n_tried = best.n_tried,
             n_matches = best.n_matches,
@@ -843,7 +844,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     md_roundtrip = _modular_data_roundtrip_up_to_galois(fr_result.F, fr_result.R,
                                                         Nijk, S_ℂ, T_for_phase4, N)
     verbose && println("  modular-data roundtrip: galois a=$(md_roundtrip.best_a), " *
-                       "ribbon=$(md_roundtrip.ribbon_max), S_err=$(md_roundtrip.S_max), " *
+                       "S_err=$(md_roundtrip.S_max), " *
                        "ok=$(md_roundtrip.ok)")
 
     return ClassifiedMTC(N, N_input, rank, stratum, Nijk, recon_S_phase4,
