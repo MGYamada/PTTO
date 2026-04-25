@@ -419,6 +419,10 @@ _is_reconstruction_unstable_message(msg::AbstractString) = begin
            occursin("crt", low)
 end
 
+# OBSOLETE (Phase 5):
+# 直接この関数を呼んで candidate 比較を行うのは非推奨。
+# 比較規則・fallback を固定化した `_score_fr_st_match` /
+# `_select_fr_for_st` 経由で使うこと。
 function _modular_data_roundtrip_up_to_galois(F_values::Vector{ComplexF64},
                                               R_values::Vector{ComplexF64},
                                               Nijk::Array{Int,3},
@@ -1476,15 +1480,17 @@ function classify_mtcs_at_conductor(N::Int;
         fr_result.F === nothing && error("Phase 4 could not produce any (F,R) solution for key=$key")
         isempty(fr_result.candidates) && error("Phase 4 produced no valid (F,R) candidates for key=$key")
 
-        # OBSOLETE: direct roundtrip-based candidate loop.
-        # Use Phase 5 API to centralize selection/fallback policy.
-        selection = _select_fr_for_st(fr_result.candidates, rep.Nijk,
-                                      rep.S_complex, rep.T_complex, rep.N)
-        selected = selection.selected
-        best_md = selection.score
-        verbose && println("    selected branch: galois a=$(best_md.best_a), " *
-                           "S_err=$(best_md.S_max), T_err=$(best_md.T_max), ok=$(best_md.ok)")
+        # OBSOLETE: fusion-rule representative (`rep`) だけで roundtrip 選択する旧方式。
+        # 新方式では fusion-rule 内の各 `(S,T)` ごとに `(F,R)` を割り当てる。
         for i in idxs
+            mtc_i = out[i]
+            selection = _select_fr_for_st(fr_result.candidates, mtc_i.Nijk,
+                                          mtc_i.S_complex, mtc_i.T_complex, mtc_i.N)
+            selected = selection.selected
+            best_md = selection.score
+            verbose && println("    member[$i] branch: cand=$(selection.selected_index), " *
+                               "galois a=$(best_md.best_a), " *
+                               "S_err=$(best_md.S_max), T_err=$(best_md.T_max), ok=$(best_md.ok)")
             out[i] = _with_fr_result(out[i], selected.F, selected.R, selected.report)
         end
     end

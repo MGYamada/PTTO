@@ -346,7 +346,8 @@ scores < 1e-10 on both pentagon and hexagon.
   iterating over strata and Galois sectors. After fusion-rule
   aggregation, it assigns `(F,R)` inside each fusion-rule group for
   each `(S,T)` using the same Phase 5 selection API (not a single
-  representative-only pick).
+  representative-only pick). Direct roundtrip loops are obsolete;
+  selection uses `_score_fr_st_match` / `_select_fr_for_st`.
   - Note: using an incorrect `scale_d` can produce **zero candidates**.
     For Fibonacci conductor search (`N = 20`), we recommend `scale_d = 5`.
 
