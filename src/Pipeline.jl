@@ -465,59 +465,127 @@ function _normalize_smatrix(S::Matrix{ComplexF64})
     return Sn
 end
 
-function _infer_T_candidates_from_monodromy(R_values::Vector{ComplexF64},
-                                            Nijk::Array{Int,3},
-                                            N::Int;
-                                            max_candidates::Int = 64)
+function _smatrix_has_fusion_dimension_character(Sn::Matrix{ComplexF64},
+                                                 Nijk::Array{Int,3};
+                                                 atol::Float64 = 1e-6)
     r = size(Nijk, 1)
-    vars = max(0, r - 1)
-    vars == 0 && return [ComplexF64[1.0 + 0.0im]]
-
-    # equations: t_a + t_b - t_c = m (mod N), where
-    # exp(2πim/N) approximates monodromy M^{ab}_c = R^{ba}_c R^{ab}_c.
-    eqs = Tuple{Int, Int, Int, Int}[]
-    for a in 1:r, b in 1:r, c in 1:r
-        Nijk[a, b, c] == 0 && continue
-        R_ab = extract_R_block(R_values, Nijk, a, b, c)
-        R_ba = extract_R_block(R_values, Nijk, b, a, c)
-        size(R_ab) == (1, 1) || continue
-        size(R_ba) == (1, 1) || continue
-        z = R_ba[1, 1] * R_ab[1, 1]
-        z = iszero(z) ? z : z / abs(z)
-        m = mod(round(Int, (N * angle(z)) / (2π)), N)
-        push!(eqs, (a, b, c, m))
+    size(Sn) == (r, r) || return false
+    iszero(Sn[1, 1]) && return false
+    d = Sn[:, 1] ./ Sn[1, 1]
+    for i in 1:r, j in 1:r
+        lhs = sum(Nijk[i, j, k] * d[k] for k in 1:r)
+        rhs = d[i] * d[j]
+        abs(lhs - rhs) <= atol || return false
     end
-    isempty(eqs) && return [vcat(ComplexF64[1.0 + 0.0im], fill(1.0 + 0.0im, r - 1))]
+    return true
+end
 
-    sols = Vector{Vector{Int}}()
-    ranges = ntuple(_ -> 0:(N - 1), vars)
-    for tup in Iterators.product(ranges...)
-        length(sols) >= max_candidates && break
-        assignments = collect(tup)
+function _forward_r_var_count(Nijk::Array{Int,3})
+    r = size(Nijk, 1)
+    return sum(Nijk[i, j, k]^2 for i in 1:r, j in 1:r, k in 1:r
+               if Nijk[i, j, k] > 0)
+end
+
+function _forward_R_values(R_values::Vector{ComplexF64}, Nijk::Array{Int,3})
+    r_var_count = _forward_r_var_count(Nijk)
+    if length(R_values) == r_var_count
+        return R_values
+    elseif length(R_values) == 2 * r_var_count
+        return R_values[1:r_var_count]
+    end
+    error("R_values has length $(length(R_values)); expected $r_var_count " *
+          "(forward only) or $(2 * r_var_count) (forward + reverse).")
+end
+
+function _monodromy_trace(R_fwd::Vector{ComplexF64},
+                          Nijk::Array{Int,3},
+                          a::Int, b::Int, c::Int)
+    N_abc = Nijk[a, b, c]
+    N_abc == 0 && return 0.0 + 0.0im
+    N_bac = Nijk[b, a, c]
+    N_bac == N_abc || error("Fusion multiplicity not symmetric: " *
+                            "N[$a,$b,$c]=$N_abc vs N[$b,$a,$c]=$N_bac")
+    R_ab = extract_R_block(R_fwd, Nijk, a, b, c)
+    R_ba = extract_R_block(R_fwd, Nijk, b, a, c)
+    return tr(R_ba * R_ab)
+end
+
+function _monodromy_phase_from_trace(R_fwd::Vector{ComplexF64},
+                                     Nijk::Array{Int,3},
+                                     a::Int, b::Int, c::Int)
+    z = _monodromy_trace(R_fwd, Nijk, a, b, c) / Nijk[a, b, c]
+    return iszero(z) ? z : z / abs(z)
+end
+
+function _quantum_dimensions_from_fusion(Nijk::Array{Int,3})
+    r = size(Nijk, 1)
+    A = zeros(Float64, r, r)
+    for i in 1:r
+        A .+= Float64.(Nijk[i, :, :])
+    end
+    eig = eigen(A)
+    idx = argmax(real(eig.values))
+    d = abs.(real(eig.vectors[:, idx]))
+    d ./= d[1]
+    return d
+end
+
+function _fusion_dimension_characters(Nijk::Array{Int,3};
+                                      atol::Float64 = 1e-7)
+    r = size(Nijk, 1)
+    Ms = [ComplexF64.(Nijk[i, :, :]) for i in 1:r]
+    combo = zeros(ComplexF64, r, r)
+    for i in 1:r
+        combo .+= (sqrt(i + 1) + im / (i + 2)) .* Ms[i]
+    end
+    eig = eigen(combo)
+    chars = Vector{Vector{ComplexF64}}()
+    for col in 1:r
+        v = eig.vectors[:, col]
+        abs(v[1]) > atol || continue
+        d = v ./ v[1]
         ok = true
-        for (a, b, c, m) in eqs
-            ta = a == 1 ? 0 : assignments[a - 1]
-            tb = b == 1 ? 0 : assignments[b - 1]
-            tc = c == 1 ? 0 : assignments[c - 1]
-            if mod(ta + tb - tc - m, N) != 0
+        for i in 1:r
+            res = Ms[i] * d - d[i] * d
+            if _maxabs(res) > atol
                 ok = false
                 break
             end
         end
-        ok && push!(sols, assignments)
-    end
-
-    T_candidates = Vector{Vector{ComplexF64}}()
-    for sol in sols
-        Tvals = Vector{ComplexF64}(undef, r)
-        Tvals[1] = 1.0 + 0.0im
-        for i in 2:r
-            Tvals[i] = exp((2π * im * sol[i - 1]) / N)
+        ok || continue
+        if !any(_maxabs(d .- old) < 1e-6 for old in chars)
+            push!(chars, ComplexF64.(d))
         end
-        push!(T_candidates, Tvals)
     end
-    isempty(T_candidates) && push!(T_candidates, vcat(ComplexF64[1.0 + 0.0im], fill(1.0 + 0.0im, r - 1)))
-    return T_candidates
+    if isempty(chars)
+        push!(chars, ComplexF64.(_quantum_dimensions_from_fusion(Nijk)))
+    end
+    return chars
+end
+
+function _twists_from_braiding_trace(R_values::Vector{ComplexF64},
+                                     Nijk::Array{Int,3},
+                                     d::Vector{<:Number})
+    r = size(Nijk, 1)
+    R_fwd = _forward_R_values(R_values, Nijk)
+    T = Vector{ComplexF64}(undef, r)
+    for a in 1:r
+        acc = 0.0 + 0.0im
+        for c in 1:r
+            Nijk[a, a, c] == 0 && continue
+            R_aa_c = extract_R_block(R_fwd, Nijk, a, a, c)
+            acc += d[c] * tr(R_aa_c)
+        end
+        θ = acc / d[a]
+        T[a] = iszero(θ) ? θ : θ / abs(θ)
+    end
+    return _normalize_twists(T)
+end
+
+function _twist_candidates_from_braiding_trace(R_values::Vector{ComplexF64},
+                                               Nijk::Array{Int,3})
+    return [_twists_from_braiding_trace(R_values, Nijk, d)
+            for d in _fusion_dimension_characters(Nijk)]
 end
 
 function _st_signature_under_gauge(S::Matrix{ComplexF64},
@@ -548,11 +616,10 @@ end
     _modular_data_roundtrip(F_values, R_values, Nijk, S_target, T_target, N) -> NamedTuple
 
 Reconstruct `(S,T)` from `(F,R)` using the note's balancing/Hopf-link form:
-- infer twist candidates from monodromy phases
-  `M^{ab}_c = R^{ba}_c R^{ab}_c = θ_a θ_b / θ_c`
-  (multiplicity-free channels),
+- reconstruct twists from the braiding trace formula
+  `θ_a = d_a⁻¹ Σ_c d_c Tr_{V_aa^c}(R^{aa}_c)`,
 - rebuild `S` from
-  `S_ab = (1/D) Σ_c N_ab^c d_c (θ_a θ_b / θ_c)`.
+  `S_ab = (1/D) Σ_c d_c Tr_{V_ab^c}(R^{ba}_c R^{ab}_c)`.
 
 Then compare reconstructed data against targets while accounting for
 non-Galois gauge freedom (fusion-rule automorphisms fixing the unit and
@@ -567,31 +634,25 @@ function _modular_data_roundtrip(F_values::Vector{ComplexF64},
                                  N::Int)
     _ = F_values
     r = size(Nijk, 1)
+    R_fwd = _forward_R_values(R_values, Nijk)
 
     # Quantum dimensions from PF eigenvector of Σ_i N_i.
-    A = zeros(Float64, r, r)
-    for i in 1:r
-        A .+= Float64.(Nijk[i, :, :])
-    end
-    eig = eigen(A)
-    idx = argmax(real(eig.values))
-    d = abs.(real(eig.vectors[:, idx]))
-    d ./= d[1]
+    d = _quantum_dimensions_from_fusion(Nijk)
     D = sqrt(sum(d .^ 2))
 
     T_target_n = _normalize_twists(T_target)
     S_target_n = _normalize_smatrix(S_target)
+    compare_S_target = _smatrix_has_fusion_dimension_character(S_target_n, Nijk)
 
-    function reconstruct_S_from_T(Tvals::Vector{ComplexF64})
+    function reconstruct_S_from_R()
         S = Matrix{ComplexF64}(undef, r, r)
         for a in 1:r, b in 1:r
             acc = 0.0 + 0.0im
             for c in 1:r
                 Nijk[a, b, c] == 0 && continue
-                # Balancing form:
-                #   R^{ba}_c R^{ab}_c = θ_a θ_b / θ_c
-                # so S_ab = (1/D) Σ_c N_ab^c d_c (θ_a θ_b / θ_c).
-                acc += Nijk[a, b, c] * (Tvals[a] * Tvals[b] / Tvals[c]) * d[c]
+                # Hopf-link trace form. In multiplicity-free channels this is
+                # d_c * R^{ba}_c R^{ab}_c; in general it is the trace on V_ab^c.
+                acc += d[c] * _monodromy_trace(R_fwd, Nijk, a, b, c)
             end
             S[a, b] = acc / D
         end
@@ -602,21 +663,24 @@ function _modular_data_roundtrip(F_values::Vector{ComplexF64},
     best_perm = automorphisms[1]
     best_s = Inf
     best_t = Inf
-    best_Sn = _normalize_smatrix(reconstruct_S_from_T(T_target_n))
+    Sn_from_R = _normalize_smatrix(reconstruct_S_from_R())
+    best_Sn = Sn_from_R
     best_Tn = copy(T_target_n)
 
-    for T_raw in _infer_T_candidates_from_monodromy(R_values, Nijk, N)
+    for T_raw in _twist_candidates_from_braiding_trace(R_values, Nijk)
         Tn = _normalize_twists(T_raw)
-        Sn = _normalize_smatrix(reconstruct_S_from_T(Tn))
+        Sn = Sn_from_R
         for perm in automorphisms
             S_p = Sn[perm, perm]
             T_p = Tn[perm]
             for use_conj in (false, true)
                 S_cmp = use_conj ? conj.(S_p) : S_p
                 T_cmp = use_conj ? conj.(T_p) : T_p
-                s_err = min(_maxabs(S_cmp .- S_target_n), _maxabs(-S_cmp .- S_target_n))
+                s_err = compare_S_target ?
+                    min(_maxabs(S_cmp .- S_target_n), _maxabs(-S_cmp .- S_target_n)) :
+                    0.0
                 t_err = _maxabs(T_cmp .- T_target_n)
-                if (s_err < best_s) || (isapprox(s_err, best_s; atol = 1e-12) && t_err < best_t)
+                if (t_err < best_t) || (isapprox(t_err, best_t; atol = 1e-12) && s_err < best_s)
                     best_s = s_err
                     best_t = t_err
                     best_perm = perm
@@ -661,11 +725,11 @@ function _score_fr_st_match(F_values::Vector{ComplexF64},
     md = _modular_data_roundtrip(F_values, R_values, Nijk, S_target, T_target, N)
     # Fixed comparison rule for Phase 5:
     #   1) prioritize ok=true
-    #   2) smaller S_max
-    #   3) smaller T_max
+    #   2) smaller T_max
+    #   3) smaller S_max
     #   4) smaller candidate_index
     # Since false < true for Bool, place !ok first to prefer ok=true.
-    order_key = (!md.ok, md.S_max, md.T_max, candidate_index)
+    order_key = (!md.ok, md.T_max, md.S_max, candidate_index)
     return (ok = md.ok,
             S_max = md.S_max,
             T_max = md.T_max,
