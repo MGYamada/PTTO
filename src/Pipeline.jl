@@ -140,11 +140,13 @@ end
 function _with_fr_result(c::ClassifiedMTC,
                          F::Union{Vector, Nothing},
                          R::Union{Vector, Nothing},
-                         report)
+                         report;
+                         S = c.S_cyclotomic,
+                         T = c.T_cyclotomic)
     return ClassifiedMTC(c.N, c.N_input, c.rank, c.stratum, c.Nijk,
                          c.S_Zsqrtd, c.quadratic_d, c.scale_factor,
                          c.used_primes, c.fresh_primes, c.verify_fresh,
-                         c.S_cyclotomic, c.T_cyclotomic,
+                         S, T,
                          F, R, report, c.galois_sector)
 end
 
@@ -167,6 +169,12 @@ function _quadratic_candidates_for_conductor(N::Int)
     N % 12 == 0 && push!(ds, 3)
     N % 5 == 0 && push!(ds, 5)
     return unique(ds)
+end
+
+function _default_quadratic_d_for_conductor(N::Int)
+    N % 5 == 0 && return 5
+    N % 12 == 0 && return 3
+    return 1
 end
 
 """
@@ -328,6 +336,7 @@ function classify_mtcs_auto(N::Int;
                                                             max_rank = max_rank,
                                                             primes = chosen_primes,
                                                             strata = strata,
+                                                            quadratic_d = d,
                                                             scale_factor = scale_factor,
                                                             conductor_mode = conductor_mode,
                                                             sqrtd_fn = sqrtd_fn,
@@ -410,21 +419,43 @@ function _select_fr_for_st(candidates, Nijk, S_cyc, T_cyc, N)
     all_scores = NamedTuple[]
     best_idx = 0
     best_score = nothing
+    best_candidate = nothing
+    ctx = CyclotomicContext(N)
+    galois_units = [a for a in 1:N if gcd(a, N) == 1]
     for (ci, cand) in enumerate(candidates)
-        score = _score_fr_st_match(cand.F, cand.R, Nijk, S_cyc, T_cyc, N;
-                                   candidate_index = ci)
-        push!(all_scores, score)
-        if best_score === nothing || score.order_key < best_score.order_key
-            best_score = score
-            best_idx = ci
+        for a in galois_units
+            F = a == 1 ? cand.F : galois_action(ctx, cand.F, a)
+            R = a == 1 ? cand.R : galois_action(ctx, cand.R, a)
+            score = _score_fr_st_match(F, R, Nijk, S_cyc, T_cyc, N;
+                                       candidate_index = ci)
+            score = merge(score, (galois_exponent = a,
+                                  order_key = (score.ok ? 0 : 1,
+                                               string(score.T_max),
+                                               string(score.S_max),
+                                               ci,
+                                               a)))
+            push!(all_scores, score)
+            if best_score === nothing || score.order_key < best_score.order_key
+                best_score = score
+                best_idx = ci
+                best_candidate = (F = F, R = R, report = cand.report)
+            end
         end
     end
-    return (selected = candidates[best_idx],
+    return (selected = best_candidate,
             score = best_score,
             selected_index = best_idx,
             selected_ok = best_score.ok,
             all_scores = all_scores)
 end
+
+function _normalize_T_by_unit(T_cyc::AbstractVector)
+    isempty(T_cyc) && return collect(T_cyc)
+    t0 = T_cyc[1]
+    iszero(t0) && return collect(T_cyc)
+    return [t / t0 for t in T_cyc]
+end
+
 
 function _matrix_dim(M)
     return M isa MatElem ? (nrows(M), ncols(M)) : size(M)
@@ -486,16 +517,12 @@ function _fusion_automorphisms_fixing_unit(Nijk::Array{Int,3})
     return autos
 end
 
-function _modular_data_roundtrip(F_values::Vector,
-                                 R_values::Vector,
-                                 Nijk::Array{Int,3},
-                                 S_target,
-                                 T_target,
-                                 N::Int)
+function _modular_data_from_FR(R_values::Vector,
+                               Nijk::Array{Int,3},
+                               S_target)
     r = size(Nijk, 1)
     dims = _matrix_dim(S_target)
     dims == (r, r) || error("S_target has shape $dims; expected ($r, $r)")
-    length(T_target) == r || error("T_target has length $(length(T_target)); expected $r")
 
     K = parent(_matrix_entry(S_target, 1, 1))
     R_fwd = _forward_R_values(R_values, Nijk)
@@ -528,6 +555,21 @@ function _modular_data_roundtrip(F_values::Vector,
         t0 = T_from_R[1]
         T_from_R = [t / t0 for t in T_from_R]
     end
+    return (S = S_from_R, T = T_from_R)
+end
+
+function _modular_data_roundtrip(F_values::Vector,
+                                 R_values::Vector,
+                                 Nijk::Array{Int,3},
+                                 S_target,
+                                 T_target,
+                                 N::Int)
+    r = size(Nijk, 1)
+    length(T_target) == r || error("T_target has length $(length(T_target)); expected $r")
+    md_from_fr = _modular_data_from_FR(R_values, Nijk, S_target)
+    S_from_R = md_from_fr.S
+    T_from_R = md_from_fr.T
+    K = parent(_matrix_entry(S_target, 1, 1))
 
     automorphisms = _fusion_automorphisms_fixing_unit(Nijk)
     best = nothing
@@ -654,9 +696,11 @@ function Base.show(io::IO, m::ClassifiedMTC)
         "(F,R)=none"
     else
         rep = m.verify_report
-        pent = rep === nothing ? "?" : string(round(rep.pentagon_max, sigdigits = 2))
-        hex = rep === nothing ? "?" : string(round(rep.hexagon_max, sigdigits = 2))
-        "(F,R) pent=$pent hex=$hex"
+        if rep !== nothing && hasproperty(rep, :ok)
+            "(F,R) roundtrip=$(rep.ok ? "✓" : "✗")"
+        else
+            "(F,R)=attached"
+        end
     end
     fresh_str = isempty(m.fresh_primes) ? "no fresh" :
         (m.verify_fresh ? "fresh✓" : "fresh✗")
@@ -760,7 +804,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                              stratum::Stratum,
                              all_primes::Vector{Int};
                              N_input::Int = N,
-                             quadratic_d::Int = last(_quadratic_candidates_for_conductor(N)),
+                             quadratic_d::Int = _default_quadratic_d_for_conductor(N),
                              scale_factor::Int = 2,
                              sqrtd_fn = compute_sqrt_d_mod_p,
                              reconstruction_bound::Int = 50,
@@ -828,7 +872,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
         Nijk = Nijk[perm, perm, perm]
         recon_S_phase4 = recon_S[perm, perm]
     end
-    T_for_phase4 = T_cyc
+    T_for_phase4 = _normalize_T_by_unit(T_cyc)
 
     # -------- Exact (F, R) layer --------
     rank = size(Nijk, 1)
@@ -855,7 +899,9 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     # calls is replaced by Phase 5 API `_select_fr_for_st`.
     selection = _select_fr_for_st(fr_result.candidates, Nijk, S_cyc, T_for_phase4, N)
     selected = selection.selected
-    md_roundtrip = selection.score
+    md_roundtrip = _modular_data_roundtrip(selected.F, selected.R, Nijk,
+                                           selection.score.S_roundtrip,
+                                           selection.score.T_roundtrip, N)
     verbose && println("  modular-data roundtrip: perm=$(md_roundtrip.best_perm), " *
                        "S_err=$(md_roundtrip.S_max), T_err=$(md_roundtrip.T_max), " *
                        "ok=$(md_roundtrip.ok)")
@@ -863,8 +909,8 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     return ClassifiedMTC(N, N_input, rank, stratum, Nijk, recon_S_phase4,
                          quadratic_d, scale_factor,
                          used, fresh, verify_fresh,
-                         S_cyc, T_for_phase4,
-                         selected.F, selected.R, selected.report,
+                         md_roundtrip.S_roundtrip, md_roundtrip.T_roundtrip,
+                         selected.F, selected.R, md_roundtrip,
                          galois_sector)
 end
 
@@ -1009,32 +1055,9 @@ function classify_mtcs_at_conductor(N::Int;
     user_sqrtd_fn = sqrtd_fn
     N_effective = compute_effective_conductor(N; conductor_mode = conductor_mode)
     isempty(kwargs) || error("unsupported keyword arguments: $(collect(keys(kwargs)))")
-    if quadratic_d === nothing
-        out = ClassifiedMTC[]
-        for d in _quadratic_candidates_for_conductor(N_effective)
-            append!(out, classify_mtcs_at_conductor(N;
-                                                    max_rank = max_rank,
-                                                    primes = primes,
-                                                    strata = strata,
-                                                    quadratic_d = d,
-                                                    scale_factor = scale_factor,
-                                                    conductor_mode = conductor_mode,
-                                                    min_primes = min_primes,
-                                                    prime_start = prime_start,
-                                                    prime_window = prime_window,
-                                                    sqrtd_fn = sqrtd_fn,
-                                                    verlinde_threshold = verlinde_threshold,
-                                                    max_block_dim = max_block_dim,
-                                                    search_mode = search_mode,
-                                                    max_units_for_groebner = max_units_for_groebner,
-                                                    groebner_allow_fallback = groebner_allow_fallback,
-                                                    precheck_unit_axiom = precheck_unit_axiom,
-                                                    reconstruction_bound = reconstruction_bound,
-                                                    skip_FR = skip_FR,
-                                                    verbose = verbose))
-        end
-        return out
-    end
+    quadratic_d = quadratic_d === nothing ?
+        _default_quadratic_d_for_conductor(N_effective) :
+        quadratic_d
 
     chosen_primes = primes === nothing ?
         select_admissible_primes(N_effective;
@@ -1298,11 +1321,16 @@ function classify_mtcs_at_conductor(N::Int;
             selection = _select_fr_for_st(fr_result.candidates, mtc_i.Nijk,
                                           mtc_i.S_cyclotomic, mtc_i.T_cyclotomic, mtc_i.N)
             selected = selection.selected
-            best_md = selection.score
+            best_md = _modular_data_roundtrip(selected.F, selected.R, mtc_i.Nijk,
+                                              selection.score.S_roundtrip,
+                                              selection.score.T_roundtrip, mtc_i.N)
             verbose && println("    member[$i] branch: cand=$(selection.selected_index), " *
+                               "galois=$(selection.score.galois_exponent), " *
                                "perm=$(best_md.best_perm), " *
                                "S_err=$(best_md.S_max), T_err=$(best_md.T_max), ok=$(best_md.ok)")
-            out[i] = _with_fr_result(out[i], selected.F, selected.R, selected.report)
+            out[i] = _with_fr_result(out[i], selected.F, selected.R, best_md;
+                                     S = best_md.S_roundtrip,
+                                     T = best_md.T_roundtrip)
         end
     end
 
