@@ -88,6 +88,24 @@ using ACMG
         @test auto.attempts == 1
     end
 
+    @testset "classify_mtcs_auto explores repeated conductors with different d" begin
+        auto = ACMG.classify_mtcs_auto(1;
+                                       max_rank_candidates = [1],
+                                       d_candidates = [1, 2],
+                                       min_primes = 2,
+                                       prime_start = 2,
+                                       prime_max = 100,
+                                       max_attempts = 2,
+                                       skip_FR = true,
+                                       verbose = false)
+
+        @test auto.attempts == 2
+        @test length(auto.history) == 2
+        @test [h.d for h in auto.history] == [1, 2]
+        @test all(h -> h.executed, auto.history)
+        @test !any(h -> h.reason == "duplicate_N_effective", auto.history)
+    end
+
     @testset "select_admissible_primes picks valid primes" begin
         ps = ACMG.select_admissible_primes(24;
                                            min_count = 3,

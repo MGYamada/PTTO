@@ -154,7 +154,19 @@ end
 #  classify_mtcs_auto: user-friendly auto-parameter wrapper
 # ============================================================
 
-cyclotomic_requirement(::Int) = 1
+function cyclotomic_requirement(d::Int)
+    d in (2, 3) && return 24
+    d == 5 && return 5
+    return 1
+end
+
+function _prime_requirement_for_reconstruction(N_eff::Int, d::Int, sqrtd_fn)
+    req = N_eff
+    if sqrtd_fn === nothing
+        req = lcm(req, cyclotomic_requirement(d))
+    end
+    return req
+end
 
 function compute_effective_conductor(N::Int, args...;
                                      conductor_mode::Symbol = :full_mtc)
@@ -231,8 +243,9 @@ Returns:
    - `attempts`
    - `history`
 
-Prime selection rule for each attempted conductor:
-- Let `req = N_effective`.
+Prime selection rule for each attempted `(N_effective, d)` stage:
+- Let `req = lcm(N_effective, cyclotomic_requirement(d))` when using
+  the built-in √d selector, otherwise `req = N_effective`.
 - Choose the first `min_primes` primes `p > prime_start` with
   `(p - 1) % req == 0`.
 """
@@ -273,7 +286,7 @@ function classify_mtcs_auto(N::Int;
     attempts = 0
     n_stagnant = 0
 
-    seen_N_eff = Set{Int}()
+    seen_stages = Set{Tuple{Int, Int}}()
     seen_signatures = Set{String}()
     history = NamedTuple[]
 
@@ -291,13 +304,14 @@ function classify_mtcs_auto(N::Int;
                             attempts = 0, new_mtcs = 0))
             break
         end
-        if N_eff_candidate in seen_N_eff
+        stage_key = (N_eff_candidate, d)
+        if stage_key in seen_stages
             push!(history, (d = d, N_effective = N_eff_candidate, executed = false,
-                            success = false, reason = "duplicate_N_effective",
+                            success = false, reason = "duplicate_stage",
                             attempts = 0, new_mtcs = 0))
             continue
         end
-        push!(seen_N_eff, N_eff_candidate)
+        push!(seen_stages, stage_key)
 
         stage_attempts = 0
         stage_success = false
@@ -310,7 +324,7 @@ function classify_mtcs_auto(N::Int;
             conductor_mode == :full_mtc || error(
                 "conductor_mode=:$(conductor_mode) was removed in v0.5.0. Use :full_mtc.")
 
-            req = N_eff_candidate
+            req = _prime_requirement_for_reconstruction(N_eff_candidate, d, sqrtd_fn)
 
             local chosen_primes
             try
@@ -328,32 +342,40 @@ function classify_mtcs_auto(N::Int;
                     attempts += 1
                     stage_attempts += 1
                     verbose && println("AUTO attempt #$attempts: " *
-                                       "d=$d N_eff=$N_eff_candidate " *
+                                       "d=$d N_eff=$N_eff_candidate req=$req " *
                                        "mode=$conductor_mode " *
                                        "max_rank=$max_rank primes=$chosen_primes")
-
-                    classified = classify_mtcs_at_conductor(N_eff_candidate;
-                                                            max_rank = max_rank,
-                                                            primes = chosen_primes,
-                                                            strata = strata,
-                                                            quadratic_d = d,
-                                                            scale_factor = scale_factor,
-                                                            conductor_mode = conductor_mode,
-                                                            sqrtd_fn = sqrtd_fn,
-                                                            verlinde_threshold = verlinde_threshold,
-                                                            max_block_dim = max_block_dim,
-                                                            search_mode = search_mode,
-                                                            max_units_for_groebner = max_units_for_groebner,
-                                                            groebner_allow_fallback = groebner_allow_fallback,
-                                                            precheck_unit_axiom = precheck_unit_axiom,
-                                                            reconstruction_bound = reconstruction_bound,
-                                                            skip_FR = skip_FR,
-                                                            verbose = verbose)
 
                     last_meta = (N_input = N, N_effective = N_eff_candidate, d = d,
                                  conductor_mode = conductor_mode,
                                  primes = copy(chosen_primes), max_rank = max_rank,
                                  attempts = attempts)
+
+                    local classified
+                    try
+                        classified = classify_mtcs_at_conductor(N_eff_candidate;
+                                                                max_rank = max_rank,
+                                                                primes = chosen_primes,
+                                                                strata = strata,
+                                                                quadratic_d = d,
+                                                                scale_factor = scale_factor,
+                                                                conductor_mode = conductor_mode,
+                                                                sqrtd_fn = sqrtd_fn,
+                                                                verlinde_threshold = verlinde_threshold,
+                                                                max_block_dim = max_block_dim,
+                                                                search_mode = search_mode,
+                                                                max_units_for_groebner = max_units_for_groebner,
+                                                                groebner_allow_fallback = groebner_allow_fallback,
+                                                                precheck_unit_axiom = precheck_unit_axiom,
+                                                                reconstruction_bound = reconstruction_bound,
+                                                                skip_FR = skip_FR,
+                                                                verbose = verbose)
+                    catch err
+                        stage_reason = sprint(showerror, err)
+                        verbose && println("  AUTO attempt #$attempts failed: $stage_reason")
+                        continue
+                    end
+
                     if !isempty(classified)
                         stage_success = true
                         stage_reason = "ok"
@@ -1059,8 +1081,9 @@ function classify_mtcs_at_conductor(N::Int;
         _default_quadratic_d_for_conductor(N_effective) :
         quadratic_d
 
+    prime_requirement = _prime_requirement_for_reconstruction(N_effective, quadratic_d, sqrtd_fn)
     chosen_primes = primes === nothing ?
-        select_admissible_primes(N_effective;
+        select_admissible_primes(prime_requirement;
                                  min_count = min_primes,
                                  start_from = prime_start,
                                  window = prime_window) :
@@ -1070,6 +1093,9 @@ function classify_mtcs_at_conductor(N::Int;
                        "(input N=$N, N_effective=$N_effective)")
     verbose && primes === nothing &&
         println("PrimeSelection: auto-selected primes = $chosen_primes")
+    verbose && primes === nothing && prime_requirement != N_effective &&
+        println("PrimeSelection: using reconstruction requirement $prime_requirement " *
+                "(N_effective=$N_effective, d=$quadratic_d)")
 
     # Prime validity check
     for p in chosen_primes

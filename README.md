@@ -97,6 +97,51 @@ Phase 4 computes exact cyclotomic `(F, R)` data for the built-in small
 rank examples using finite-field Groebner preprocessing and exact lift
 back to `Q(ζ_N)`.
 
+### Sample conductor searches
+
+The following small examples start only from the conductor `N`.  The
+pipeline chooses the default quadratic reconstruction field from `N`
+internally; no `quadratic_d` argument is needed.
+
+```julia
+using ACMG
+
+samples = [
+    (name = "Semion",    N = 8,  max_rank = 2, primes = [17, 41]),
+    (name = "Ising",     N = 16, max_rank = 3, primes = [17, 97]),
+    (name = "Fibonacci", N = 20, max_rank = 2, primes = [41, 61]),
+]
+
+for sample in samples
+    classified = classify_mtcs_at_conductor(sample.N;
+                                            max_rank = sample.max_rank,
+                                            primes = sample.primes,
+                                            verbose = false)
+
+    @assert !isempty(classified)
+    @assert any(m -> m.rank == sample.max_rank, classified)
+    @assert all(m -> m.N == sample.N, classified)
+
+    println(sample.name, ": ", length(classified), " classified MTC(s)")
+end
+```
+
+For quick modular-data-only exploration, set `skip_FR = true`.  For a
+more automatic search over rank and reconstruction-field candidates, use
+`classify_mtcs_auto`:
+
+```julia
+semion_auto = classify_mtcs_auto(8;
+                                 max_rank_candidates = [2],
+                                 min_primes = 2,
+                                 prime_start = 11,
+                                 prime_max = 250,
+                                 skip_FR = true,
+                                 verbose = false)
+
+@assert any(m -> m.rank == 2, semion_auto.classified)
+```
+
 ## Galois And Frobenius
 
 For `a` in `(Z/NZ)^*`, ACMG applies
