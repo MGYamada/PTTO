@@ -190,16 +190,17 @@ Julia 1.9 or newer is required.
 
 ```text
 src/
-  ACMG.jl                 module root and exports
-  Types.jl                core F_p arithmetic and Verlinde helpers
-  SL2Reps.jl              SL(2, Z/N) atomic representation catalog
-  StratumEnum.jl          stratum enumeration
-  BlockU.jl               block-U search and F_p modular data
-  CyclotomicContext.jl    exact Q(ζ_N) context and ModularData
-  CRT.jl                  CRT and Galois-aware grouping
-  PentagonEquations.jl    TensorCategories pentagon wrapper
-  ModularDataLift.jl      exact lift from F_p / Z[sqrt(d)] to Q(ζ_N)
-  Pipeline.jl             conductor-first search pipeline
+  ACMG.jl                 single module root, include order, and exports
+  Core/                   shared types and finite-field arithmetic
+  Cyclotomics/            Q(ζ_N) context, Galois/Frobenius, F_p reduction
+  ModularData/            exact S/T containers, validation, Verlinde helpers
+  SL2/                    SL(2, Z/N) atomic representation catalog
+  Search/                 stratum enumeration and block-U search
+  Reconstruction/         CRT, Galois-aware grouping, cyclotomic lifting
+  FR/                     exact pentagon/hexagon systems and F/R solvers
+  Pipeline/               conductor-first orchestration and result records
+  IO/                     reserved for serialization/reporting utilities
+  Experimental/           reserved for incubating non-stable code
 ```
 
 ## Tests

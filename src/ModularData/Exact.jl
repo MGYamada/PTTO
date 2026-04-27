@@ -1,29 +1,9 @@
 """
-    CyclotomicContext
+Exact modular-data containers and small built-in examples over Q(zeta_N).
 
-Arithmetic context for computations over `Q(ζ_N)`.
-
-The conductor `N` is a choice of ground field, not a value inferred
-after constructing modular data.  Objects carrying modular data should
-keep this context explicitly so Galois action and finite-field reduction
-are tied to the same cyclotomic generator.
+These helpers attach S/T data to an explicit CyclotomicContext without
+changing conductor choices implicitly.
 """
-
-using Oscar
-
-struct CyclotomicContext
-    N::Int
-    field::Any
-    zeta::Any
-    real_subfield::Any
-    conductor::Int
-end
-
-function CyclotomicContext(N::Int)
-    N >= 1 || error("cyclotomic conductor must be positive, got $N")
-    K, z = cyclotomic_field(N)
-    return CyclotomicContext(N, K, z, nothing, N)
-end
 
 """
     ModularData
@@ -40,9 +20,6 @@ struct ModularData
     cond_F::Union{Int, Nothing}
 end
 
-field(ctx::CyclotomicContext) = ctx.field
-zeta(ctx::CyclotomicContext) = ctx.zeta
-conductor(ctx::CyclotomicContext) = ctx.conductor
 field(data::ModularData) = field(data.context)
 conductor(data::ModularData) = lcm(data.cond_S, data.cond_T)
 cond_S(data::ModularData) = data.cond_S
@@ -122,63 +99,4 @@ function modular_data(name::Symbol; conductor::Union{Int, Nothing} = nothing)
         return ising_modular_data(ctx)
     end
     error("unknown modular-data family: $name")
-end
-
-function _galois_elem(ctx::CyclotomicContext, x, a::Int)
-    gcd(a, ctx.N) == 1 || error("Galois exponent $a is not a unit modulo $(ctx.N)")
-    coeffs = coordinates(x)
-    za = ctx.zeta^mod(a, ctx.N)
-    y = zero(ctx.field)
-    for k in eachindex(coeffs)
-        y += ctx.field(Rational{BigInt}(coeffs[k])) * za^(k - 1)
-    end
-    return y
-end
-
-function galois_action(ctx::CyclotomicContext, x, a::Int)
-    return _galois_elem(ctx, x, a)
-end
-
-function galois_action(ctx::CyclotomicContext, M::MatElem, a::Int)
-    K = ctx.field
-    out = zero_matrix(K, nrows(M), ncols(M))
-    for i in 1:nrows(M), j in 1:ncols(M)
-        out[i, j] = galois_action(ctx, M[i, j], a)
-    end
-    return out
-end
-
-function galois_action(ctx::CyclotomicContext, v::AbstractVector, a::Int)
-    return [galois_action(ctx, x, a) for x in v]
-end
-
-function galois_action(data::ModularData, a::Int)
-    ctx = data.context
-    return ModularData(ctx, copy(data.labels),
-                       galois_action(ctx, data.S, a),
-                       galois_action(ctx, data.T, a),
-                       data.cond_S, data.cond_T, data.cond_F)
-end
-
-galois_orbit(data::ModularData) =
-    [galois_action(data, a) for a in 1:data.context.N if gcd(a, data.context.N) == 1]
-
-frobenius(data::ModularData, p::Int) = galois_action(data, mod(p, data.context.N))
-
-function reduce_mod_p(ctx::CyclotomicContext, x, p::Int)
-    gcd(p, ctx.N) == 1 || error("prime $p must be coprime to conductor $(ctx.N)")
-    zeta_Fp = find_zeta_in_Fp(ctx.N, p)
-    return cyclotomic_to_Fp(x, zeta_Fp, p)
-end
-
-function reduce_mod_p(ctx::CyclotomicContext, M::MatElem, p::Int)
-    return [reduce_mod_p(ctx, M[i, j], p) for i in 1:nrows(M), j in 1:ncols(M)]
-end
-
-function reduce_mod_p(data::ModularData, p::Int)
-    ctx = data.context
-    return (S = reduce_mod_p(ctx, data.S, p),
-            T = reduce_mod_p(ctx, data.T, p),
-            p = p,
-            conductor = ctx.N)
 end

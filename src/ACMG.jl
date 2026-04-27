@@ -14,61 +14,67 @@ Top-level pipeline:
 returns a `Vector{ClassifiedMTC}`, one per Galois sector per stratum.
 
 Module organisation (all at ACMG top level — no submodules):
-- Types:               Core layer (data types + F_p arithmetic +
-                       modular-data validation + Verlinde extraction)
-- CyclotomicContext:  exact arithmetic context `Q(ζ_N)` and
-                       context-carrying `ModularData`
-- SL2Reps:             SL(2, ℤ/N) irreducible representation catalog
-                       (Oscar + GAP/SL2Reps)                  [Phase 0]
-- StratumEnum:         combinatorial partition `Σ m_λ d_λ = r`[Phase 1]
-- BlockU:              general O(n) Cayley + single-prime driver
-                       `find_mtcs_at_prime`                   [Phase 2]
-- CRT:                 multi-prime CRT reconstruction + Galois-aware
-                       grouping                               [Phase 3]
-- PentagonEquations:   pentagon equation generation
-                       (TensorCategories wrapper)             [Phase 4]
-- ModularDataLift:     exact F_p / ℤ[√d] → Q(ζ_N) lift        [Phase 4]
-- Pipeline:            end-to-end driver `classify_mtcs_at_conductor`,
-                       auto wrapper `classify_mtcs_auto`,
-                       `classify_from_group`, and the
-                       `ClassifiedMTC` output type             [Phase 5]
+- Core:            shared data types and finite-field arithmetic
+- Cyclotomics:     exact `Q(ζ_N)` context, Galois/Frobenius action,
+                   and finite-field reduction hooks
+- ModularData:     target home for S/T modular-data validation and
+                   Verlinde extraction
+- SL2:             SL(2, ℤ/N) irreducible representation catalog
+- Search:          stratum enumeration and finite-field block-U search
+- Reconstruction:  CRT, Galois-aware grouping, and exact cyclotomic lift
+- FR:              exact F/R equation generation and solvers
+- Pipeline:        conductor-first orchestration and output records
+- IO:              repository-facing serialization and reporting hooks
+- Experimental:    incubating code outside stable public APIs
 """
 module ACMG
 
 using LinearAlgebra
 using Primes
 
-# Core types + arithmetic + modular-data/fusion helpers
-include("Types.jl")
+# Core: shared types and finite-field arithmetic.
+include("Core/Types.jl")
+include("Core/FpArith.jl")
 
+# Cyclotomics: exact cyclotomic context, reduction, and Galois actions.
+include("Cyclotomics/Context.jl")
+include("Cyclotomics/Reduction.jl")
 
-# SL(2, ℤ/N) irrep catalog (Oscar + GAP/SL2Reps) — Phase 0
-include("SL2Reps.jl")
+# ModularData: exact containers, finite-field S/T validation, and Verlinde extraction.
+include("ModularData/Exact.jl")
+include("ModularData/Reduction.jl")
+include("Cyclotomics/Galois.jl")
+include("Cyclotomics/Frobenius.jl")
+include("ModularData/Validation.jl")
+include("ModularData/Verlinde.jl")
 
-# Stratum enumeration (combinatorial partition of rank by irrep dimensions) — Phase 1
-include("StratumEnum.jl")
+# SL2: SL(2, ℤ/N) irreducible representation catalog.
+include("SL2/SL2Reps.jl")
 
-# Block-U parametrisation and MTC reconstruction — Phase 2
-include("BlockU.jl")
+# Search: stratum enumeration and block-U finite-field search.
+include("Search/StratumEnum.jl")
+include("Search/BlockU.jl")
 
-# Cyclotomic context and exact modular-data objects
-include("CyclotomicContext.jl")
+# Reconstruction: multi-prime CRT reconstruction and exact lifting.
+include("Reconstruction/CRT.jl")
 
-# Multi-prime CRT reconstruction — Phase 3
-include("CRT.jl")
+# FR: exact F/R equations and solvers over cyclotomic fields.
+include("FR/PentagonEquations.jl")
+include("FR/HexagonEquations.jl")
+include("FR/KnownFusionRules.jl")
+include("FR/PentagonSolutions.jl")
+include("FR/PentagonSolver.jl")
+include("FR/HexagonSolutions.jl")
+include("FR/HexagonSolver.jl")
+include("Reconstruction/ModularDataLift.jl")
 
-# Phase 4: exact F/R equations and solvers over cyclotomic fields
-include("PentagonEquations.jl")
-include("PentagonSolver.jl")
-include("HexagonEquations.jl")
-include("HexagonSolver.jl")
-include("ModularDataLift.jl")
-
-# Prime selection helpers
-include("PrimeSelection.jl")
-
-# End-to-end pipeline driver
-include("Pipeline.jl")
+# Pipeline: result records, prime selection, FR layer, and conductor-first orchestration.
+include("Pipeline/Types.jl")
+include("Pipeline/PrimeSelection.jl")
+include("Pipeline/Auto.jl")
+include("Pipeline/FRLayer.jl")
+include("Pipeline/ReconstructionPrecheck.jl")
+include("Pipeline/Pipeline.jl")
 
 # ============================================================
 #  Exports

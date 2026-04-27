@@ -21,7 +21,6 @@ This module provides:
 Depends on: Primes (already in v0.2 via ACMG); no new dependencies.
 """
 
-using LinearAlgebra
 using Primes
 
 # Access v0.2 utilities. We must reach into the outer ACMG module.
