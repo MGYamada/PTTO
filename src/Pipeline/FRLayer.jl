@@ -211,6 +211,32 @@ function _score_fr_st_match(F_values::Vector,
                                    string(md.S_max),
                                    candidate_index)))
 end
+
+function _twists_from_T_arg(T)
+    T === nothing && return nothing
+    try
+        r = size(T, 1)
+        size(T, 2) == r && return [T[i, i] for i in 1:r]
+    catch
+    end
+    return collect(T)
+end
+
+function _select_phase4_candidate(candidates::Vector{NamedTuple},
+                                  Nijk::Array{Int,3},
+                                  ctx::CyclotomicContext,
+                                  S_arg, T_arg)
+    S_target = S_arg
+    T_target = _twists_from_T_arg(T_arg)
+    (S_target === nothing || T_target === nothing) && return candidates[1]
+
+    scored = [_score_fr_st_match(c.F, c.R, Nijk, S_target, T_target, ctx.N;
+                                 candidate_index = i)
+              for (i, c) in enumerate(candidates)]
+    best = first(sort(scored; by = s -> s.order_key))
+    return merge(candidates[best.candidate_index], (report = best,))
+end
+
 # ============================================================
 #  compute_FR_from_ST: exact Phase 4 over Q(ζ_N)
 # ============================================================
@@ -228,17 +254,12 @@ function compute_FR_from_ST(Nijk::Array{Int,3};
     isempty(kwargs) || error("unsupported keyword arguments: $(collect(keys(kwargs)))")
     ctx = _default_context_from_kwargs(context = context, conductor = conductor, N = N)
     r = size(Nijk, 1)
-    known_F = _known_pentagon_solution(Nijk, ctx)
-    F_solutions = if known_F === nothing
-        _, pentagon_eqs, nF = get_pentagon_system(Nijk, r)
-        solve_pentagon_modular_crt(pentagon_eqs, nF;
-                                   Nijk = Nijk,
-                                   context = ctx,
-                                   primes = primes,
-                                   show_progress = verbose)
-    else
-        [known_F]
-    end
+    _, pentagon_eqs, nF = get_pentagon_system(Nijk, r)
+    F_solutions = solve_pentagon_modular_crt(pentagon_eqs, nF;
+                                             Nijk = Nijk,
+                                             context = ctx,
+                                             primes = primes,
+                                             show_progress = verbose)
     candidates = NamedTuple[]
     for F in F_solutions
         _, hex_eqs, nR = get_hexagon_system(Nijk, r, F; context = ctx)
@@ -252,7 +273,7 @@ function compute_FR_from_ST(Nijk::Array{Int,3};
         end
     end
     isempty(candidates) && _phase4_removed_error()
-    selected = candidates[1]
+    selected = _select_phase4_candidate(candidates, Nijk, ctx, S, T)
     return (F = selected.F,
             R = selected.R,
             report = selected.report,

@@ -76,21 +76,13 @@ function solve_hexagon_modular_crt(eqs, n::Int;
     ctx = _default_context_from_kwargs(context = context, conductor = conductor, N = N)
     gb_data = _hexagon_modular_groebner_data(eqs, n, ctx, primes)
     show_progress && println("  hexagon F_p Groebner: $(length(gb_data)) primes")
-    Nijk === nothing && error("Nijk is required for exact hexagon reconstruction")
-    sol = if _is_trivial_rank1_fusion(Nijk)
-        _hexagon_solution_trivial_rank1(ctx)
-    elseif _is_semion_fusion(Nijk)
-        _hexagon_solution_semion(ctx)
-    elseif _is_fibonacci_fusion(Nijk)
-        _hexagon_solution_fibonacci(ctx)
-    elseif _ising_label_perm_to_canonical(Nijk) !== nothing
-        _hexagon_solution_ising(ctx, Nijk)
-    else
-        error("exact hexagon reconstruction is not implemented for this fusion rule")
+    sols = _solve_exact_via_triangular_groebner(eqs, n, field(ctx);
+                                                var_prefix = :r)
+    for sol in sols
+        length(sol) == n || error("hexagon solution length $(length(sol)) != variable count $n")
+        _verify_hexagon_solution(eqs, sol)
     end
-    length(sol) == n || error("hexagon solution length $(length(sol)) != variable count $n")
-    _verify_hexagon_solution(eqs, sol)
-    return [sol]
+    return sols
 end
 
 solve_hexagon_homotopy(eqs, n::Int; kwargs...) =

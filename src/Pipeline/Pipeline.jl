@@ -274,9 +274,7 @@ Arguments:
                                    is rejected). See
                                    `find_mtcs_at_prime`.
 - `max_block_dim::Int = 3`:        cap on the degenerate T-eigenspace
-                                   dimension for naive O(n) Cayley
-                                   sweep. Raise with caution (O(4)(F_p)
-                                   has ~10¹¹ points).
+                                   dimension for block-U solving.
 - `search_mode::Symbol = :groebner`:
                                    Phase 2 block-U backend mode passed
                                    to `find_mtcs_at_prime` (`:groebner`
@@ -284,10 +282,11 @@ Arguments:
 - `max_units_for_groebner::Int = typemax(Int)`:
                                    cap on fixed-unit Gröbner systems
                                    tried per stratum/prime in Phase 2.
-- `groebner_allow_fallback::Bool = true`:
+- `groebner_allow_fallback::Bool = false`:
                                    when `search_mode=:groebner`,
-                                   whether to fall back to enumeration
-                                   if solver extraction is empty.
+                                   whether to fall back to explicit
+                                   Cayley/reflection enumeration if solver
+                                   extraction is empty.
 - `precheck_unit_axiom::Bool = true`:
                                    run fast unit-axiom precheck before
                                    full Verlinde tensor evaluation in
@@ -313,7 +312,7 @@ function classify_mtcs_at_conductor(N::Int;
                                     max_block_dim::Int = 3,
                                     search_mode::Symbol = :groebner,
                                     max_units_for_groebner::Int = typemax(Int),
-                                    groebner_allow_fallback::Bool = true,
+                                    groebner_allow_fallback::Bool = false,
                                     precheck_unit_axiom::Bool = true,
                                     reconstruction_bound::Int = 50,
                                     skip_FR::Bool = false,

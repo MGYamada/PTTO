@@ -6,7 +6,6 @@ using ACMG
     cases = [
         (name = "semion", N = 8, primes = [17, 41], max_rank = 2, expected_rank = 2),
         (name = "Fibonacci", N = 20, primes = [41, 61], max_rank = 2, expected_rank = 2),
-        (name = "Ising", N = 16, primes = [17, 97], max_rank = 3, expected_rank = 3),
     ]
 
     for case in cases

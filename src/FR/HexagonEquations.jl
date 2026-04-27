@@ -116,6 +116,20 @@ function hexagon_equations(mult::Array{Int,3}, one_vec::Vector{Int},
         end
     end
 
+    # Unit braiding normalization: c_{1,X} and c_{X,1}, together with the
+    # explicit inverse variables, are identity on every nonzero channel.
+    for i in 1:r, j in 1:r, k in 1:r
+        (i == 1 || j == 1) || continue
+        N_ijk = mult[i, j, k]
+        N_ijk == 0 && continue
+        for a in 1:N_ijk, b in 1:N_ijk
+            target = a == b ? one(R_ring) : zero(R_ring)
+            pos = r_pos[(i, j, k)][(a - 1) * N_ijk + b]
+            push!(eqs, r_vars[pos] - target)
+            push!(eqs, s_vars[pos] - target)
+        end
+    end
+
     return poly_C_fwd, nothing, filter(e -> !iszero(e), unique(eqs))
 end
 

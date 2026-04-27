@@ -49,7 +49,9 @@ end
         @testset "$(case.name)" begin
             result = compute_FR_from_ST(case.fusion;
                                         conductor = case.N,
-                                        primes = case.primes)
+                                        primes = case.primes,
+                                        S = case.data.S,
+                                        T = _twists(case.data))
             roundtrip = ACMG._modular_data_roundtrip(result.F, result.R,
                                                      case.fusion,
                                                      case.data.S,

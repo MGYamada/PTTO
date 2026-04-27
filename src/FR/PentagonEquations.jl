@@ -58,11 +58,22 @@ function get_pentagon_system(Nijk::Array{Int,3}, r::Int)
     one_vec = zeros(Int, r)
     one_vec[1] = 1
 
-    C, eqs_raw = pentagon_equations(Nijk, one_vec)
+    local C, eqs_raw
+    try
+        C, eqs_raw = pentagon_equations(Nijk, one_vec)
+    catch err
+        if err isa ArgumentError && occursin("empty collection", sprint(showerror, err))
+            R0, _ = polynomial_ring(QQ, 0, :x)
+            return R0, elem_type(R0)[], 0
+        end
+        rethrow()
+    end
     eqs = filter(eq -> !(eq isa Integer) && !iszero(eq), eqs_raw)
 
-    isempty(eqs) && error("Pentagon produced no non-trivial equations " *
-                          "(rank=$r Nijk may be pointed/trivial)")
+    if isempty(eqs)
+        R0, _ = polynomial_ring(QQ, 0, :x)
+        return R0, elem_type(R0)[], 0
+    end
 
     R = parent(eqs[1])
     n = nvars(R)

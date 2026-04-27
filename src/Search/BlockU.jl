@@ -370,27 +370,22 @@ end
 """
     enumerate_o_n_Fp_groebner(n::Int, p::Int) -> Vector{Matrix{Int}}
 
-MVP algebraic-search entry point for O(n)(F_p) block candidates.
+Algebraic-search entry point for O(n)(F_p) block candidates.
 
-Current implementation reuses the Cayley/reflection enumeration used by
-`enumerate_o_n_Fp` while exposing a dedicated hook for solver-based modes.
-It now also computes/caches a Gröbner basis for the O(n) orthogonality
-ideal as groundwork for a true F4/FGLM point-solving backend, while
-keeping downstream Phase-2 logic unchanged.
+This computes/caches a Gröbner basis for the O(n) orthogonality ideal and
+extracts F_p-rational points from that basis. It does not fall back to the
+Cayley/reflection exhaustive sweep; use `search_mode = :exhaustive`
+explicitly for that backend.
 """
 function enumerate_o_n_Fp_groebner(n::Int, p::Int)
-    # Kick off/refresh Gröbner-basis preprocessing for O(n) constraints.
-    # The resulting basis is cached and intended for future algebraic
-    # point extraction (F4/FGLM pipeline). Candidate extraction is still
-    # delegated to the stable Cayley enumerator in this first step.
     gb_data = _ensure_orthogonality_groebner_cache!(n, p)
-    gb_data !== nothing || return enumerate_o_n_Fp(n, p)
+    gb_data !== nothing || return Matrix{Int}[]
 
     gb_points = _extract_orthogonality_points(gb_data, n, p)
     if gb_points !== nothing && !isempty(gb_points)
         return gb_points
     end
-    return enumerate_o_n_Fp(n, p)
+    return Matrix{Int}[]
 end
 
 const _ORTHOGONALITY_GB_CACHE = Dict{Tuple{Int, Int}, Any}()
@@ -439,7 +434,7 @@ function _ensure_orthogonality_groebner_cache!(n::Int, p::Int)
         G = groebner_basis(I)
         gb_data = (ring = R, vars = vars, equations = eqs, ideal = I, gb = G)
     catch err
-        @warn "Groebner preprocessing failed for O($n)(F_$p); falling back to enumeration" exception = (err, catch_backtrace())
+        @warn "Groebner preprocessing failed for O($n)(F_$p); returning no algebraic O(n) points" exception = (err, catch_backtrace())
     end
 
     _ORTHOGONALITY_GB_CACHE[key] = gb_data
@@ -552,7 +547,7 @@ function _extract_orthogonality_points(gb_data, n::Int, p::Int)
 
     # Try several Oscar entry points (version-dependent).
     candidates = _collect_points_from_ideal(I)
-    isempty(candidates) && return nothing
+    isempty(candidates) && return _extract_orthogonality_points_via_groebner(gb_data, n, p)
 
     mats = Matrix{Int}[]
     for pts in candidates
@@ -564,6 +559,114 @@ function _extract_orthogonality_points(gb_data, n::Int, p::Int)
         end
     end
 
+    isempty(mats) && return _extract_orthogonality_points_via_groebner(gb_data, n, p)
+    mats = _dedupe_matrices(mats)
+    mats = _filter_orthogonal_mats(mats, p)
+    isempty(mats) && return _extract_orthogonality_points_via_groebner(gb_data, n, p)
+    return _sort_matrices_lex(mats)
+end
+
+function _fp_partial_univariate_coeffs(f, varidx::Int,
+                                       assigned::Dict{Int, Any}, F)
+    coeffs = Dict{Int, Any}()
+    for (c, m) in zip(coefficients(f), monomials(f))
+        degs = degrees(m)
+        term = c
+        pow = degs[varidx]
+        for i in eachindex(degs)
+            i == varidx && continue
+            d = degs[i]
+            d == 0 && continue
+            haskey(assigned, i) || return nothing
+            term *= assigned[i]^d
+        end
+        coeffs[pow] = get(coeffs, pow, zero(F)) + term
+    end
+    return Dict(k => v for (k, v) in coeffs if !iszero(v))
+end
+
+function _fp_roots_from_coeffs(coeffs::AbstractDict{Int}, F, p::Int)
+    isempty(coeffs) && return nothing
+    maximum(keys(coeffs)) == 0 && return Any[]
+    roots = Any[]
+    for a in 0:(p - 1)
+        x = F(a)
+        v = zero(F)
+        for (pow, c) in coeffs
+            v += c * x^pow
+        end
+        iszero(v) && push!(roots, x)
+    end
+    return roots
+end
+
+function _fp_candidate_values_for_var(polys, varidx::Int,
+                                      assigned::Dict{Int, Any}, F, p::Int)
+    candidates = nothing
+    constrained = false
+    for f in polys
+        coeffs = _fp_partial_univariate_coeffs(f, varidx, assigned, F)
+        coeffs === nothing && continue
+        any(pow -> pow > 0, keys(coeffs)) || continue
+        roots = _fp_roots_from_coeffs(coeffs, F, p)
+        roots === nothing && continue
+        constrained = true
+        isempty(roots) && return Any[]
+        candidates = candidates === nothing ? roots : [x for x in candidates if any(==(x), roots)]
+        isempty(candidates) && return Any[]
+    end
+    constrained && return candidates
+    return Any[F(a) for a in 0:(p - 1)]
+end
+
+function _eval_fp_poly(f, vals::Vector)
+    F = base_ring(parent(f))
+    v = zero(F)
+    for (c, m) in zip(coefficients(f), monomials(f))
+        term = c
+        for (i, d) in enumerate(degrees(m))
+            d > 0 && (term *= vals[i]^d)
+        end
+        v += term
+    end
+    return v
+end
+
+function _fp_elem_to_int(a, p::Int)
+    F = parent(a)
+    for i in 0:(p - 1)
+        a == F(i) && return i
+    end
+    error("could not lift finite-field element to an integer representative")
+end
+
+function _extract_orthogonality_points_via_groebner(gb_data, n::Int, p::Int)
+    polys = gb_data.gb === nothing ? gb_data.equations : collect(gb_data.gb)
+    F = base_ring(gb_data.ring)
+    nvars_total = length(gb_data.vars)
+    mats = Matrix{Int}[]
+
+    function descend(varidx::Int, assigned::Dict{Int, Any})
+        if varidx == 0
+            vals = [assigned[i] for i in 1:nvars_total]
+            all(iszero(_eval_fp_poly(f, vals)) for f in gb_data.equations) || return
+            M = zeros(Int, n, n)
+            t = 1
+            for i in 1:n, j in 1:n
+                M[i, j] = _fp_elem_to_int(vals[t], p)
+                t += 1
+            end
+            push!(mats, M)
+            return
+        end
+        for v in _fp_candidate_values_for_var(polys, varidx, assigned, F, p)
+            next_assigned = copy(assigned)
+            next_assigned[varidx] = v
+            descend(varidx - 1, next_assigned)
+        end
+    end
+
+    descend(nvars_total, Dict{Int, Any}())
     isempty(mats) && return nothing
     mats = _dedupe_matrices(mats)
     mats = _filter_orthogonal_mats(mats, p)
@@ -838,8 +941,7 @@ Choose the Phase-2 block-U search backend.
 
 Supported modes:
 - `:exhaustive`: Cayley + reflection sweep.
-- `:groebner`: algebraic-solver hook (MVP currently aliases exhaustive
-  generator while preserving the external mode contract).
+- `:groebner`: Gröbner basis plus finite-field point extraction.
 """
 function enumerate_block_candidates(n_block::Int, p::Int, search_mode::Symbol)
     validate_search_mode(search_mode)
@@ -1112,7 +1214,7 @@ end
                        max_block_dim::Int = 3,
                        search_mode::Symbol = :groebner,
                        max_units_for_groebner::Int = typemax(Int),
-                       groebner_allow_fallback::Bool = true,
+                       groebner_allow_fallback::Bool = false,
                        precheck_unit_axiom::Bool = true)
         -> Vector{MTCCandidate}
 
@@ -1122,31 +1224,32 @@ Steps:
 1. Build block-diagonal atomic (S, T) from stratum + catalog.
 2. Reduce to F_p (requires N | p-1 where N = catalog[].N).
 3. Decompose T into eigenspaces; compute parameter_dim.
-4. For each degenerate eigenspace of dimension n_θ ≥ 2, sweep
-   O(n_θ)(F_p) via Cayley parametrisation. (Currently only ONE
+4. For each degenerate eigenspace of dimension n_θ ≥ 2, solve for
+   block-U candidates using the selected backend. (Currently only ONE
    degenerate eigenspace is supported per stratum; multiple
-   degenerate eigenspaces TODO via cartesian-product sweep.)
+   degenerate eigenspaces TODO via product of solver outputs.)
 5. For each block-U candidate, apply transformation to S, then check
    Verlinde integrality.
 6. Return all MTC candidates found.
 
-`max_block_dim` is a safety guard against runaway enumeration: if any
+`max_block_dim` is a safety guard against very large block systems: if any
 degenerate eigenspace has n_θ > max_block_dim, an error is raised.
-Default 3 is feasible at p = 73-100; raising to 4 would take hours.
 
 `search_mode` selects the block-U candidate backend:
-- `:groebner` (default): algebraic solver mode (MVP hook)
+- `:groebner` (default): Gröbner basis plus finite-field point extraction
 - `:exhaustive`: Cayley+reflection sweep
 
 In `:groebner` mode, the driver performs best-effort Gröbner system
 construction for fixed-unit variants and attempts direct U-block point
-extraction before falling back to enumeration.
+extraction. If that produces no candidates, it next tries Gröbner point
+extraction for the orthogonality block itself.
 
 `max_units_for_groebner` can cap how many unit indices are used for
 fixed-unit Gröbner extraction (default: all).
 
-`groebner_allow_fallback` controls whether `:groebner` mode falls back
-to enumeration when solver extraction returns no candidates.
+`groebner_allow_fallback` controls whether `:groebner` mode is allowed to
+fall back to the explicit `:exhaustive` Cayley/reflection backend when
+solver extraction returns no candidates. It is disabled by default.
 
 `precheck_unit_axiom` enables a fast unit-axiom prefilter before full
 `verlinde_find_unit` tensor construction.
@@ -1156,7 +1259,7 @@ function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
                             max_block_dim::Int = 3,
                             search_mode::Symbol = :groebner,
                             max_units_for_groebner::Int = typemax(Int),
-                            groebner_allow_fallback::Bool = true,
+                            groebner_allow_fallback::Bool = false,
                             precheck_unit_axiom::Bool = true)
     validate_search_mode(search_mode)
     max_units_for_groebner >= 1 || error("max_units_for_groebner must be ≥ 1")
@@ -1201,8 +1304,7 @@ function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
 
     n_block <= max_block_dim || error(
         "Degenerate eigenspace dim n=$n_block exceeds max_block_dim=$max_block_dim. " *
-        "Naive enumeration would be O(p^$(div(n_block*(n_block-1), 2))). " *
-        "Increase max_block_dim if you really want to proceed.")
+        "Increase max_block_dim only if the selected block-U backend can handle it.")
 
     U_blocks = Matrix{Int}[]
     if search_mode == :groebner
@@ -1213,20 +1315,21 @@ function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
                 U_blocks = gb_u_blocks
             end
         catch err
-            @warn "Verlinde Gröbner warmup failed; continuing with candidate enumeration" exception = (err, catch_backtrace())
+            @warn "Verlinde Gröbner warmup failed; trying orthogonality Gröbner extraction" exception = (err, catch_backtrace())
         end
 
-        # Deterministic algebraic fallback inside :groebner mode:
-        # Cayley-parametrized O(n) filtered by unit-axiom constraints.
         if isempty(U_blocks)
-            U_blocks = solve_cayley_unit_filtered_blocks(S_atomic, indices_deg, p;
-                                                         max_units = max_units_for_groebner)
+            U_blocks = enumerate_o_n_Fp_groebner(n_block, p)
         end
     end
 
-    # Enumerate U_blocks via selected search backend if solver extraction was empty
-    if isempty(U_blocks) && !(search_mode == :groebner && !groebner_allow_fallback)
-        U_blocks = enumerate_block_candidates(n_block, p, search_mode)
+    # Explicit exhaustive fallback is opt-in for :groebner mode.
+    if isempty(U_blocks)
+        if search_mode == :groebner && groebner_allow_fallback
+            U_blocks = enumerate_o_n_Fp(n_block, p)
+        elseif search_mode != :groebner
+            U_blocks = enumerate_block_candidates(n_block, p, search_mode)
+        end
     end
 
     candidates = MTCCandidate[]

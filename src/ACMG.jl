@@ -61,10 +61,8 @@ include("Reconstruction/CRT.jl")
 # FR: exact F/R equations and solvers over cyclotomic fields.
 include("FR/PentagonEquations.jl")
 include("FR/HexagonEquations.jl")
-include("FR/KnownFusionRules.jl")
-include("FR/PentagonSolutions.jl")
+include("FR/ExactPolynomialSolver.jl")
 include("FR/PentagonSolver.jl")
-include("FR/HexagonSolutions.jl")
 include("FR/HexagonSolver.jl")
 include("Reconstruction/ModularDataLift.jl")
 

@@ -35,6 +35,7 @@ function _reduce_qq_poly_to_fp(f, vars_fp, p::Int)
 end
 
 function _compute_modular_groebner_data(eqs, n::Int, primes::Vector{Int})
+    (n == 0 || isempty(eqs)) && return Any[]
     key = (hash(string(eqs)), n, Tuple(primes))
     haskey(_PENTAGON_MODULAR_GB_CACHE, key) && return _PENTAGON_MODULAR_GB_CACHE[key]
 
@@ -56,6 +57,7 @@ function _compute_modular_groebner_data(eqs, n::Int, primes::Vector{Int})
 end
 
 function _verify_exact_solution(eqs, sol)
+    isempty(eqs) && return true
     K = parent(sol[1])
     for eq in eqs
         v = zero(K)
@@ -91,12 +93,13 @@ function solve_pentagon_modular_crt(eqs, n::Int;
     gb_data = _compute_modular_groebner_data(eqs, n, primes)
     show_progress && println("  pentagon F_p Groebner: $(length(gb_data)) primes")
 
-    Nijk === nothing && error("Nijk is required for exact pentagon reconstruction")
-    sol = _known_pentagon_solution(Nijk, ctx)
-    sol === nothing && error("exact pentagon reconstruction is not implemented for this fusion rule")
-    length(sol) == n || error("pentagon solution length $(length(sol)) != variable count $n")
-    _verify_exact_solution(eqs, sol)
-    return [sol]
+    sols = _solve_exact_via_triangular_groebner(eqs, n, field(ctx);
+                                                var_prefix = :x)
+    for sol in sols
+        length(sol) == n || error("pentagon solution length $(length(sol)) != variable count $n")
+        _verify_exact_solution(eqs, sol)
+    end
+    return sols
 end
 
 solve_pentagon_homotopy(eqs, n::Int; kwargs...) =
