@@ -1,5 +1,6 @@
 using Test
 using ACMG
+using Oscar
 
 """
 Tests for general O(n) Cayley parametrisation in BlockU.jl.
@@ -154,6 +155,38 @@ det_2x2(M) = M[1, 1] * M[2, 2] - M[1, 2] * M[2, 1]
         @test S_rot[3, 3] == S[3, 3]
         @test S_rot[3, 4] == S[3, 4]
         @test S_rot[4, 4] == S[4, 4]
+    end
+
+    @testset "multiple degenerate eigenspace product helpers" begin
+        p = 13
+        S = [1 2 3 4;
+             2 5 6 7;
+             3 6 8 9;
+             4 7 9 10]
+        U_left = [0 (p - 1); 1 0]
+        U_right = [0 1; 1 0]
+        choices = [
+            (theta = 1, indices = [1, 2], U = U_left),
+            (theta = 2, indices = [3, 4], U = U_right),
+        ]
+
+        sequential = apply_block_U(apply_block_U(S, [1, 2], U_left, p),
+                                   [3, 4], U_right, p)
+        @test ACMG._apply_block_U_product(S, choices, p) == sequential
+    end
+
+    @testset "find_mtcs_at_prime accepts multiple degenerate eigenspaces" begin
+        K, _ = cyclotomic_field(1)
+        S = identity_matrix(K, 4)
+        T = diagonal_matrix(K, [K(1), K(1), K(2), K(2)])
+        atom = AtomicIrrep(4, 1, "two_deg_blocks", S, T, 1, K, 1)
+        stratum = Stratum(Dict(1 => 1), 4)
+
+        candidates = find_mtcs_at_prime([atom], stratum, 5;
+                                        search_mode = :exhaustive,
+                                        max_block_dim = 2,
+                                        precheck_unit_axiom = false)
+        @test candidates isa Vector{MTCCandidate}
     end
 
     @testset "is_orthogonal_mod_p" begin

@@ -94,8 +94,12 @@ N
 ```
 
 Phase 4 computes exact cyclotomic `(F, R)` data for the built-in small
-rank examples using finite-field Groebner preprocessing and exact lift
-back to `Q(ζ_N)`.
+rank examples.  It caches finite-field Groebner preprocessing data,
+enumerates complete split-prime point sets when they are small enough,
+reconstructs F/R coordinates by bounded CRT in the power basis of
+`Q(ζ_N)`, and verifies the lifted candidates exactly.  If the bounded CRT
+lift is inconclusive, it falls back to exact triangular Groebner over
+`Q(ζ_N)` and filters those exact candidates by their modular reductions.
 
 ### Sample conductor searches
 

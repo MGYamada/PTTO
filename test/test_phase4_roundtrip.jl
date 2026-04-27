@@ -1,5 +1,6 @@
 using Test
 using ACMG
+using Oscar
 
 function _semion_fusion()
     Nijk = zeros(Int, 2, 2, 2)
@@ -8,6 +9,51 @@ function _semion_fusion()
     Nijk[2, 1, 2] = 1
     Nijk[2, 2, 1] = 1
     return Nijk
+end
+
+@testset "Phase 4 solution limits are configurable" begin
+    R, x = polynomial_ring(QQ, 1, :x)
+    eqs = [x[1]^2 - 1]
+
+    limited = solve_pentagon_modular_crt(eqs, 1;
+                                         conductor = 8,
+                                         primes = Int[],
+                                         max_solutions = 1)
+    expanded = solve_pentagon_modular_crt(eqs, 1;
+                                          conductor = 8,
+                                          primes = Int[],
+                                          max_solutions = 4)
+    crt_lifted = solve_pentagon_modular_crt(eqs, 1;
+                                            conductor = 1,
+                                            primes = [5, 7],
+                                            max_solutions = 4,
+                                            reconstruction_bound = 1,
+                                            denominator_bound = 1,
+                                            exact_fallback = false)
+    gb_data = ACMG._compute_modular_groebner_data(eqs, 1, [17])
+    fp_points = ACMG._enumerate_modular_triangular_solutions(first(gb_data);
+                                                             max_points = 4)
+
+    @test length(limited) == 1
+    @test length(expanded) == 2
+    K_crt = parent(crt_lifted[1][1])
+    @test Set([s[1] for s in crt_lifted]) == Set([K_crt(-1), K_crt(1)])
+    @test fp_points.complete
+    @test sort(fp_points.points) == [[1], [16]]
+    @test_throws ErrorException solve_pentagon_modular_crt(eqs, 1;
+                                                           conductor = 8,
+                                                           primes = Int[],
+                                                           max_solutions = 0)
+
+    half_eqs = [2 * x[1] - 1]
+    half = solve_pentagon_modular_crt(half_eqs, 1;
+                                      conductor = 1,
+                                      primes = [5, 7],
+                                      reconstruction_bound = 1,
+                                      denominator_bound = 2,
+                                      exact_fallback = false)
+    @test length(half) == 1
+    @test half[1][1] == parent(half[1][1])(1) // parent(half[1][1])(2)
 end
 
 function _fibonacci_fusion()
@@ -41,7 +87,7 @@ end
          fusion = _semion_fusion(), data = semion_modular_data()),
         (name = "Fibonacci", N = 20, primes = [41, 61],
          fusion = _fibonacci_fusion(), data = fibonacci_modular_data()),
-        (name = "Ising", N = 16, primes = [17, 97],
+        (name = "Ising", N = 16, primes = [17, 97, 113],
          fusion = _ising_fusion(), data = ising_modular_data()),
     ]
 

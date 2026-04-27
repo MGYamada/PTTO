@@ -249,6 +249,13 @@ function compute_FR_from_ST(Nijk::Array{Int,3};
                             T = nothing,
                             return_all::Bool = false,
                             primes::Vector{Int} = [101, 103, 107, 109],
+                            max_solutions::Int = 32,
+                            max_modular_solutions::Int = max(1024, 16 * max_solutions),
+                            reconstruction_bound::Int = 4,
+                            denominator_bound::Int = 4,
+                            max_crt_tuples::Int = 4096,
+                            max_ambiguous_crt_coords::Int = 4096,
+                            exact_fallback::Bool = true,
                             verbose::Bool = false,
                             kwargs...)
     isempty(kwargs) || error("unsupported keyword arguments: $(collect(keys(kwargs)))")
@@ -259,6 +266,13 @@ function compute_FR_from_ST(Nijk::Array{Int,3};
                                              Nijk = Nijk,
                                              context = ctx,
                                              primes = primes,
+                                             max_solutions = max_solutions,
+                                             max_modular_solutions = max_modular_solutions,
+                                             reconstruction_bound = reconstruction_bound,
+                                             denominator_bound = denominator_bound,
+                                             max_crt_tuples = max_crt_tuples,
+                                             max_ambiguous_crt_coords = max_ambiguous_crt_coords,
+                                             exact_fallback = exact_fallback,
                                              show_progress = verbose)
     candidates = NamedTuple[]
     for F in F_solutions
@@ -267,6 +281,13 @@ function compute_FR_from_ST(Nijk::Array{Int,3};
                                                 Nijk = Nijk,
                                                 context = ctx,
                                                 primes = primes,
+                                                max_solutions = max_solutions,
+                                                max_modular_solutions = max_modular_solutions,
+                                                reconstruction_bound = reconstruction_bound,
+                                                denominator_bound = denominator_bound,
+                                                max_crt_tuples = max_crt_tuples,
+                                                max_ambiguous_crt_coords = max_ambiguous_crt_coords,
+                                                exact_fallback = exact_fallback,
                                                 show_progress = verbose)
         for R in R_solutions
             push!(candidates, (F = F, R = R, report = nothing))

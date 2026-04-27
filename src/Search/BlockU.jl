@@ -1200,12 +1200,102 @@ function Base.show(io::IO, c::MTCCandidate)
     params_str = if isa(c.U_params, AbstractMatrix)
         n = size(c.U_params, 1)
         "U=$(n)×$(n) block"
+    elseif isa(c.U_params, AbstractVector) && all(x -> x isa NamedTuple && haskey(x, :U), c.U_params)
+        dims = [size(x.U, 1) for x in c.U_params]
+        "U blocks=$(join(dims, ","))"
     else
         "params=$(c.U_params)"
     end
     print(io, "MTCCandidate(p=$(c.p), unit=$(c.unit_index), ",
           "d=$d_signed, D²=$(signed_Fp(c.D2, c.p)), ",
           "$params_str)")
+end
+
+function _block_U_candidates_for_eigenspace(S_atomic::Matrix{Int},
+                                            indices_deg::Vector{Int},
+                                            p::Int;
+                                            search_mode::Symbol,
+                                            max_units_for_groebner::Int,
+                                            groebner_allow_fallback::Bool,
+                                            use_verlinde_warmup::Bool)
+    n_block = length(indices_deg)
+    U_blocks = Matrix{Int}[]
+
+    # O(2)(F_p) is tiny and the explicit circle parametrisation is exact.
+    # Avoid Gröbner warmup here; for p≈100 it is much slower than checking
+    # the ~2p orthogonal blocks directly.
+    n_block == 2 && return enumerate_o_n_Fp(n_block, p)
+
+    if search_mode == :groebner
+        if use_verlinde_warmup
+            try
+                gb_u_blocks = _extract_U_blocks_via_verlinde_groebner(S_atomic, indices_deg, p;
+                                                                       max_units = max_units_for_groebner)
+                if gb_u_blocks !== nothing && !isempty(gb_u_blocks)
+                    U_blocks = gb_u_blocks
+                end
+            catch err
+                @warn "Verlinde Gröbner warmup failed; trying orthogonality Gröbner extraction" exception = (err, catch_backtrace())
+            end
+        end
+
+        if isempty(U_blocks)
+            U_blocks = enumerate_o_n_Fp_groebner(n_block, p)
+        end
+    end
+
+    # Explicit exhaustive fallback is opt-in for :groebner mode.
+    if isempty(U_blocks)
+        if search_mode == :groebner && groebner_allow_fallback
+            U_blocks = enumerate_o_n_Fp(n_block, p)
+        elseif search_mode != :groebner
+            U_blocks = enumerate_block_candidates(n_block, p, search_mode)
+        end
+    end
+
+    return U_blocks
+end
+
+function _apply_block_U_product(S_atomic::Matrix{Int},
+                                block_choices,
+                                p::Int)
+    S_prime = copy(S_atomic)
+    for choice in block_choices
+        S_prime = apply_block_U(S_prime, choice.indices, choice.U, p)
+    end
+    return S_prime
+end
+
+function _orthogonal_block_product_fixes_S(S::Matrix{Int}, degenerate, p::Int)
+    r = size(S, 1)
+    for (_, indices) in degenerate
+        idx_set = Set(indices)
+        lambda = mod(S[indices[1], indices[1]], p)
+        for i in indices, j in indices
+            expected = i == j ? lambda : 0
+            mod(S[i, j] - expected, p) == 0 || return false
+        end
+        for i in indices, j in 1:r
+            j in idx_set && continue
+            mod(S[i, j], p) == 0 || return false
+            mod(S[j, i], p) == 0 || return false
+        end
+    end
+    return true
+end
+
+function _candidate_from_fixed_S(S_atomic::Matrix{Int}, T_atomic::Vector{Int},
+                                 p::Int, U_params;
+                                 verlinde_threshold::Int)
+    r = size(S_atomic, 1)
+    result = verlinde_find_unit(S_atomic, p; threshold = verlinde_threshold)
+    result === nothing && return MTCCandidate[]
+    (u, N_tensor) = result
+    Suu_inv = invmod(S_atomic[u, u], p)
+    d = [mod(S_atomic[u, i] * Suu_inv, p) for i in 1:r]
+    D2 = sum(mod(d[i] * d[i], p) for i in 1:r) % p
+    return [MTCCandidate(p, U_params, copy(S_atomic), copy(T_atomic),
+                         u, N_tensor, d, D2)]
 end
 
 """
@@ -1225,9 +1315,8 @@ Steps:
 2. Reduce to F_p (requires N | p-1 where N = catalog[].N).
 3. Decompose T into eigenspaces; compute parameter_dim.
 4. For each degenerate eigenspace of dimension n_θ ≥ 2, solve for
-   block-U candidates using the selected backend. (Currently only ONE
-   degenerate eigenspace is supported per stratum; multiple
-   degenerate eigenspaces TODO via product of solver outputs.)
+   block-U candidates using the selected backend, then take the Cartesian
+   product across all degenerate eigenspaces.
 5. For each block-U candidate, apply transformation to S, then check
    Verlinde integrality.
 6. Return all MTC candidates found.
@@ -1278,64 +1367,44 @@ function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
     eigenspaces = t_eigenspace_decomposition(T_atomic, p)
     p_dim = parameter_dim(eigenspaces)
 
-    degenerate = [(theta, indices) for (theta, indices) in eigenspaces if length(indices) >= 2]
+    degenerate = sort([(theta, indices) for (theta, indices) in eigenspaces if length(indices) >= 2];
+                      by = x -> x[1])
 
     # Case 1: no degeneracy → atomic S is already an MTC candidate (modulo signs)
     if isempty(degenerate)
-        r = size(S_atomic, 1)
-        result = verlinde_find_unit(S_atomic, p; threshold = verlinde_threshold)
-        if result !== nothing
-            (u, N_tensor) = result
-            Suu_inv = invmod(S_atomic[u, u], p)
-            d = [mod(S_atomic[u, i] * Suu_inv, p) for i in 1:r]
-            D2 = sum(mod(d[i] * d[i], p) for i in 1:r) % p
-            return [MTCCandidate(p, :atomic, copy(S_atomic), copy(T_atomic),
-                                 u, N_tensor, d, D2)]
-        else
-            return MTCCandidate[]
-        end
+        return _candidate_from_fixed_S(S_atomic, T_atomic, p, :atomic;
+                                       verlinde_threshold = verlinde_threshold)
     end
 
-    # Case 2+: one degenerate eigenspace of dimension n ≥ 2
-    length(degenerate) == 1 || error(
-        "Multiple degenerate eigenspaces not yet supported; got $(length(degenerate))")
-    (theta_deg, indices_deg) = degenerate[1]
-    n_block = length(indices_deg)
-
-    n_block <= max_block_dim || error(
-        "Degenerate eigenspace dim n=$n_block exceeds max_block_dim=$max_block_dim. " *
-        "Increase max_block_dim only if the selected block-U backend can handle it.")
-
-    U_blocks = Matrix{Int}[]
-    if search_mode == :groebner
-        try
-            gb_u_blocks = _extract_U_blocks_via_verlinde_groebner(S_atomic, indices_deg, p;
-                                                                   max_units = max_units_for_groebner)
-            if gb_u_blocks !== nothing && !isempty(gb_u_blocks)
-                U_blocks = gb_u_blocks
-            end
-        catch err
-            @warn "Verlinde Gröbner warmup failed; trying orthogonality Gröbner extraction" exception = (err, catch_backtrace())
-        end
-
-        if isempty(U_blocks)
-            U_blocks = enumerate_o_n_Fp_groebner(n_block, p)
-        end
+    if _orthogonal_block_product_fixes_S(S_atomic, degenerate, p)
+        return _candidate_from_fixed_S(S_atomic, T_atomic, p, :block_invariant;
+                                       verlinde_threshold = verlinde_threshold)
     end
 
-    # Explicit exhaustive fallback is opt-in for :groebner mode.
-    if isempty(U_blocks)
-        if search_mode == :groebner && groebner_allow_fallback
-            U_blocks = enumerate_o_n_Fp(n_block, p)
-        elseif search_mode != :groebner
-            U_blocks = enumerate_block_candidates(n_block, p, search_mode)
-        end
+    # Case 2+: one or more degenerate eigenspaces.
+    block_candidate_sets = Vector{Vector{NamedTuple}}()
+    use_verlinde_warmup = length(degenerate) == 1
+    for (theta_deg, indices_deg) in degenerate
+        n_block = length(indices_deg)
+        n_block <= max_block_dim || error(
+            "Degenerate eigenspace dim n=$n_block exceeds max_block_dim=$max_block_dim. " *
+            "Increase max_block_dim only if the selected block-U backend can handle it.")
+
+        U_blocks = _block_U_candidates_for_eigenspace(S_atomic, indices_deg, p;
+                                                      search_mode = search_mode,
+                                                      max_units_for_groebner = max_units_for_groebner,
+                                                      groebner_allow_fallback = groebner_allow_fallback,
+                                                      use_verlinde_warmup = use_verlinde_warmup)
+        isempty(U_blocks) && return MTCCandidate[]
+        push!(block_candidate_sets,
+              [(theta = theta_deg, indices = indices_deg, U = U_block) for U_block in U_blocks])
     end
 
     candidates = MTCCandidate[]
     r = size(S_atomic, 1)
-    for U_block in U_blocks
-        S_prime = apply_block_U(S_atomic, indices_deg, U_block, p)
+    for block_tuple in Iterators.product(block_candidate_sets...)
+        block_choices = collect(block_tuple)
+        S_prime = _apply_block_U_product(S_atomic, block_choices, p)
         if precheck_unit_axiom
             any_unit = any(u -> passes_unit_axiom(S_prime, p, u), 1:r)
             any_unit || continue
@@ -1346,8 +1415,9 @@ function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
             Suu_inv = invmod(S_prime[u_idx, u_idx], p)
             d = [mod(S_prime[u_idx, i] * Suu_inv, p) for i in 1:r]
             D2 = sum(mod(d[m] * d[m], p) for m in 1:r) % p
+            U_params = length(block_choices) == 1 ? block_choices[1].U : block_choices
             push!(candidates, MTCCandidate(
-                p, U_block,
+                p, U_params,
                 copy(S_prime), copy(T_atomic),
                 u_idx, N_tensor, d, D2))
         end
