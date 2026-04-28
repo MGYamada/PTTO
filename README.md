@@ -101,6 +101,30 @@ reconstructs F/R coordinates by bounded CRT in the power basis of
 lift is inconclusive, it falls back to exact triangular Groebner over
 `Q(ζ_N)` and filters those exact candidates by their modular reductions.
 
+`ClassifiedMTC` records carry an explicit `fr_status` field.  Use
+`fr_status(m)` to distinguish skipped, solved, reconstruction-failed, and
+verification-failed Phase 4 outcomes.
+
+### Exporting results
+
+Classification outputs can be archived as JSON and summarized as Markdown:
+
+```julia
+classified = classify_mtcs_at_conductor(8; max_rank = 2, verbose = false)
+
+save_classification("N8.json", classified)
+loaded = load_classification("N8.json")
+
+export_modular_data(classified[1])
+export_fusion_rule(classified[1])
+export_FR(classified[1])
+
+write_report("N8.md", classified)
+```
+
+JSON export stores exact cyclotomic values in stable textual form.  The
+loader returns the saved payload as a `Dict`.
+
 ### Sample conductor searches
 
 The following small examples start only from the conductor `N`.  Modular
@@ -203,7 +227,7 @@ src/
   Reconstruction/         CRT, Galois-aware grouping, cyclotomic lifting
   FR/                     exact pentagon/hexagon systems and F/R solvers
   Pipeline/               conductor-first orchestration and result records
-  IO/                     reserved for serialization/reporting utilities
+  IO/                     JSON serialization and Markdown reporting
   Experimental/           reserved for incubating non-stable code
 ```
 
