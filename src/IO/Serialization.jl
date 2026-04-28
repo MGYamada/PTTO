@@ -94,6 +94,7 @@ end
 _io_report_payload(::Nothing) = nothing
 
 function _io_modular_data_payload(data::ModularData)
+    hcc = higher_central_charge(data)
     return Dict{String, Any}(
         "type" => "ModularData",
         "N" => conductor(data.context),
@@ -103,10 +104,27 @@ function _io_modular_data_payload(data::ModularData)
         "cond_S" => data.cond_S,
         "cond_T" => data.cond_T,
         "cond_F" => data.cond_F,
+        "higher_central_charge" => _io_higher_central_charge_payload(hcc),
+    )
+end
+
+function _io_higher_central_charge_payload(r::HigherCentralChargeResult)
+    return Dict{String, Any}(
+        "ok" => r.ok,
+        "n" => r.n,
+        "normalization" => String(r.normalization),
+        "value" => _io_payload(r.value),
+        "gauss_sum" => _io_payload(r.gauss_sum),
+        "denominator" => _io_payload(r.denominator),
+        "D_squared" => _io_payload(r.D_squared),
+        "conductor" => r.conductor,
+        "status" => String(r.status),
+        "message" => r.message,
     )
 end
 
 function _io_classified_payload(m::ClassifiedMTC)
+    hcc = higher_central_charge(m)
     return Dict{String, Any}(
         "type" => "ClassifiedMTC",
         "N" => m.N,
@@ -127,6 +145,7 @@ function _io_classified_payload(m::ClassifiedMTC)
         "galois_sector" => m.galois_sector,
         "fr_status" => string(m.fr_status),
         "verify_report" => _io_report_payload(m.verify_report),
+        "higher_central_charge" => _io_higher_central_charge_payload(hcc),
     )
 end
 
@@ -190,6 +209,7 @@ function export_modular_data(result; format = :json)
     payload = if result isa ModularData
         _io_modular_data_payload(result)
     elseif result isa ClassifiedMTC
+        hcc = higher_central_charge(result)
         Dict{String, Any}(
             "type" => "ModularData",
             "N" => result.N,
@@ -197,6 +217,7 @@ function export_modular_data(result; format = :json)
             "S" => _io_matrix_payload(result.S_cyclotomic),
             "T" => _io_payload(result.T_cyclotomic),
             "galois_sector" => result.galois_sector,
+            "higher_central_charge" => _io_higher_central_charge_payload(hcc),
         )
     else
         error("export_modular_data expects ModularData or ClassifiedMTC")
@@ -262,6 +283,8 @@ function _io_report_lines(result::ClassifiedMTC)
         "- F/R status: $(result.fr_status)",
         "- F/R attached: $(result.F_values !== nothing && result.R_values !== nothing)",
     ]
+    hcc = higher_central_charge(result)
+    push!(lines, "- central charge: $(hcc.ok ? hcc.value : hcc.status)")
     if fr !== nothing
         push!(lines, "- F/R roundtrip ok: $(fr.ok)")
         push!(lines, "- S error: $(fr.S_error)")

@@ -21,6 +21,25 @@ frobenius(fib, 41)
 reduce_mod_p(fib, 41)
 ```
 
+Exact Gauss sums and higher central charges use the same cyclotomic
+backend:
+
+```julia
+ising = ising_modular_data(CyclotomicContext(16))
+
+gauss_sum_plus(ising)                         # raw τ_1^+
+normalized_gauss_sum(ising; normalization=:D) # τ_1^+ / D = ζ_16
+central_charge(ising)                         # ordinary central charge
+
+higher_central_charge(ising; n=3)             # τ_3^+ / σ_3(D)
+higher_central_charges(ising, [1, 3, 5])
+```
+
+`higher_central_charge` returns a `HigherCentralChargeResult` so cases
+without a Galois normalization, such as non-units modulo the conductor,
+can be reported structurally.  Core values remain exact elements of
+`Q(ζ_N)`; numerical evaluation is only a display concern.
+
 The built-in exact examples are:
 
 ```julia

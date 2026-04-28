@@ -77,6 +77,10 @@ include("Pipeline/Auto.jl")
 include("Pipeline/FRLayer.jl")
 include("Pipeline/Pipeline.jl")
 
+# Gauss sums: exact cyclotomic Gauss sums and higher central charges.
+include("GaussSums/GaussSums.jl")
+include("GaussSums/HigherCentralCharge.jl")
+
 # IO: JSON export/import and Markdown reports for classification outputs.
 include("IO/Serialization.jl")
 
@@ -90,6 +94,10 @@ export CyclotomicContext, ModularData
 export field, zeta, conductor, cond_S, cond_T, cond_F
 export semion_modular_data, fibonacci_modular_data, ising_modular_data, modular_data
 export galois_action, galois_orbit, frobenius, reduce_mod_p
+export quantum_dimensions
+export total_quantum_dimension_squared, gauss_sum_plus, gauss_sum_minus
+export normalized_gauss_sum, HigherCentralChargeResult
+export higher_central_charge, higher_central_charges, central_charge
 export validate_modular_data, build_modular_datum, compute_alpha, compute_charge_conjugation
 export check_modular_relations, check_unitarity, check_verlinde_integrality
 export check_twist_balance, check_vafa_constraints, check_galois_symmetry
