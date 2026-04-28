@@ -103,9 +103,9 @@ lift is inconclusive, it falls back to exact triangular Groebner over
 
 ### Sample conductor searches
 
-The following small examples start only from the conductor `N`.  The
-pipeline chooses the default quadratic reconstruction field from `N`
-internally; no `quadratic_d` argument is needed.
+The following small examples start only from the conductor `N`.  Modular
+data are reconstructed directly in `Q(ζ_N)` by the same bounded
+power-basis CRT layer used for exact `(F, R)` reconstruction.
 
 ```julia
 using ACMG

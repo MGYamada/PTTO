@@ -1,27 +1,13 @@
 """
 Auto-parameter wrapper for conductor-first classification.
 
-This file contains compatibility conductor helpers, quadratic defaults, and
-the public classify_mtcs_auto convenience API.
+This file contains compatibility conductor helpers and the public
+classify_mtcs_auto convenience API.
 """
 
 # ============================================================
 #  classify_mtcs_auto: user-friendly auto-parameter wrapper
 # ============================================================
-
-function cyclotomic_requirement(d::Int)
-    d in (2, 3) && return 24
-    d == 5 && return 5
-    return 1
-end
-
-function _prime_requirement_for_reconstruction(N_eff::Int, d::Int, sqrtd_fn)
-    req = N_eff
-    if sqrtd_fn === nothing
-        req = lcm(req, cyclotomic_requirement(d))
-    end
-    return req
-end
 
 function compute_effective_conductor(N::Int, args...;
                                      conductor_mode::Symbol = :full_mtc)
@@ -30,24 +16,9 @@ function compute_effective_conductor(N::Int, args...;
     return N
 end
 
-function _quadratic_candidates_for_conductor(N::Int)
-    ds = Int[1]
-    N % 8 == 0 && push!(ds, 2)
-    N % 12 == 0 && push!(ds, 3)
-    N % 5 == 0 && push!(ds, 5)
-    return unique(ds)
-end
-
-function _default_quadratic_d_for_conductor(N::Int)
-    N % 5 == 0 && return 5
-    N % 12 == 0 && return 3
-    return 1
-end
-
 """
     classify_mtcs_auto(N::Int;
                        max_rank_candidates = [2, 3, 4, 5],
-                       d_candidates = [1, 2, 3, 5, 6, 7, 10],
                        conductor_modes = [:full_mtc],
                        min_primes = 4,
                        prime_start = 29,
@@ -57,7 +28,6 @@ end
                        max_attempts = typemax(Int),
                        strata = nothing,
                        scale_factor = 2,
-                       sqrtd_fn = nothing,
                        verlinde_threshold = 3,
                        max_block_dim = 3,
                        search_mode = :groebner,
@@ -72,9 +42,8 @@ end
 Auto-select wrapper around `classify_mtcs_at_conductor`.
 
 This function is intended as the recommended public entry point for
-users who do not want to manually specify `max_rank`, `primes`, and
-quadratic reconstruction branches. The effective conductor is fixed to
-the user-supplied `N`.
+users who do not want to manually specify `max_rank` and `primes`. The
+effective conductor is fixed to the user-supplied `N`.
 
 For each previously unseen effective conductor, the driver tries
 `(conductor_mode, max_rank)` combinations and records stage metadata.
@@ -91,22 +60,17 @@ Returns:
 2. reproducibility metadata:
    - `N_input`
    - `N_effective`
-   - `d`
    - `conductor_mode`
    - `primes`
    - `max_rank`
    - `attempts`
    - `history`
 
-Prime selection rule for each attempted `(N_effective, d)` stage:
-- Let `req = lcm(N_effective, cyclotomic_requirement(d))` when using
-  the built-in √d selector, otherwise `req = N_effective`.
-- Choose the first `min_primes` primes `p > prime_start` with
-  `(p - 1) % req == 0`.
+Prime selection chooses the first `min_primes` primes `p > prime_start`
+with `(p - 1) % N_effective == 0`.
 """
 function classify_mtcs_auto(N::Int;
                             max_rank_candidates::Vector{Int} = [2, 3, 4, 5],
-                            d_candidates::Vector{Int} = [1, 2, 3, 5, 6, 7, 10],
                             conductor_modes::Vector{Symbol} = [:full_mtc],
                             min_primes::Int = 4,
                             prime_start::Int = 29,
@@ -116,7 +80,6 @@ function classify_mtcs_auto(N::Int;
                             max_attempts::Int = typemax(Int),
                             strata::Union{Nothing, Vector{Stratum}} = nothing,
                             scale_factor::Int = 2,
-                            sqrtd_fn = nothing,
                             verlinde_threshold::Int = 3,
                             max_block_dim::Int = 3,
                             search_mode::Symbol = :groebner,
@@ -129,19 +92,18 @@ function classify_mtcs_auto(N::Int;
     N >= 1 || error("N must be positive, got $N")
     min_primes >= 2 || error("min_primes must be ≥ 2, got $min_primes")
     !isempty(max_rank_candidates) || error("max_rank_candidates must be non-empty")
-    !isempty(d_candidates) || error("d_candidates must be non-empty")
     !isempty(conductor_modes) || error("conductor_modes must be non-empty")
     stagnation_k >= 1 || error("stagnation_k must be ≥ 1, got $stagnation_k")
     max_attempts >= 1 || error("max_attempts must be ≥ 1, got $max_attempts")
 
     last_result = ClassifiedMTC[]
-    last_meta = (N_input = N, N_effective = N, d = 1,
+    last_meta = (N_input = N, N_effective = N,
                  conductor_mode = :full_mtc, primes = Int[],
                  max_rank = 0, attempts = 0)
     attempts = 0
     n_stagnant = 0
 
-    seen_stages = Set{Tuple{Int, Int}}()
+    seen_stages = Set{Int}()
     seen_signatures = Set{String}()
     history = NamedTuple[]
 
@@ -151,17 +113,17 @@ function classify_mtcs_auto(N::Int;
         string(m.rank, "|", m.galois_sector, "|", nijk_key, "|", t_key)
     end
 
-    for d in d_candidates
-        N_eff_candidate = compute_effective_conductor(N, d)
+    for _stage in 1:1
+        N_eff_candidate = compute_effective_conductor(N)
         if N_eff_candidate > N_eff_max
-            push!(history, (d = d, N_effective = N_eff_candidate, executed = false,
+            push!(history, (N_effective = N_eff_candidate, executed = false,
                             success = false, reason = "N_eff_max_exceeded",
                             attempts = 0, new_mtcs = 0))
             break
         end
-        stage_key = (N_eff_candidate, d)
+        stage_key = N_eff_candidate
         if stage_key in seen_stages
-            push!(history, (d = d, N_effective = N_eff_candidate, executed = false,
+            push!(history, (N_effective = N_eff_candidate, executed = false,
                             success = false, reason = "duplicate_stage",
                             attempts = 0, new_mtcs = 0))
             continue
@@ -179,7 +141,7 @@ function classify_mtcs_auto(N::Int;
             conductor_mode == :full_mtc || error(
                 "conductor_mode=:$(conductor_mode) was removed in v0.5.0. Use :full_mtc.")
 
-            req = _prime_requirement_for_reconstruction(N_eff_candidate, d, sqrtd_fn)
+            req = N_eff_candidate
 
             local chosen_primes
             try
@@ -197,11 +159,11 @@ function classify_mtcs_auto(N::Int;
                     attempts += 1
                     stage_attempts += 1
                     verbose && println("AUTO attempt #$attempts: " *
-                                       "d=$d N_eff=$N_eff_candidate req=$req " *
+                                       "N_eff=$N_eff_candidate req=$req " *
                                        "mode=$conductor_mode " *
                                        "max_rank=$max_rank primes=$chosen_primes")
 
-                    last_meta = (N_input = N, N_effective = N_eff_candidate, d = d,
+                    last_meta = (N_input = N, N_effective = N_eff_candidate,
                                  conductor_mode = conductor_mode,
                                  primes = copy(chosen_primes), max_rank = max_rank,
                                  attempts = attempts)
@@ -212,10 +174,8 @@ function classify_mtcs_auto(N::Int;
                                                                 max_rank = max_rank,
                                                                 primes = chosen_primes,
                                                                 strata = strata,
-                                                                quadratic_d = d,
                                                                 scale_factor = scale_factor,
                                                                 conductor_mode = conductor_mode,
-                                                                sqrtd_fn = sqrtd_fn,
                                                                 verlinde_threshold = verlinde_threshold,
                                                                 max_block_dim = max_block_dim,
                                                                 search_mode = search_mode,
@@ -258,7 +218,7 @@ function classify_mtcs_auto(N::Int;
         end
 
         n_stagnant = stage_new_mtcs == 0 ? n_stagnant + 1 : 0
-        push!(history, (d = d, N_effective = N_eff_candidate, executed = true,
+        push!(history, (N_effective = N_eff_candidate, executed = true,
                         success = stage_success, reason = stage_reason,
                         attempts = stage_attempts, new_mtcs = stage_new_mtcs))
 
@@ -270,7 +230,6 @@ function classify_mtcs_auto(N::Int;
     return (classified = last_result,
             N_input = last_meta.N_input,
             N_effective = last_meta.N_effective,
-            d = last_meta.d,
             conductor_mode = last_meta.conductor_mode,
             primes = last_meta.primes,
             max_rank = last_meta.max_rank,

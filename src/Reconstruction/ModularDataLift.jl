@@ -3,11 +3,8 @@
 
 Bridge from finite-field Phase 3 output to exact cyclotomic modular data.
 
-v0.2 Phase 3 produces two kinds of data per MTC candidate:
-- `MTCCandidate.T_Fp :: Vector{Int}`  —  T-eigenvalues mod p
-- `reconstruct_S_matrix(group) :: Matrix{Tuple{Int,Int}}`  —  entries
-  `(a, b)` meaning `a + b·√d` in ℤ[√d]
-- `MTCCandidate.N :: Array{Int,3}`  —  fusion coefficients (Galois-invariant)
+Phase 3 produces finite-field candidates and reconstructs modular data
+directly over `Q(ζ_N)`.
 
 Phase 4 consumes:
 - `Nijk :: Array{Int,3}`                 —  used as-is
@@ -15,8 +12,6 @@ Phase 4 consumes:
 
 This module provides:
 - `lift_T_Fp_to_cyclotomic`:  discrete log T_Fp → powers of ζ_N
-- `lift_S_sqrtd_to_cyclotomic`: exact `(a,b)` reconstruction in `Q(ζ_N)`
-- `lift_mtc_candidate`:    convenience wrapper bundling both
 
 Depends on: Primes (already in v0.2 via ACMG); no new dependencies.
 """
@@ -126,99 +121,5 @@ function lift_T_Fp_to_cyclotomic(T_Fp::Vector{Int}, N::Int, p::Int, zeta_Fp::Int
     return T
 end
 
-# ============================================================
-#  S lift: ℤ[√d] → Q(ζ_N)
-# ============================================================
-
-function _sqrt_d_in_cyclotomic(K, z, N::Int, d::Int)
-    d == 1 && return one(K)
-    if d == 2
-        N % 8 == 0 || error("√2 is not available in Q(ζ_$N); use an N divisible by 8")
-        return z^(N ÷ 8) + z^(7N ÷ 8)
-    elseif d == 3
-        N % 12 == 0 || error("√3 is not available in Q(ζ_$N); use an N divisible by 12")
-        return z^(N ÷ 12) - z^(5N ÷ 12)
-    elseif d == 5
-        N % 5 == 0 || error("√5 is not available in Q(ζ_$N); use an N divisible by 5")
-        return one(K) + 2 * (z^(N ÷ 5) + z^(4N ÷ 5))
-    end
-    error("no built-in exact √$d expression in Q(ζ_$N)")
-end
-
-"""
-    lift_S_sqrtd_to_cyclotomic(recon_S, d, N; scale=2) -> Matrix
-
-Convert a matrix of ℤ[√d] entries (as `(a, b)` tuples meaning
-`a + b·√d`) into exact elements of `Q(ζ_N)`, undoing any normalization
-scaling.
-
-`reconstruct_S_matrix` in v0.2 returns `scale · √d · S'` for some
-`scale` (default 2 in the SU(2)_4 / d=3 setting). To recover `S'` we
-divide by `scale · √d`.
-
-Arguments:
-- `recon_S::Matrix{Tuple{Int,Int}}`:   each entry `(a, b)` = `a + b√d`
-- `d::Int`:                             d under the square root
-- `scale::Int=2`:                       normalization factor used at
-                                        reconstruction time
-                                        (v0.2 default, see
-                                         `reconstruct_S_matrix` docstring)
-
-Returns an Oscar matrix over `Q(ζ_N)`.
-"""
-function lift_S_sqrtd_to_cyclotomic(recon_S::Matrix{Tuple{Int,Int}}, d::Int,
-                                    N::Int; scale::Int = 2)
-    K, z = cyclotomic_field(N)
-    sd = _sqrt_d_in_cyclotomic(K, z, N, d)
-    denom = K(scale) * sd
-    nrow, ncol = size(recon_S)
-    result = zero_matrix(K, nrow, ncol)
-    for i in 1:nrow, j in 1:ncol
-        (a, b) = recon_S[i, j]
-        result[i, j] = (K(a) + K(b) * sd) / denom
-    end
-    return result
-end
-
-# ============================================================
-#  Convenience wrapper
-# ============================================================
-
-"""
-    lift_mtc_candidate(candidate, recon_S; d, scale=2) ->
-        (S, T, Nijk::Array{Int,3})
-
-Combine the two lifts into a single call that produces Phase 4-ready
-modular data from one v0.2 MTCCandidate plus a reconstructed S.
-
-Arguments:
-- `candidate`:    an `ACMG.MTCCandidate` from Phase 2 at some prime `p`.
-                  Must carry `.p`, `.T_Fp`, `.N` (fusion tensor).
-- `recon_S`:      the matrix from `reconstruct_S_matrix(group; …)`.
-- `d::Int`:       the d such that entries live in ℤ[√d] (keyword).
-- `scale::Int=2`: scaling factor used at reconstruction (keyword).
-
-Returns exact `(S, T, Nijk)` suitable for calling Phase 4 routines:
-- `Nijk = candidate.N` (pass directly to `get_pentagon_system`)
-- `(S, T)` for downstream verification
-
-Requirements at the call site:
-- `find_zeta_in_Fp` and `primitive_root` must be accessible.
-  If called from within the ACMG package, use
-  `ACMG.find_zeta_in_Fp(N, candidate.p)` and pass as `zeta_Fp`.
-  The N (conductor) must be available — it's not stored on
-  MTCCandidate directly, so it must be passed explicitly.
-"""
-function lift_mtc_candidate(candidate, recon_S::Matrix{Tuple{Int,Int}};
-                            d::Int, N::Int, zeta_Fp::Int, scale::Int = 2)
-    S = lift_S_sqrtd_to_cyclotomic(recon_S, d, N; scale = scale)
-    T = lift_T_Fp_to_cyclotomic(candidate.T_Fp, N, candidate.p, zeta_Fp)
-    Nijk = candidate.N
-    return (S, T, Nijk)
-end
-
 lift_T_Fp_to_complex(args...; kwargs...) =
     error("lift_T_Fp_to_complex was removed; use lift_T_Fp_to_cyclotomic for exact Q(ζ_N) output")
-
-lift_S_sqrtd_to_complex(args...; kwargs...) =
-    error("lift_S_sqrtd_to_complex was removed; use lift_S_sqrtd_to_cyclotomic for exact Q(ζ_N) output")

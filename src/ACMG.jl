@@ -57,6 +57,7 @@ include("Search/BlockU.jl")
 
 # Reconstruction: multi-prime CRT reconstruction and exact lifting.
 include("Reconstruction/CRT.jl")
+include("Reconstruction/CyclotomicCRT.jl")
 
 # FR: exact F/R equations and solvers over cyclotomic fields.
 include("FR/PentagonEquations.jl")
@@ -71,7 +72,6 @@ include("Pipeline/Types.jl")
 include("Pipeline/PrimeSelection.jl")
 include("Pipeline/Auto.jl")
 include("Pipeline/FRLayer.jl")
-include("Pipeline/ReconstructionPrecheck.jl")
 include("Pipeline/Pipeline.jl")
 
 # ============================================================
@@ -112,13 +112,9 @@ export validate_search_mode
 export find_mtcs_at_prime, signed_Fp
 
 # Phase 3: CRT reconstruction
-export acmg_crt, crt2, rational_reconstruct, compute_sqrt_d_mod_p
-export compute_sqrt3_cyclotomic_mod_p, compute_sqrt2_cyclotomic_mod_p
-export compute_sqrt5_cyclotomic_mod_p
-export fusion_signature, canonical_rule, group_mtcs_by_fusion, group_mtcs_galois_aware
-export reconstruct_rational, reconstruct_in_Z_sqrt_d
-export reconstruct_matrix_in_Z_sqrt_d, reconstruct_S_matrix
-export verify_reconstruction, describe_matrix
+export acmg_crt, crt2, rational_reconstruct
+export fusion_signature, canonical_rule, group_mtcs_by_fusion
+export reconstruct_rational, reconstruct_cyclotomic_element_from_residues
 
 # Phase 4: (F, R) classification
 export get_pentagon_system
@@ -126,8 +122,7 @@ export solve_pentagon_modular_crt, solve_pentagon_homotopy, solve_pentagon_newto
 export assign_F_to_associator!, hexagon_equations, get_hexagon_system
 export number_of_variables_in_hexagon_equations
 export solve_hexagon_modular_crt, solve_hexagon_homotopy
-export DiscreteLogTable, lift_T_Fp_to_cyclotomic, lift_S_sqrtd_to_cyclotomic
-export lift_mtc_candidate
+export DiscreteLogTable, lift_T_Fp_to_cyclotomic
 
 # End-to-end pipeline
 export ClassifiedMTC

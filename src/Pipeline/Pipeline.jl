@@ -6,13 +6,13 @@ MTCs, each carrying:
 
 - the SL(2, ℤ/N) stratum (m_λ) decomposition (Phase 0/1),
 - F_p-validated modular data (Phase 2),
-- Galois-coherent, arithmetic S-matrix in ℤ[√d] (Phase 3),
+- exact cyclotomic modular data reconstructed in `Q(ζ_N)` (Phase 3),
 - exact `(S, T)` lifted to `Q(ζ_N)` with `N` fixed as the base conductor.
 
 This file provides the orchestration entry points:
 
-- `classify_from_group(group, all_primes; ...)`: given a Galois-coherent
-  group from `group_mtcs_galois_aware`, performs Phase 3 CRT + Phase 4
+- `classify_from_group(group, all_primes; ...)`: given a prime-indexed
+  group, performs Phase 3 CRT + Phase 4
   exact lift and returns a single `ClassifiedMTC`.
 
 - `classify_mtcs_at_conductor(N; ...)`: the conductor-first top-level
@@ -56,10 +56,56 @@ function _verify_exact_candidate_at_prime(S_exact, T_exact, candidate::MTCCandid
     return true
 end
 
+function _reconstruct_cyclotomic_S_matrix(group::Dict{Int, MTCCandidate},
+                                          N::Int;
+                                          scale::Int = 2,
+                                          reconstruction_bound::Int = 4,
+                                          denominator_bound::Int = 4)
+    primes = sort(collect(keys(group)))
+    first_candidate = first(values(group))
+    r = size(first_candidate.S_Fp, 1)
+    ctx = CyclotomicContext(N)
+    K = field(ctx)
+    S = zero_matrix(K, r, r)
+    for i in 1:r, j in 1:r
+        values_ij = Dict(p => mod(scale * group[p].S_Fp[i, j], p) for p in primes)
+        x = reconstruct_cyclotomic_element_from_residues(values_ij, ctx;
+                                                         coeff_bound = reconstruction_bound,
+                                                         denominator_bound = denominator_bound)
+        x === nothing && error("failed to cyclotomic-CRT reconstruct S entry ($i, $j)")
+        S[i, j] = x / K(scale)
+    end
+    return S
+end
+
+function _verify_cyclotomic_candidate_at_prime(S_exact, T_exact, candidate::MTCCandidate,
+                                               N::Int, p::Int)
+    return _verify_exact_candidate_at_prime(S_exact, T_exact, candidate, N, p)
+end
+
+function _groups_for_stratum(results_by_prime::Dict{Int, Vector{MTCCandidate}},
+                             catalog,
+                             stratum::Stratum,
+                             N::Int)
+    exact_data = catalog === nothing ? nothing : _exact_stratum_data(catalog, stratum)
+    if exact_data !== nothing
+        group = Dict{Int, MTCCandidate}()
+        for (p, cands) in results_by_prime
+            for c in cands
+                if _verify_exact_candidate_at_prime(exact_data.S, exact_data.T, c, N, p)
+                    group[p] = c
+                    break
+                end
+            end
+        end
+        length(group) >= 2 && return [group]
+    end
+    return group_mtcs_by_fusion(results_by_prime)
+end
+
 """
     classify_from_group(group, N, stratum, all_primes;
-                        quadratic_d, scale_factor = 2,
-                        sqrtd_fn = compute_sqrt_d_mod_p,
+                        scale_factor = 2,
                         reconstruction_bound = 50,
                         galois_sector = 1,
                         test_primes = nothing,
@@ -67,8 +113,8 @@ end
                         verbose = false)
         -> ClassifiedMTC
 
-Given a single Galois-coherent group from `group_mtcs_galois_aware`,
-perform Phase 3 CRT reconstruction, lift `(S, T)` to `Q(ζ_N)`, and
+Given a single prime-indexed group, perform Phase 3 reconstruction directly
+as modular data over `Q(ζ_N)`, and
 return a `ClassifiedMTC`.
 
 Arguments:
@@ -76,14 +122,8 @@ Arguments:
 - `N::Int`:                          conductor
 - `stratum::Stratum`:                the stratum the group came from
 - `all_primes::Vector{Int}`:         primes present in `group`
-- `quadratic_d::Int`:                    `d` for ℤ[√d]
-- `scale_factor::Int = 2`:           scalar multiplying S before recon
-- `sqrtd_fn`:                        `(d, p) -> Int` returning √d mod p.
-                                     For SU(2)_4 / d = 3 /quadratic_d = 3,
-                                     use `compute_sqrt3_cyclotomic_mod_p`
-                                     to ensure Galois-consistent choice.
-- `reconstruction_bound::Int = 50`:  ℤ[√d] coefficient bound for rational
-                                     reconstruction.
+- `scale_factor::Int = 2`:           scalar multiplying S before rational CRT
+- `reconstruction_bound::Int = 50`:  coefficient bound for rational fallback
 - `galois_sector::Int = 1`:          sector index for provenance.
 - `test_primes::Vector{Int}=nothing`: which primes to use for CRT.
                                      If `nothing`, uses first
@@ -98,9 +138,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                              stratum::Stratum,
                              all_primes::Vector{Int};
                              N_input::Int = N,
-                             quadratic_d::Int = _default_quadratic_d_for_conductor(N),
                              scale_factor::Int = 2,
-                             sqrtd_fn = compute_sqrt_d_mod_p,
                              reconstruction_bound::Int = 50,
                              galois_sector::Int = 1,
                              test_primes::Union{Vector{Int}, Nothing} = nothing,
@@ -130,28 +168,19 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
         nothing :
         _exact_stratum_data(catalog, stratum)
 
-    # -------- Phase 3: CRT in ℤ[√d] --------
     used_subgroup = Dict(p => group[p] for p in used)
-    recon_S = reconstruct_S_matrix(used_subgroup;
-                                    quadratic_d = quadratic_d,
-                                    bound = reconstruction_bound,
-                                    sqrtd_fn = sqrtd_fn)
 
-    # Verify at fresh primes (if any)
-    verify_fresh = isempty(fresh)  # vacuously true if none
-    if !isempty(fresh)
-        all_ok = true
-        for p in fresh
-            ok = verify_reconstruction(recon_S, group[p], quadratic_d;
-                                        scale = scale_factor,
-                                        sqrtd_fn = sqrtd_fn)
-            all_ok &= ok
-            verbose && println("    fresh p=$p: $(ok ? "✓" : "✗")")
-        end
-        verify_fresh = all_ok
-    end
+    rep = first(values(group))
     verify_exact_lift = nothing
-    if exact_data !== nothing
+    if exact_data === nothing
+        S_cyc = _reconstruct_cyclotomic_S_matrix(used_subgroup, N;
+                                                 scale = scale_factor,
+                                                 reconstruction_bound = reconstruction_bound,
+                                                 denominator_bound = reconstruction_bound)
+        zeta_Fp = find_zeta_in_Fp(N, rep.p)
+        T_cyc = lift_T_Fp_to_cyclotomic(rep.T_Fp, N, rep.p, zeta_Fp)
+        Nijk = rep.N
+    else
         exact_ok = all(p -> _verify_exact_candidate_at_prime(exact_data.S, exact_data.T,
                                                              group[p], N, p),
                        group_primes)
@@ -160,27 +189,23 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
             verbose && println("    exact fixed-stratum lift failed finite-field verification")
             error("exact fixed-stratum lift failed finite-field verification")
         end
-    end
-    if exact_data === nothing && !verify_fresh
-        error("CRT S reconstruction failed fresh-prime verification; " *
-              "the candidate is not stable in the selected reconstruction field")
-    end
-
-    # -------- Phase 4 input: exact lift (S, T) to Q(ζ_N) --------
-    rep = first(values(group))
-    if exact_data === nothing
-        zeta_Fp = find_zeta_in_Fp(N, rep.p)
-        S_cyc, T_cyc, Nijk = lift_mtc_candidate(rep, recon_S;
-                                                d = quadratic_d,
-                                                N = N,
-                                                zeta_Fp = zeta_Fp,
-                                                scale = scale_factor)
-    else
         S_cyc = exact_data.S
         T_cyc = exact_data.T
         Nijk = rep.N
     end
-    recon_S_phase4 = recon_S
+
+    # Verify at fresh primes (if any)
+    verify_fresh = isempty(fresh)  # vacuously true if none
+    if !isempty(fresh)
+        all_ok = true
+        for p in fresh
+            ok = _verify_cyclotomic_candidate_at_prime(S_cyc, T_cyc, group[p], N, p)
+            all_ok &= ok
+            verbose && println("    fresh p=$p: $(ok ? "✓" : "✗")")
+        end
+        verify_fresh = all_ok
+    end
+    verify_fresh || error("CRT modular-data reconstruction failed fresh-prime verification")
 
     # TensorCategories assumes the unit object is at index 1.
     # MTCCandidate stores `unit_index` explicitly and may keep a different
@@ -190,7 +215,6 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
         S_cyc = S_cyc[perm, perm]
         T_cyc = T_cyc[perm]
         Nijk = Nijk[perm, perm, perm]
-        recon_S_phase4 = recon_S[perm, perm]
     end
     T_for_phase4 = _normalize_T_by_unit(T_cyc)
 
@@ -199,8 +223,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
 
     if skip_FR
         return ClassifiedMTC(N, N_input, rank, stratum, Nijk,
-                             recon_S_phase4, quadratic_d, scale_factor,
-                             used, fresh, verify_fresh,
+                             scale_factor, used, fresh, verify_fresh,
                              verify_exact_lift,
                              S_cyc, T_for_phase4, nothing, nothing, nothing,
                              galois_sector)
@@ -228,9 +251,8 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                        "S_err=$(md_roundtrip.S_max), T_err=$(md_roundtrip.T_max), " *
                        "ok=$(md_roundtrip.ok)")
 
-    return ClassifiedMTC(N, N_input, rank, stratum, Nijk, recon_S_phase4,
-                         quadratic_d, scale_factor,
-                         used, fresh, verify_fresh,
+    return ClassifiedMTC(N, N_input, rank, stratum, Nijk,
+                         scale_factor, used, fresh, verify_fresh,
                          verify_exact_lift,
                          S_cyc, T_for_phase4,
                          selected.F, selected.R, md_roundtrip,
@@ -243,10 +265,9 @@ end
 
 """
     classify_mtcs_at_conductor(N; max_rank = 5, primes = nothing, strata = nothing,
-                                quadratic_d = 3, scale_factor = 2,
+                                scale_factor = 2,
                                 conductor_mode = :full_mtc,
                                 min_primes = 4, prime_start = 29, prime_window = 2000,
-                                sqrtd_fn = nothing,
                                 verlinde_threshold = 3,
                                 max_block_dim = 3,
                                 reconstruction_bound = 50,
@@ -262,8 +283,8 @@ Pipeline:
   Phase 0: build SL(2, ℤ/N) atomic irrep catalog (≤ max_rank)
   Phase 1: enumerate strata (m_λ) with Σ m_λ d_λ = r for each r ≤ max_rank
   Phase 2: for each stratum, sweep block-U at each prime → MTC candidates
-  Phase 3: Galois-aware grouping + CRT reconstruction in ℤ[√d]
-  Phase 4: lift to Q(ζ_N), then compute exact `(F, R)`
+  Phase 3: grouping + modular CRT reconstruction in `Q(ζ_N)`
+  Phase 4: compute exact `(F, R)`
 
 Returns one `ClassifiedMTC` per Galois sector per stratum that yields a
 valid modular-data candidate and exact cyclotomic `(F, R)` data.
@@ -290,16 +311,8 @@ Arguments:
                                    `enumerate_strata`. Otherwise uses
                                    the given strata directly (faster for
                                    targeted re-runs).
-- `quadratic_d::Int = 3`:              ℤ[√d] the S-matrix is expected to
-                                   live in. Must be chosen to match the
-                                   MTC's quadratic field: e.g. 3 for
-                                   SU(2)_4 / Ising, 5 for MTCs involving
-                                   the golden ratio, 2 for √2-pointed
-                                   MTCs. A wrong `quadratic_d` will silently
-                                   return 0 classified MTCs.
 - `scale_factor::Int = 2`:         scalar multiplying `S` at
-                                   reconstruction (matches
-                                   `reconstruct_S_matrix` convention).
+                                   cyclotomic CRT reconstruction.
 - `conductor_mode::Symbol = :full_mtc`:
                                    compatibility option. Only
                                    `:full_mtc` is supported, and it fixes
@@ -309,22 +322,6 @@ Arguments:
 - `prime_start::Int = 29`:         when `primes = nothing`, start of
                                    prime search range (exclusive).
 - `prime_window::Int = 2000`:      when `primes = nothing`, scan width.
-- `sqrtd_fn`:                      custom √d-in-F_p function. If
-                                   `nothing` (default), chooses:
-                                   cyclotomic variant for `quadratic_d ∈
-                                   {2,3,5}` and anchored mode for
-                                   other `quadratic_d` (anchor prime +
-                                   branch-transform layer over raw
-                                   Tonelli roots):
-                                   `compute_sqrt3_cyclotomic_mod_p`
-                                   (needs 24 | p-1) for `quadratic_d = 3`,
-                                   `compute_sqrt2_cyclotomic_mod_p`
-                                   (needs 24 | p-1) for `quadratic_d = 2`,
-                                   `compute_sqrt5_cyclotomic_mod_p`
-                                   (needs 5 | p-1) for `quadratic_d = 5`,
-                                   else anchored mode (with per-prime
-                                   sign alignment and pre-group
-                                   contradiction check/split).
 - `verlinde_threshold::Int = 3`:   max absolute fusion coefficient
                                    allowed (beyond which the candidate
                                    is rejected). See
@@ -347,8 +344,8 @@ Arguments:
                                    run fast unit-axiom precheck before
                                    full Verlinde tensor evaluation in
                                    Phase 2 candidate loop.
-- `reconstruction_bound::Int = 50`: coefficient bound for ℤ[√d]
-                                   rational reconstruction.
+- `reconstruction_bound::Int = 50`: coefficient and denominator bound for
+                                   cyclotomic power-basis CRT.
 - `skip_FR::Bool = false`:         when true, stop after exact
                                    cyclotomic modular-data lift.
 - `verbose::Bool = true`:          print per-phase progress.
@@ -357,13 +354,11 @@ function classify_mtcs_at_conductor(N::Int;
                                     max_rank::Int = 5,
                                     primes::Union{Nothing, Vector{Int}} = nothing,
                                     strata::Union{Nothing, Vector{Stratum}} = nothing,
-                                    quadratic_d::Union{Int, Nothing} = nothing,
                                     scale_factor::Int = 2,
                                     conductor_mode::Symbol = :full_mtc,
                                     min_primes::Int = 4,
                                     prime_start::Int = 29,
                                     prime_window::Int = 2000,
-                                    sqrtd_fn = nothing,
                                     verlinde_threshold::Int = 3,
                                     max_block_dim::Int = 3,
                                     search_mode::Symbol = :groebner,
@@ -374,14 +369,10 @@ function classify_mtcs_at_conductor(N::Int;
                                     skip_FR::Bool = false,
                                     verbose::Bool = true,
                                     kwargs...)
-    user_sqrtd_fn = sqrtd_fn
     N_effective = compute_effective_conductor(N; conductor_mode = conductor_mode)
     isempty(kwargs) || error("unsupported keyword arguments: $(collect(keys(kwargs)))")
-    quadratic_d = quadratic_d === nothing ?
-        _default_quadratic_d_for_conductor(N_effective) :
-        quadratic_d
 
-    prime_requirement = _prime_requirement_for_reconstruction(N_effective, quadratic_d, sqrtd_fn)
+    prime_requirement = N_effective
     chosen_primes = primes === nothing ?
         select_admissible_primes(prime_requirement;
                                  min_count = min_primes,
@@ -393,9 +384,6 @@ function classify_mtcs_at_conductor(N::Int;
                        "(input N=$N, N_effective=$N_effective)")
     verbose && primes === nothing &&
         println("PrimeSelection: auto-selected primes = $chosen_primes")
-    verbose && primes === nothing && prime_requirement != N_effective &&
-        println("PrimeSelection: using reconstruction requirement $prime_requirement " *
-                "(N_effective=$N_effective, d=$quadratic_d)")
 
     # Prime validity check
     for p in chosen_primes
@@ -408,8 +396,7 @@ function classify_mtcs_at_conductor(N::Int;
 
     # ------- Phase 0: atomic catalog -------
     # Enumerate atomic SL(2, Z/N)-irreps at the user-specified base conductor N.
-    # The field-extension effect is handled later via N_effective in arithmetic
-    # checks (prime admissibility, sqrt(d)-dependent reconstruction).
+    # The cyclotomic field is fixed by the requested conductor.
     verbose && println("=== Phase 0: atomic SL(2, ℤ/$N) irrep catalog ===")
     catalog = build_atomic_catalog(N; max_rank = max_rank, verbose = false)
     verbose && println("  $(length(catalog)) atomic irreps (≤ rank $max_rank)")
@@ -489,81 +476,17 @@ function classify_mtcs_at_conductor(N::Int;
             continue
         end
 
-        # Build d-wise sqrt branch selector:
-        #  - d = 2,3,5: cyclotomic
-        #  - otherwise: anchored transform layer (not raw Tonelli direct)
-        anchor = present_primes[1]
-        selector_mode = :custom
-        active_sqrtd_fn = user_sqrtd_fn
-        branch_sign_getter = nothing
-        branch_sign_setter = nothing
-        if active_sqrtd_fn === nothing
-            selector = build_sqrtd_selector(quadratic_d, present_primes, anchor; verbose = verbose)
-            active_sqrtd_fn = selector.sqrtd_fn
-            selector_mode = selector.mode
-            branch_sign_getter = selector.branch_sign_getter
-            branch_sign_setter = selector.branch_sign_setter
-        end
-        verbose && println("  d=$quadratic_d, sqrt-branch mode=$(selector_mode == :custom ? "custom" : String(selector_mode)), grouping bound=$reconstruction_bound")
-
-        contradictory = _branch_consistency_precheck(results_by_prime, anchor, quadratic_d, active_sqrtd_fn;
-                                                     reconstruction_bound = reconstruction_bound,
-                                                     branch_sign_getter = branch_sign_getter,
-                                                     branch_sign_setter = branch_sign_setter,
-                                                     verbose = verbose)
-        # If contradictory primes remain, split sector inputs (anchor+main, anchor+each contradictory).
-        results_chunks = Dict{Int, Vector{MTCCandidate}}[]
-        if isempty(contradictory)
-            push!(results_chunks, results_by_prime)
-        else
-            main_dict = Dict{Int, Vector{MTCCandidate}}()
-            for (p, cands) in results_by_prime
-                if !(p in contradictory)
-                    main_dict[p] = cands
-                end
-            end
-            if length(main_dict) >= 2
-                push!(results_chunks, main_dict)
-            end
-            for p in contradictory
-                local_dict = Dict{Int, Vector{MTCCandidate}}(
-                    anchor => results_by_prime[anchor],
-                    p => results_by_prime[p])
-                push!(results_chunks, local_dict)
-            end
-        end
-
-        # Galois-aware grouping
-        local groups
-        groups = Vector{Dict{Int, MTCCandidate}}()
-        grouping_failed = false
-        for chunk in results_chunks
-            try
-                append!(groups, group_mtcs_galois_aware(chunk, anchor;
-                                                        quadratic_d = quadratic_d,
-                                                        reconstruction_bound = reconstruction_bound,
-                                                        sqrtd_fn = active_sqrtd_fn,
-                                                        branch_sign_getter = branch_sign_getter,
-                                                        branch_sign_setter = branch_sign_setter))
-            catch err
-                grouping_failed = true
-                verbose && println("  stratum: galois grouping failed: $err")
-                break
-            end
-        end
-        if grouping_failed
-            continue
-        end
+        groups = _groups_for_stratum(results_by_prime, catalog, st, N_effective)
 
         verbose && println("  stratum (rank $(st.total_dim)): " *
-                           "$(length(groups)) Galois sectors")
+                           "$(length(groups)) modular-data sector(s)")
 
         # used/fresh split: first half / second half of primes in this group
         for (gi, group) in enumerate(groups)
             group_primes = sort(collect(keys(group)))
             if length(group_primes) < 2
                 verbose && println("    sector $gi: only $(length(group_primes)) " *
-                                   "prime(s) — Galois-aligned CRT needs ≥ 2. skip")
+                                   "prime(s) — modular CRT needs ≥ 2. skip")
                 continue
             end
             half = max(2, length(group_primes) ÷ 2)
@@ -576,15 +499,21 @@ function classify_mtcs_at_conductor(N::Int;
                 try
                     cmtc = classify_from_group(group, N_effective, st, group_primes;
                                                 N_input = N,
-                                                quadratic_d = quadratic_d,
                                                 scale_factor = scale_factor,
-                                                sqrtd_fn = active_sqrtd_fn,
                                                 reconstruction_bound = reconstruction_bound,
                                                 galois_sector = gi,
                                                 test_primes = used,
                                                 catalog = catalog,
                                                 skip_FR = true,
                                                 verbose = verbose)
+                    if !cmtc.verify_fresh && extra_idx <= length(group_primes)
+                        p_new = group_primes[extra_idx]
+                        push!(used, p_new)
+                        extra_idx += 1
+                        verbose && println("    sector $gi: fresh-prime check failed; " *
+                                           "retry with additional prime $p_new (used=$used)")
+                        continue
+                    end
                     sector_ok = true
                     break
                 catch err
@@ -605,6 +534,10 @@ function classify_mtcs_at_conductor(N::Int;
                 verbose && println("    sector $gi: classify_from_group failed: $last_err_msg")
                 continue
             end
+            if !cmtc.verify_fresh
+                verbose && println("    sector $gi: fresh-prime verification failed; discard")
+                continue
+            end
             push!(out, cmtc)
             verbose && println("    → $cmtc")
         end
@@ -618,6 +551,7 @@ function classify_mtcs_at_conductor(N::Int;
 
     # ------- Exact (F,R) layer -------
     verbose && println("\n=== Exact (F, R) layer requested ===")
+    out = filter(m -> m.verify_fresh, out)
     grouped = _classify_modular_data_by_fusion_rule(out)
     key_to_members = Dict{String, Vector{Tuple{Any, Any}}}()
     for (key, idxs) in grouped

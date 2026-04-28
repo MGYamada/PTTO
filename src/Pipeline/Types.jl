@@ -21,12 +21,8 @@ Arithmetic / F_p layer (Phase 0–3 output):
 - `stratum`:        the SL(2, ℤ/N) irrep decomposition `(m_λ)` that gave
                     rise to this MTC
 - `Nijk`:           fusion tensor (Galois-invariant integer array)
-- `S_Zsqrtd`:       S-matrix as `(a, b)` = `a + b·√d` in ℤ[√d]
-                    (after Phase 3 CRT; entries before dividing by
-                    `scale · √d`)
-- `quadratic_d`:    the inferred `d` such that `S_Zsqrtd` lives in ℤ[√d]
-- `scale_factor`:   the scalar multiplying `S` before reconstruction
-                    (so `S_cyclotomic = S_Zsqrtd / (scale_factor · √d)`)
+- `scale_factor`:   the scalar multiplying `S` before rational CRT
+                    reconstruction in the fallback finite-field path
 - `used_primes`:    primes used for CRT reconstruction
 - `fresh_primes`:   primes used for cross-validation (may be empty)
 - `verify_fresh`:   `true` iff all fresh primes cross-check
@@ -44,9 +40,7 @@ Exact `(F, R)` layer:
 - `verify_report`:  reserved for exact verification data; currently `nothing`.
 
 Provenance:
-- `galois_sector`:  integer index of the Galois orbit element
-                    (1, 2, ... for groups returned by
-                    `group_mtcs_galois_aware`)
+- `galois_sector`:  integer sector index retained for provenance
 """
 struct ClassifiedMTC
     N::Int
@@ -54,8 +48,6 @@ struct ClassifiedMTC
     rank::Int
     stratum::Stratum
     Nijk::Array{Int, 3}
-    S_Zsqrtd::Matrix{Tuple{Int, Int}}
-    quadratic_d::Int
     scale_factor::Int
     used_primes::Vector{Int}
     fresh_primes::Vector{Int}
@@ -120,8 +112,7 @@ function _with_fr_result(c::ClassifiedMTC,
                          S = c.S_cyclotomic,
                          T = c.T_cyclotomic)
     return ClassifiedMTC(c.N, c.N_input, c.rank, c.stratum, c.Nijk,
-                         c.S_Zsqrtd, c.quadratic_d, c.scale_factor,
-                         c.used_primes, c.fresh_primes, c.verify_fresh,
+                         c.scale_factor, c.used_primes, c.fresh_primes, c.verify_fresh,
                          c.verify_exact_lift,
                          S, T,
                          F, R, report, c.galois_sector)

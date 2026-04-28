@@ -22,7 +22,7 @@ using ACMG
         @test classified[1].verify_report.ok
     end
 
-    @testset "N=2 d=1 fresh primes validate with rational branch" begin
+    @testset "N=2 fresh primes validate with cyclotomic CRT" begin
         classified = ACMG.classify_mtcs_at_conductor(2;
                                                      max_rank = 5,
                                                      skip_FR = true,
@@ -31,7 +31,6 @@ using ACMG
         @test all(m -> m.verify_fresh, classified)
         @test all(m -> m.verify_exact_lift === true, classified)
         @test all(m -> !isempty(m.fresh_primes), classified)
-        @test all(m -> all(entry -> entry[2] == 0, m.S_Zsqrtd), classified)
     end
 
     @testset "N=7 fixed atomic strata lift exactly" begin
@@ -65,6 +64,7 @@ using ACMG
         @test length(classified) == 6
         @test count(m -> m.rank == 2, classified) == 2
         @test count(m -> m.rank == 3, classified) == 2
+        @test all(m -> m.verify_fresh, classified)
         @test all(m -> m.verify_exact_lift === true, classified)
         @test all(m -> m.verify_report !== nothing && m.verify_report.ok,
                   filter(m -> m.rank <= 2, classified))

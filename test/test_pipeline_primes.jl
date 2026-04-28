@@ -68,7 +68,6 @@ using ACMG
     @testset "classify_mtcs_auto returns reproducibility metadata" begin
         auto = ACMG.classify_mtcs_auto(8;
                                        max_rank_candidates = [1],
-                                       d_candidates = [1],
                                        min_primes = 2,
                                        prime_start = 11,
                                        prime_max = 50,
@@ -88,10 +87,9 @@ using ACMG
         @test auto.attempts == 1
     end
 
-    @testset "classify_mtcs_auto explores repeated conductors with different d" begin
+    @testset "classify_mtcs_auto does not repeat conductor stages" begin
         auto = ACMG.classify_mtcs_auto(1;
                                        max_rank_candidates = [1],
-                                       d_candidates = [1, 2],
                                        min_primes = 2,
                                        prime_start = 2,
                                        prime_max = 100,
@@ -99,11 +97,9 @@ using ACMG
                                        skip_FR = true,
                                        verbose = false)
 
-        @test auto.attempts == 2
-        @test length(auto.history) == 2
-        @test [h.d for h in auto.history] == [1, 2]
+        @test auto.attempts == 1
+        @test length(auto.history) == 1
         @test all(h -> h.executed, auto.history)
-        @test !any(h -> h.reason == "duplicate_N_effective", auto.history)
     end
 
     @testset "select_admissible_primes picks valid primes" begin
