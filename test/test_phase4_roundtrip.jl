@@ -106,9 +106,13 @@ end
 
             @test !isempty(result.F)
             @test !isempty(result.R)
+            @test !hasproperty(result, :candidates)
             @test roundtrip.ok
+            @test roundtrip isa ACMG.FRRoundtripReport
             @test iszero(roundtrip.S_max)
             @test iszero(roundtrip.T_max)
+            @test iszero(roundtrip.S_error)
+            @test iszero(roundtrip.T_error)
         end
     end
 end
@@ -123,6 +127,7 @@ end
                                 S = data.S,
                                 T = twists,
                                 return_all = true)
+    @test hasproperty(result, :candidates)
 
     K = parent(twists[1])
     bad_twists = [one(K), one(K)]

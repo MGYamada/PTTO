@@ -31,7 +31,11 @@ function _select_fr_for_st(candidates, Nijk, S_cyc, T_cyc, N)
             R = a == 1 ? cand.R : galois_action(ctx, cand.R, a)
             score = _score_fr_st_match(F, R, Nijk, S_cyc, T_cyc, N;
                                        candidate_index = ci)
+            report = _with_fr_roundtrip_metadata(score.report;
+                                                 candidate_index = ci,
+                                                 galois_exponent = a)
             score = merge(score, (galois_exponent = a,
+                                  report = report,
                                   order_key = (score.ok ? 0 : 1,
                                                string(score.T_max),
                                                string(score.S_max),
@@ -41,7 +45,7 @@ function _select_fr_for_st(candidates, Nijk, S_cyc, T_cyc, N)
             if best_score === nothing || score.order_key < best_score.order_key
                 best_score = score
                 best_idx = ci
-                best_candidate = (F = F, R = R, report = cand.report)
+                best_candidate = (F = F, R = R, report = report)
             end
         end
     end
@@ -184,12 +188,12 @@ function _modular_data_roundtrip(F_values::Vector,
         T_ok = all(iszero, T_diffs)
         S_err = S_ok ? zero(K) : first(x for x in S_diffs if !iszero(x))
         T_err = T_ok ? zero(K) : first(x for x in T_diffs if !iszero(x))
-        score = (ok = S_ok && T_ok,
-                 S_max = S_err,
-                 T_max = T_err,
-                 best_perm = perm,
-                 S_roundtrip = S_from_R,
-                 T_roundtrip = T_from_R)
+        score = FRRoundtripReport(ok = S_ok && T_ok,
+                                  S_error = S_err,
+                                  T_error = T_err,
+                                  best_perm = perm,
+                                  S_roundtrip = S_from_R,
+                                  T_roundtrip = T_from_R)
         if best === nothing || (score.ok && !best.ok)
             best = score
         end
@@ -205,11 +209,21 @@ function _score_fr_st_match(F_values::Vector,
                             N::Int;
                             candidate_index::Int)
     md = _modular_data_roundtrip(F_values, R_values, Nijk, S_target, T_target, N)
-    return merge(md, (candidate_index = candidate_index,
-                      order_key = (md.ok ? 0 : 1,
-                                   string(md.T_max),
-                                   string(md.S_max),
-                                   candidate_index)))
+    return (ok = md.ok,
+            S_error = md.S_error,
+            T_error = md.T_error,
+            S_max = md.S_max,
+            T_max = md.T_max,
+            best_perm = md.best_perm,
+            S_roundtrip = md.S_roundtrip,
+            T_roundtrip = md.T_roundtrip,
+            report = _with_fr_roundtrip_metadata(md;
+                                                 candidate_index = candidate_index),
+            candidate_index = candidate_index,
+            order_key = (md.ok ? 0 : 1,
+                         string(md.T_max),
+                         string(md.S_max),
+                         candidate_index))
 end
 
 function _twists_from_T_arg(T)
@@ -234,7 +248,7 @@ function _select_phase4_candidate(candidates::Vector{NamedTuple},
                                  candidate_index = i)
               for (i, c) in enumerate(candidates)]
     best = first(sort(scored; by = s -> s.order_key))
-    return merge(candidates[best.candidate_index], (report = best,))
+    return merge(candidates[best.candidate_index], (report = best.report,))
 end
 
 # ============================================================
@@ -268,10 +282,10 @@ function compute_FR_from_ST(Nijk::Array{Int,3};
         R = elem_type(K)[one(K), one(K)]
         candidates = NamedTuple[(F = F, R = R, report = nothing)]
         selected = _select_phase4_candidate(candidates, Nijk, ctx, S, T)
-        return (F = selected.F,
-                R = selected.R,
-                report = selected.report,
-                candidates = candidates)
+        result = (F = selected.F,
+                  R = selected.R,
+                  report = selected.report)
+        return return_all ? merge(result, (candidates = candidates,)) : result
     end
     _, pentagon_eqs, nF = get_pentagon_system(Nijk, r)
     gauge_fixed = pentagon_gauge_fixing ?
@@ -319,8 +333,8 @@ function compute_FR_from_ST(Nijk::Array{Int,3};
     end
     isempty(candidates) && _phase4_removed_error()
     selected = _select_phase4_candidate(candidates, Nijk, ctx, S, T)
-    return (F = selected.F,
-            R = selected.R,
-            report = selected.report,
-            candidates = candidates)
+    result = (F = selected.F,
+              R = selected.R,
+              report = selected.report)
+    return return_all ? merge(result, (candidates = candidates,)) : result
 end

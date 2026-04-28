@@ -4,6 +4,7 @@ version = "0.6.7"
 authors = ["Masahiko G. Yamada"]
 
 [deps]
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Oscar = "f1435218-dba5-11e9-1e4d-f1a5fab5fc13"
 Primes = "27ebfcd6-29c5-5fa9-bf4b-fb8fc14df3ae"
@@ -11,6 +12,7 @@ TensorCategories = "258c694e-7338-4d4d-b524-4851272a75cf"
 
 [compat]
 julia = "1.9"
+JSON = "1.5"
 LinearAlgebra = "1.9"
 Oscar = "1.3"
 Primes = "0.5"

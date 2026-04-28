@@ -47,6 +47,7 @@ include("Cyclotomics/Galois.jl")
 include("Cyclotomics/Frobenius.jl")
 include("ModularData/Validation.jl")
 include("ModularData/Verlinde.jl")
+include("ModularData/ExactValidation.jl")
 
 # SL2: SL(2, ℤ/N) irreducible representation catalog.
 include("SL2/SL2Reps.jl")
@@ -65,14 +66,19 @@ include("FR/HexagonEquations.jl")
 include("FR/ExactPolynomialSolver.jl")
 include("FR/PentagonSolver.jl")
 include("FR/HexagonSolver.jl")
+include("FR/Gauge.jl")
 include("Reconstruction/ModularDataLift.jl")
 
 # Pipeline: result records, prime selection, FR layer, and conductor-first orchestration.
 include("Pipeline/Types.jl")
 include("Pipeline/PrimeSelection.jl")
+include("Pipeline/Strategy.jl")
 include("Pipeline/Auto.jl")
 include("Pipeline/FRLayer.jl")
 include("Pipeline/Pipeline.jl")
+
+# IO: JSON export/import and Markdown reports for classification outputs.
+include("IO/Serialization.jl")
 
 # ============================================================
 #  Exports
@@ -85,6 +91,9 @@ export field, zeta, conductor, cond_S, cond_T, cond_F
 export semion_modular_data, fibonacci_modular_data, ising_modular_data, modular_data
 export galois_action, galois_orbit, frobenius, reduce_mod_p
 export validate_modular_data, build_modular_datum, compute_alpha, compute_charge_conjugation
+export check_modular_relations, check_unitarity, check_verlinde_integrality
+export check_twist_balance, check_vafa_constraints, check_galois_symmetry
+export validate_exact_modular_data, validate_exact_mtc
 export extract_fusion_rule_Fp, lift_fusion_to_Z, extract_and_lift
 export verlinde_coefficient
 export is_square, sqrt_mod, primitive_root, root_of_unity, roots_of_unity
@@ -123,11 +132,18 @@ export assign_F_to_associator!, hexagon_equations, get_hexagon_system
 export number_of_variables_in_hexagon_equations
 export solve_hexagon_modular_crt, solve_hexagon_homotopy
 export DiscreteLogTable, lift_T_Fp_to_cyclotomic
+export canonical_gauge, gauge_equivalent, gauge_transform
 
 # End-to-end pipeline
-export ClassifiedMTC
+export ClassifiedMTC, FRRoundtripReport, FRStatus
+export FRSkipped, FRSolved, FRNoSolutionFound, FRTimeoutLikeFailure
+export FRReconstructionFailed, FRVerificationFailed, fr_status
 export select_admissible_primes
+export estimate_search_complexity, estimate_phase4_complexity
+export recommend_primes, recommend_skip_FR
 export compute_FR_from_ST, classify_from_group
 export classify_mtcs_at_conductor, classify_mtcs_auto
+export save_classification, load_classification
+export export_modular_data, export_fusion_rule, export_FR, write_report
 
 end # module ACMG

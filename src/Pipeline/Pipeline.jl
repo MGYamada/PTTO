@@ -246,6 +246,9 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     selected = selection.selected
     md_roundtrip = _modular_data_roundtrip(selected.F, selected.R, Nijk,
                                            S_cyc, T_for_phase4, N)
+    md_roundtrip = _with_fr_roundtrip_metadata(md_roundtrip;
+                                               candidate_index = selection.selected_index,
+                                               galois_exponent = selection.score.galois_exponent)
     md_roundtrip.ok || error("Phase 4 selected (F,R) does not roundtrip to the target modular data")
     verbose && println("  modular-data roundtrip: perm=$(md_roundtrip.best_perm), " *
                        "S_err=$(md_roundtrip.S_max), T_err=$(md_roundtrip.T_max), " *
@@ -577,12 +580,24 @@ function classify_mtcs_at_conductor(N::Int;
             msg = sprint(showerror, err)
             if occursin("exact Phase 4 did not find", msg)
                 verbose && println("    Phase 4 found no (F,R) solution; leaving members without F/R")
+                for i in idxs
+                    out[i] = _with_fr_status(out[i], FRNoSolutionFound)
+                end
+                continue
+            elseif _is_reconstruction_unstable_message(msg)
+                verbose && println("    Phase 4 reconstruction failed; leaving members without F/R")
+                for i in idxs
+                    out[i] = _with_fr_status(out[i], FRReconstructionFailed)
+                end
                 continue
             end
             rethrow()
         end
         if fr_result.F === nothing || isempty(fr_result.candidates)
             verbose && println("    Phase 4 produced no valid (F,R) candidates; leaving members without F/R")
+            for i in idxs
+                out[i] = _with_fr_status(out[i], FRNoSolutionFound)
+            end
             continue
         end
 
@@ -597,6 +612,9 @@ function classify_mtcs_at_conductor(N::Int;
             best_md = _modular_data_roundtrip(selected.F, selected.R, mtc_i.Nijk,
                                               mtc_i.S_cyclotomic,
                                               mtc_i.T_cyclotomic, mtc_i.N)
+            best_md = _with_fr_roundtrip_metadata(best_md;
+                                                  candidate_index = selection.selected_index,
+                                                  galois_exponent = selection.score.galois_exponent)
             verbose && println("    member[$i] branch: cand=$(selection.selected_index), " *
                                "galois=$(selection.score.galois_exponent), " *
                                "perm=$(best_md.best_perm), " *
@@ -605,6 +623,7 @@ function classify_mtcs_at_conductor(N::Int;
                 out[i] = _with_fr_result(out[i], selected.F, selected.R, best_md)
             else
                 verbose && println("    member[$i] selected (F,R) failed target roundtrip; leaving without F/R")
+                out[i] = _with_fr_status(out[i], FRVerificationFailed)
             end
         end
     end
