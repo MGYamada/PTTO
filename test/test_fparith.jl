@@ -1,5 +1,7 @@
 using Test
 using LinearAlgebra: I
+using Oscar
+import ACMG
 import ACMG: is_square, sqrt_mod, primitive_root, root_of_unity, roots_of_unity
 import ACMG: matmul_mod, matpow_mod, diagmul_right, diagmul_left, lift_symmetric
 
@@ -60,4 +62,13 @@ import ACMG: matmul_mod, matpow_mod, diagmul_right, diagmul_left, lift_symmetric
     @test lift_symmetric(15, 17) == -2
     @test lift_symmetric(8, 17) == 8
     @test lift_symmetric(9, 17) == -8
+
+    # Polynomial root extraction over F_p uses factorization rather than
+    # scanning every field element.
+    F = GF(503)
+    roots = ACMG._fp_roots_from_coeffs(Dict(2 => one(F), 0 => -one(F)), F, 503)
+    @test [ACMG._fp_elem_to_int(r, 503) for r in roots] == [1, 502]
+
+    no_roots = ACMG._fp_roots_from_coeffs(Dict(2 => one(F), 0 => one(F)), F, 503)
+    @test isempty(no_roots)
 end

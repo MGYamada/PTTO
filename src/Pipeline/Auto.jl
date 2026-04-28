@@ -68,6 +68,10 @@ Returns:
 
 Prime selection chooses the first `min_primes` primes `p > prime_start`
 with `(p - 1) % N_effective == 0`.
+
+`reconstruction_bound` is forwarded as the requested cyclotomic CRT
+fallback bound. The pipeline applies a small internal cap before MITM
+reconstruction to avoid explosive searches in degenerate strata.
 """
 function classify_mtcs_auto(N::Int;
                             max_rank_candidates::Vector{Int} = [2, 3, 4, 5],

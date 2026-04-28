@@ -5,6 +5,8 @@ This file contains scalar, root-of-unity, and matrix operations used by
 higher arithmetic layers without carrying modular-category state.
 """
 
+using Oscar
+
 # ===== Finite-field arithmetic helpers =====
 
 """
@@ -134,6 +136,68 @@ function roots_of_unity(n::Integer, p::Integer)
         result[k] = (result[k-1] * ζ) % p
     end
     return result
+end
+
+# ----- Oscar polynomial helpers over F_p -----
+
+function _fp_partial_univariate_coeffs(f, varidx::Int,
+                                       assigned::Dict{Int, Any}, F)
+    coeffs = Dict{Int, Any}()
+    for (c, m) in zip(coefficients(f), monomials(f))
+        degs = degrees(m)
+        term = c
+        pow = degs[varidx]
+        for i in eachindex(degs)
+            i == varidx && continue
+            d = degs[i]
+            d == 0 && continue
+            haskey(assigned, i) || return nothing
+            term *= assigned[i]^d
+        end
+        coeffs[pow] = get(coeffs, pow, zero(F)) + term
+    end
+    return Dict(k => v for (k, v) in coeffs if !iszero(v))
+end
+
+function _fp_roots_from_coeffs(coeffs::AbstractDict{Int}, F, p::Int)
+    isempty(coeffs) && return nothing
+    maximum(keys(coeffs)) == 0 && return Any[]
+
+    R, x = polynomial_ring(F, :x)
+    g = zero(R)
+    for (pow, c) in coeffs
+        g += R(c) * x^pow
+    end
+    iszero(g) && return nothing
+
+    roots = Any[]
+    for (fac, _) in collect(Oscar.factor(g))
+        degree(fac) == 1 || continue
+        root = -coeff(fac, 0) / coeff(fac, 1)
+        push!(roots, root)
+    end
+    return sort(unique(roots); by = a -> _fp_elem_to_int(a, p))
+end
+
+function _eval_fp_poly(f, vals::Vector)
+    F = base_ring(parent(f))
+    v = zero(F)
+    for (c, m) in zip(coefficients(f), monomials(f))
+        term = c
+        for (i, d) in enumerate(degrees(m))
+            d > 0 && (term *= vals[i]^d)
+        end
+        v += term
+    end
+    return v
+end
+
+function _fp_elem_to_int(a, p::Int)
+    F = parent(a)
+    for i in 0:(p - 1)
+        a == F(i) && return i
+    end
+    error("could not lift finite-field element to an integer representative")
 end
 
 # ----- Matrix helpers over F_p -----

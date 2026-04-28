@@ -566,40 +566,6 @@ function _extract_orthogonality_points(gb_data, n::Int, p::Int)
     return _sort_matrices_lex(mats)
 end
 
-function _fp_partial_univariate_coeffs(f, varidx::Int,
-                                       assigned::Dict{Int, Any}, F)
-    coeffs = Dict{Int, Any}()
-    for (c, m) in zip(coefficients(f), monomials(f))
-        degs = degrees(m)
-        term = c
-        pow = degs[varidx]
-        for i in eachindex(degs)
-            i == varidx && continue
-            d = degs[i]
-            d == 0 && continue
-            haskey(assigned, i) || return nothing
-            term *= assigned[i]^d
-        end
-        coeffs[pow] = get(coeffs, pow, zero(F)) + term
-    end
-    return Dict(k => v for (k, v) in coeffs if !iszero(v))
-end
-
-function _fp_roots_from_coeffs(coeffs::AbstractDict{Int}, F, p::Int)
-    isempty(coeffs) && return nothing
-    maximum(keys(coeffs)) == 0 && return Any[]
-    roots = Any[]
-    for a in 0:(p - 1)
-        x = F(a)
-        v = zero(F)
-        for (pow, c) in coeffs
-            v += c * x^pow
-        end
-        iszero(v) && push!(roots, x)
-    end
-    return roots
-end
-
 function _fp_candidate_values_for_var(polys, varidx::Int,
                                       assigned::Dict{Int, Any}, F, p::Int)
     candidates = nothing
@@ -617,27 +583,6 @@ function _fp_candidate_values_for_var(polys, varidx::Int,
     end
     constrained && return candidates
     return Any[F(a) for a in 0:(p - 1)]
-end
-
-function _eval_fp_poly(f, vals::Vector)
-    F = base_ring(parent(f))
-    v = zero(F)
-    for (c, m) in zip(coefficients(f), monomials(f))
-        term = c
-        for (i, d) in enumerate(degrees(m))
-            d > 0 && (term *= vals[i]^d)
-        end
-        v += term
-    end
-    return v
-end
-
-function _fp_elem_to_int(a, p::Int)
-    F = parent(a)
-    for i in 0:(p - 1)
-        a == F(i) && return i
-    end
-    error("could not lift finite-field element to an integer representative")
 end
 
 function _extract_orthogonality_points_via_groebner(gb_data, n::Int, p::Int)

@@ -33,8 +33,8 @@ function _select_fr_for_st(candidates, Nijk, S_cyc, T_cyc, N)
                                        candidate_index = ci)
             score = merge(score, (galois_exponent = a,
                                   order_key = (score.ok ? 0 : 1,
-                                               string(score.T_max),
-                                               string(score.S_max),
+                                               score.T_mismatches,
+                                               score.S_mismatches,
                                                ci,
                                                a)))
             push!(all_scores, score)
@@ -182,15 +182,22 @@ function _modular_data_roundtrip(F_values::Vector,
         T_diffs = [T_from_R[perm[i]] - T_target[i] for i in 1:r]
         S_ok = all(iszero, S_diffs)
         T_ok = all(iszero, T_diffs)
+        S_mismatches = count(!iszero, S_diffs)
+        T_mismatches = count(!iszero, T_diffs)
         S_err = S_ok ? zero(K) : first(x for x in S_diffs if !iszero(x))
         T_err = T_ok ? zero(K) : first(x for x in T_diffs if !iszero(x))
         score = (ok = S_ok && T_ok,
                  S_max = S_err,
                  T_max = T_err,
+                 S_mismatches = S_mismatches,
+                 T_mismatches = T_mismatches,
                  best_perm = perm,
                  S_roundtrip = S_from_R,
                  T_roundtrip = T_from_R)
-        if best === nothing || (score.ok && !best.ok)
+        score_key = (score.ok ? 0 : 1, T_mismatches, S_mismatches, Tuple(perm))
+        best_key = best === nothing ? nothing :
+            (best.ok ? 0 : 1, best.T_mismatches, best.S_mismatches, Tuple(best.best_perm))
+        if best === nothing || score_key < best_key
             best = score
         end
     end
@@ -207,8 +214,8 @@ function _score_fr_st_match(F_values::Vector,
     md = _modular_data_roundtrip(F_values, R_values, Nijk, S_target, T_target, N)
     return merge(md, (candidate_index = candidate_index,
                       order_key = (md.ok ? 0 : 1,
-                                   string(md.T_max),
-                                   string(md.S_max),
+                                   md.T_mismatches,
+                                   md.S_mismatches,
                                    candidate_index)))
 end
 

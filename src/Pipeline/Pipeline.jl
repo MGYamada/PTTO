@@ -29,6 +29,14 @@ Design notes:
 #  classify_from_group: CRT + (F, R) solve for one Galois sector
 # ============================================================
 
+const _PIPELINE_CYCLOTOMIC_RECONSTRUCTION_BOUND_CAP = 4
+
+function _pipeline_cyclotomic_reconstruction_bounds(reconstruction_bound::Int)
+    reconstruction_bound >= 1 || error("reconstruction_bound must be positive")
+    capped = min(reconstruction_bound, _PIPELINE_CYCLOTOMIC_RECONSTRUCTION_BOUND_CAP)
+    return (coeff_bound = capped, denominator_bound = capped)
+end
+
 function _fixed_exact_group(group::Dict{Int, MTCCandidate})
     return all(c -> c.U_params == :atomic || c.U_params == :block_invariant,
                values(group))
@@ -123,7 +131,10 @@ Arguments:
 - `stratum::Stratum`:                the stratum the group came from
 - `all_primes::Vector{Int}`:         primes present in `group`
 - `scale_factor::Int = 2`:           scalar multiplying S before rational CRT
-- `reconstruction_bound::Int = 50`:  coefficient bound for rational fallback
+- `reconstruction_bound::Int = 50`:  requested coefficient/denominator bound
+                                     for cyclotomic CRT fallback. Pipeline
+                                     fallback caps this to a small search-safe
+                                     bound before MITM reconstruction.
 - `galois_sector::Int = 1`:          sector index for provenance.
 - `test_primes::Vector{Int}=nothing`: which primes to use for CRT.
                                      If `nothing`, uses first
@@ -173,10 +184,17 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     rep = first(values(group))
     verify_exact_lift = nothing
     if exact_data === nothing
+        reconstruction_bounds =
+            _pipeline_cyclotomic_reconstruction_bounds(reconstruction_bound)
+        if reconstruction_bounds.coeff_bound < reconstruction_bound
+            verbose && println("    cyclotomic CRT bound capped: " *
+                               "$reconstruction_bound -> " *
+                               "$(reconstruction_bounds.coeff_bound)")
+        end
         S_cyc = _reconstruct_cyclotomic_S_matrix(used_subgroup, N;
                                                  scale = scale_factor,
-                                                 reconstruction_bound = reconstruction_bound,
-                                                 denominator_bound = reconstruction_bound)
+                                                 reconstruction_bound = reconstruction_bounds.coeff_bound,
+                                                 denominator_bound = reconstruction_bounds.denominator_bound)
         zeta_Fp = find_zeta_in_Fp(N, rep.p)
         T_cyc = lift_T_Fp_to_cyclotomic(rep.T_Fp, N, rep.p, zeta_Fp)
         Nijk = rep.N
@@ -344,8 +362,10 @@ Arguments:
                                    run fast unit-axiom precheck before
                                    full Verlinde tensor evaluation in
                                    Phase 2 candidate loop.
-- `reconstruction_bound::Int = 50`: coefficient and denominator bound for
-                                   cyclotomic power-basis CRT.
+- `reconstruction_bound::Int = 50`: requested coefficient and denominator
+                                   bound for cyclotomic power-basis CRT.
+                                   Pipeline fallback caps this to a small
+                                   search-safe bound before reconstruction.
 - `skip_FR::Bool = false`:         when true, stop after exact
                                    cyclotomic modular-data lift.
 - `verbose::Bool = true`:          print per-phase progress.

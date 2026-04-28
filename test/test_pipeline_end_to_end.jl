@@ -82,4 +82,25 @@ using ACMG
         @test all(m -> iszero(m.verify_report.T_max), classified)
         @test !occursin("pent=? hex=?", sprint(show, classified))
     end
+
+    @testset "fallback cyclotomic CRT caps oversized pipeline bound" begin
+        p1, p2 = 73, 97
+        Nijk = ones(Int, 1, 1, 1)
+        group = Dict(
+            p1 => ACMG.MTCCandidate(p1, :searched, [1;;], [1], 1, Nijk, [1], 1),
+            p2 => ACMG.MTCCandidate(p2, :searched, [1;;], [1], 1, Nijk, [1], 1),
+        )
+
+        classified = ACMG.classify_from_group(group, 24, ACMG.Stratum(Dict(1 => 1), 1),
+                                              [p1, p2];
+                                              reconstruction_bound = 50,
+                                              skip_FR = true,
+                                              verbose = false)
+
+        @test classified.verify_fresh
+        @test classified.verify_exact_lift === nothing
+        @test classified.S_cyclotomic[1, 1] == one(parent(classified.S_cyclotomic[1, 1]))
+        @test !haskey(ACMG._CRT_MITM_LEFT_CACHE,
+                      (4, 50, (1, 1), (p1, p2)))
+    end
 end
