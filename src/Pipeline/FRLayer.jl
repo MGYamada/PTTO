@@ -36,11 +36,7 @@ function _select_fr_for_st(candidates, Nijk, S_cyc, T_cyc, N)
                                                  galois_exponent = a)
             score = merge(score, (galois_exponent = a,
                                   report = report,
-                                  order_key = (score.ok ? 0 : 1,
-                                               score.T_mismatches,
-                                               score.S_mismatches,
-                                               ci,
-                                               a)))
+                                  order_key = (score.order_key..., a)))
             push!(all_scores, score)
             if best_score === nothing || score.order_key < best_score.order_key
                 best_score = score
