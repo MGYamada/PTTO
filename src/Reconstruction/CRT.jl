@@ -542,6 +542,22 @@ function reconstruct_in_Z_sqrt_d(values_by_prime::Dict{Int, Int},
                                   d::Int,
                                   sqrtd_by_prime::Dict{Int, Int};
                                   bound::Int = 5)
+    if d == 1
+        branch_values = unique(collect(values(sqrtd_by_prime)))
+        if length(branch_values) == 1
+            recon = reconstruct_rational(values_by_prime)
+            recon === nothing && return nothing
+            (num, den) = recon
+            if den < 0
+                num = -num
+                den = -den
+            end
+            den == 1 || return nothing
+            abs(num) <= 2 * bound || return nothing
+            return (num, BigInt(0))
+        end
+    end
+
     primes = collect(keys(values_by_prime))
     for a in -bound:bound
         for b in -bound:bound

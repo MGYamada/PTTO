@@ -30,6 +30,9 @@ Arithmetic / F_p layer (Phase 0–3 output):
 - `used_primes`:    primes used for CRT reconstruction
 - `fresh_primes`:   primes used for cross-validation (may be empty)
 - `verify_fresh`:   `true` iff all fresh primes cross-check
+- `verify_exact_lift`: `true` iff an exact fixed-stratum lift was
+                    finite-field checked at all group primes; `nothing`
+                    when no fixed exact lift was used
 
 Exact modular data (Phase 4 input):
 - `S_cyclotomic`:   S-matrix over `Q(ζ_N)`
@@ -57,6 +60,7 @@ struct ClassifiedMTC
     used_primes::Vector{Int}
     fresh_primes::Vector{Int}
     verify_fresh::Bool
+    verify_exact_lift::Union{Bool, Nothing}
     S_cyclotomic::Any
     T_cyclotomic::Any
     F_values::Union{Vector, Nothing}
@@ -118,6 +122,7 @@ function _with_fr_result(c::ClassifiedMTC,
     return ClassifiedMTC(c.N, c.N_input, c.rank, c.stratum, c.Nijk,
                          c.S_Zsqrtd, c.quadratic_d, c.scale_factor,
                          c.used_primes, c.fresh_primes, c.verify_fresh,
+                         c.verify_exact_lift,
                          S, T,
                          F, R, report, c.galois_sector)
 end
@@ -134,8 +139,10 @@ function Base.show(io::IO, m::ClassifiedMTC)
     end
     fresh_str = isempty(m.fresh_primes) ? "no fresh" :
         (m.verify_fresh ? "fresh✓" : "fresh✗")
+    exact_str = m.verify_exact_lift === nothing ? "" :
+        (m.verify_exact_lift ? ", exact✓" : ", exact✗")
     n_desc = m.N == m.N_input ? string(m.N) : "$(m.N) [input=$(m.N_input)]"
     print(io, "ClassifiedMTC(N=$(n_desc), rank=$(m.rank), ",
           "sector=$(m.galois_sector), $(length(m.used_primes)) primes, ",
-          "$fresh_str, $FR_status)")
+          "$fresh_str$exact_str, $FR_status)")
 end

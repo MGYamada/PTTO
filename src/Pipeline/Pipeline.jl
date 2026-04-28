@@ -150,13 +150,18 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
         end
         verify_fresh = all_ok
     end
+    verify_exact_lift = nothing
     if exact_data !== nothing
         exact_ok = all(p -> _verify_exact_candidate_at_prime(exact_data.S, exact_data.T,
                                                              group[p], N, p),
                        group_primes)
-        verify_fresh = exact_ok
-        verbose && !exact_ok && println("    exact fixed-stratum lift failed finite-field verification")
-    elseif !verify_fresh
+        verify_exact_lift = exact_ok
+        if !exact_ok
+            verbose && println("    exact fixed-stratum lift failed finite-field verification")
+            error("exact fixed-stratum lift failed finite-field verification")
+        end
+    end
+    if !verify_fresh
         error("CRT S reconstruction failed fresh-prime verification; " *
               "the candidate is not stable in the selected reconstruction field")
     end
@@ -196,6 +201,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
         return ClassifiedMTC(N, N_input, rank, stratum, Nijk,
                              recon_S_phase4, quadratic_d, scale_factor,
                              used, fresh, verify_fresh,
+                             verify_exact_lift,
                              S_cyc, T_for_phase4, nothing, nothing, nothing,
                              galois_sector)
     end
@@ -216,8 +222,8 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     selection = _select_fr_for_st(fr_result.candidates, Nijk, S_cyc, T_for_phase4, N)
     selected = selection.selected
     md_roundtrip = _modular_data_roundtrip(selected.F, selected.R, Nijk,
-                                           selection.score.S_roundtrip,
-                                           selection.score.T_roundtrip, N)
+                                           S_cyc, T_for_phase4, N)
+    md_roundtrip.ok || error("Phase 4 selected (F,R) does not roundtrip to the target modular data")
     verbose && println("  modular-data roundtrip: perm=$(md_roundtrip.best_perm), " *
                        "S_err=$(md_roundtrip.S_max), T_err=$(md_roundtrip.T_max), " *
                        "ok=$(md_roundtrip.ok)")
@@ -225,7 +231,8 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     return ClassifiedMTC(N, N_input, rank, stratum, Nijk, recon_S_phase4,
                          quadratic_d, scale_factor,
                          used, fresh, verify_fresh,
-                         md_roundtrip.S_roundtrip, md_roundtrip.T_roundtrip,
+                         verify_exact_lift,
+                         S_cyc, T_for_phase4,
                          selected.F, selected.R, md_roundtrip,
                          galois_sector)
 end
@@ -654,15 +661,17 @@ function classify_mtcs_at_conductor(N::Int;
                                           mtc_i.S_cyclotomic, mtc_i.T_cyclotomic, mtc_i.N)
             selected = selection.selected
             best_md = _modular_data_roundtrip(selected.F, selected.R, mtc_i.Nijk,
-                                              selection.score.S_roundtrip,
-                                              selection.score.T_roundtrip, mtc_i.N)
+                                              mtc_i.S_cyclotomic,
+                                              mtc_i.T_cyclotomic, mtc_i.N)
             verbose && println("    member[$i] branch: cand=$(selection.selected_index), " *
                                "galois=$(selection.score.galois_exponent), " *
                                "perm=$(best_md.best_perm), " *
                                "S_err=$(best_md.S_max), T_err=$(best_md.T_max), ok=$(best_md.ok)")
-            out[i] = _with_fr_result(out[i], selected.F, selected.R, best_md;
-                                     S = best_md.S_roundtrip,
-                                     T = best_md.T_roundtrip)
+            if best_md.ok
+                out[i] = _with_fr_result(out[i], selected.F, selected.R, best_md)
+            else
+                verbose && println("    member[$i] selected (F,R) failed target roundtrip; leaving without F/R")
+            end
         end
     end
 

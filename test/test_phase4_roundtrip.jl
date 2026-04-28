@@ -112,3 +112,34 @@ end
         end
     end
 end
+
+@testset "Phase 4 roundtrip is checked against the requested target" begin
+    data = semion_modular_data()
+    Nijk = _semion_fusion()
+    twists = _twists(data)
+    result = compute_FR_from_ST(Nijk;
+                                conductor = 8,
+                                primes = [17, 41],
+                                S = data.S,
+                                T = twists,
+                                return_all = true)
+
+    K = parent(twists[1])
+    bad_twists = [one(K), one(K)]
+    selection = ACMG._select_fr_for_st(result.candidates, Nijk,
+                                       data.S, bad_twists, 8)
+    target_roundtrip = ACMG._modular_data_roundtrip(selection.selected.F,
+                                                    selection.selected.R,
+                                                    Nijk, data.S,
+                                                    bad_twists, 8)
+    self_roundtrip = ACMG._modular_data_roundtrip(selection.selected.F,
+                                                  selection.selected.R,
+                                                  Nijk,
+                                                  selection.score.S_roundtrip,
+                                                  selection.score.T_roundtrip,
+                                                  8)
+
+    @test !selection.selected_ok
+    @test !target_roundtrip.ok
+    @test self_roundtrip.ok
+end
