@@ -79,3 +79,75 @@ function get_pentagon_system(Nijk::Array{Int,3}, r::Int)
     n = nvars(R)
     return R, eqs, n
 end
+
+function _multiplicity_free_fusion(Nijk::Array{Int,3})
+    return all(x -> x == 0 || x == 1, Nijk)
+end
+
+function _pentagon_variable_metadata(Nijk::Array{Int,3}, r::Int, nvars_total::Int)
+    metadata = Vector{NamedTuple}(undef, nvars_total)
+    var_stack = collect(1:nvars_total)
+    for i in 1:r, j in 1:r, k in 1:r, o in 1:r
+        (i == 1 || j == 1 || k == 1) && continue
+        left = [a for a in 1:r if Nijk[i, j, a] != 0 && Nijk[a, k, o] != 0]
+        right = [b for b in 1:r if Nijk[j, k, b] != 0 && Nijk[i, b, o] != 0]
+        for col in eachindex(right), row in eachindex(left)
+            var_idx = pop!(var_stack)
+            metadata[var_idx] = (i = i, j = j, k = k, o = o,
+                                 a = left[row], b = right[col],
+                                 row = row, col = col)
+        end
+    end
+    isempty(var_stack) || error("pentagon metadata length mismatch: $(length(var_stack)) unassigned variables")
+    return metadata
+end
+
+function _gauge_channel_basis(Nijk::Array{Int,3}, r::Int)
+    channels = Tuple{Int,Int,Int}[]
+    for i in 1:r, j in 1:r, k in 1:r
+        Nijk[i, j, k] == 0 && continue
+        (i == 1 || j == 1) && continue
+        push!(channels, (i, j, k))
+    end
+    return Dict(ch => idx for (idx, ch) in enumerate(channels))
+end
+
+function _gauge_weight(meta, channel_index::Dict{Tuple{Int,Int,Int}, Int})
+    w = zeros(Int, length(channel_index))
+    for (ch, sgn) in (((meta.i, meta.j, meta.a), 1),
+                      ((meta.a, meta.k, meta.o), 1),
+                      ((meta.j, meta.k, meta.b), -1),
+                      ((meta.i, meta.b, meta.o), -1))
+        idx = get(channel_index, ch, 0)
+        idx != 0 && (w[idx] += sgn)
+    end
+    return w
+end
+
+function _rank_int_rows(rows::Vector{Vector{Int}}, ncols::Int)
+    isempty(rows) && return 0
+    return rank(matrix(QQ, length(rows), ncols, vcat(rows...)))
+end
+
+function _select_pentagon_gauge_fixed_indices(Nijk::Array{Int,3}, r::Int, nvars_total::Int)
+    _multiplicity_free_fusion(Nijk) || return Int[]
+    metadata = _pentagon_variable_metadata(Nijk, r, nvars_total)
+    channel_index = _gauge_channel_basis(Nijk, r)
+    isempty(channel_index) && return Int[]
+
+    selected = Int[]
+    rows = Vector{Int}[]
+    current_rank = 0
+    for var_idx in 1:nvars_total
+        w = _gauge_weight(metadata[var_idx], channel_index)
+        any(!iszero, w) || continue
+        trial_rows = vcat(rows, [w])
+        trial_rank = _rank_int_rows(trial_rows, length(channel_index))
+        if trial_rank > current_rank
+            push!(selected, var_idx)
+            push!(rows, w)
+            current_rank = trial_rank
+        end
+    end
+    return selected
+end

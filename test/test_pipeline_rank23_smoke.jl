@@ -4,8 +4,12 @@ using ACMG
 
 @testset "Rank 2-3 pipeline smoke tests" begin
     cases = [
-        (name = "semion", N = 8, primes = [17, 41], max_rank = 2, expected_rank = 2),
-        (name = "Fibonacci", N = 20, primes = [41, 61], max_rank = 2, expected_rank = 2),
+        (name = "semion", N = 8, primes = [17, 41], max_rank = 2, expected_rank = 2,
+         skip_FR = false),
+        (name = "Fibonacci", N = 20, primes = [41, 61], max_rank = 2, expected_rank = 2,
+         skip_FR = false),
+        (name = "Ising", N = 16, primes = [17, 97], max_rank = 3, expected_rank = 3,
+         skip_FR = true),
     ]
 
     for case in cases
@@ -13,6 +17,7 @@ using ACMG
             classified = ACMG.classify_mtcs_at_conductor(case.N;
                                                          max_rank = case.max_rank,
                                                          primes = case.primes,
+                                                         skip_FR = case.skip_FR,
                                                          verbose = false)
 
             @test classified isa Vector{ACMG.ClassifiedMTC}

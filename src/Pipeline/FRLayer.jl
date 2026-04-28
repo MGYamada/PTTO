@@ -256,13 +256,35 @@ function compute_FR_from_ST(Nijk::Array{Int,3};
                             max_crt_tuples::Int = 4096,
                             max_ambiguous_crt_coords::Int = 4096,
                             exact_fallback::Bool = true,
+                            pentagon_gauge_fixing::Bool = false,
                             verbose::Bool = false,
                             kwargs...)
     isempty(kwargs) || error("unsupported keyword arguments: $(collect(keys(kwargs)))")
     ctx = _default_context_from_kwargs(context = context, conductor = conductor, N = N)
     r = size(Nijk, 1)
+    if r == 1
+        K = field(ctx)
+        F = elem_type(K)[]
+        R = elem_type(K)[one(K), one(K)]
+        candidates = NamedTuple[(F = F, R = R, report = nothing)]
+        selected = _select_phase4_candidate(candidates, Nijk, ctx, S, T)
+        return (F = selected.F,
+                R = selected.R,
+                report = selected.report,
+                candidates = candidates)
+    end
     _, pentagon_eqs, nF = get_pentagon_system(Nijk, r)
-    F_solutions = solve_pentagon_modular_crt(pentagon_eqs, nF;
+    gauge_fixed = pentagon_gauge_fixing ?
+        _select_pentagon_gauge_fixed_indices(Nijk, r, nF) :
+        Int[]
+    reduced_pentagon = _substitute_fixed_one_polys(pentagon_eqs, nF, gauge_fixed;
+                                                   var_prefix = :x)
+    verbose && !isempty(gauge_fixed) &&
+        println("  pentagon gauge fixing: fixed $(length(gauge_fixed)) / $nF variables; " *
+                "reduced nF=$(reduced_pentagon.n)")
+
+    F_reduced_solutions = solve_pentagon_modular_crt(reduced_pentagon.eqs,
+                                                     reduced_pentagon.n;
                                              Nijk = Nijk,
                                              context = ctx,
                                              primes = primes,
@@ -274,6 +296,8 @@ function compute_FR_from_ST(Nijk::Array{Int,3};
                                              max_ambiguous_crt_coords = max_ambiguous_crt_coords,
                                              exact_fallback = exact_fallback,
                                              show_progress = verbose)
+    F_solutions = [_expand_fixed_one_solution(F, nF, reduced_pentagon.free_indices, field(ctx))
+                   for F in F_reduced_solutions]
     candidates = NamedTuple[]
     for F in F_solutions
         _, hex_eqs, nR = get_hexagon_system(Nijk, r, F; context = ctx)

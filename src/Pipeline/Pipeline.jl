@@ -29,6 +29,33 @@ Design notes:
 #  classify_from_group: CRT + (F, R) solve for one Galois sector
 # ============================================================
 
+function _fixed_exact_group(group::Dict{Int, MTCCandidate})
+    return all(c -> c.U_params == :atomic || c.U_params == :block_invariant,
+               values(group))
+end
+
+function _exact_stratum_data(catalog, stratum::Stratum)
+    S_exact, T_exact, _, _ = build_block_diagonal(catalog, stratum)
+    return (S = S_exact, T = T_exact)
+end
+
+function _verify_exact_candidate_at_prime(S_exact, T_exact, candidate::MTCCandidate,
+                                          N::Int, p::Int)
+    zeta_N_Fp = find_zeta_in_Fp(N, p)
+    r = nrows(S_exact)
+    r == size(candidate.S_Fp, 1) || return false
+    length(T_exact) == length(candidate.T_Fp) || return false
+    for i in 1:r, j in 1:r
+        cyclotomic_to_Fp(S_exact[i, j], zeta_N_Fp, p) == candidate.S_Fp[i, j] ||
+            return false
+    end
+    for i in 1:r
+        cyclotomic_to_Fp(T_exact[i], zeta_N_Fp, p) == candidate.T_Fp[i] ||
+            return false
+    end
+    return true
+end
+
 """
     classify_from_group(group, N, stratum, all_primes;
                         quadratic_d, scale_factor = 2,
@@ -77,7 +104,8 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                              reconstruction_bound::Int = 50,
                              galois_sector::Int = 1,
                              test_primes::Union{Vector{Int}, Nothing} = nothing,
-                            skip_FR::Bool = false,
+                             catalog = nothing,
+                             skip_FR::Bool = false,
                              verbose::Bool = false,
                              kwargs...)
     isempty(kwargs) || error("unsupported keyword arguments: $(collect(keys(kwargs)))")
@@ -97,6 +125,10 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
         "explicitly or add more primes.")
 
     verbose && println("  sector=$galois_sector: used=$used, fresh=$fresh")
+
+    exact_data = catalog === nothing || !_fixed_exact_group(group) ?
+        nothing :
+        _exact_stratum_data(catalog, stratum)
 
     # -------- Phase 3: CRT in ℤ[√d] --------
     used_subgroup = Dict(p => group[p] for p in used)
@@ -118,15 +150,31 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
         end
         verify_fresh = all_ok
     end
+    if exact_data !== nothing
+        exact_ok = all(p -> _verify_exact_candidate_at_prime(exact_data.S, exact_data.T,
+                                                             group[p], N, p),
+                       group_primes)
+        verify_fresh = exact_ok
+        verbose && !exact_ok && println("    exact fixed-stratum lift failed finite-field verification")
+    elseif !verify_fresh
+        error("CRT S reconstruction failed fresh-prime verification; " *
+              "the candidate is not stable in the selected reconstruction field")
+    end
 
     # -------- Phase 4 input: exact lift (S, T) to Q(ζ_N) --------
     rep = first(values(group))
-    zeta_Fp = find_zeta_in_Fp(N, rep.p)
-    S_cyc, T_cyc, Nijk = lift_mtc_candidate(rep, recon_S;
-                                            d = quadratic_d,
-                                            N = N,
-                                            zeta_Fp = zeta_Fp,
-                                            scale = scale_factor)
+    if exact_data === nothing
+        zeta_Fp = find_zeta_in_Fp(N, rep.p)
+        S_cyc, T_cyc, Nijk = lift_mtc_candidate(rep, recon_S;
+                                                d = quadratic_d,
+                                                N = N,
+                                                zeta_Fp = zeta_Fp,
+                                                scale = scale_factor)
+    else
+        S_cyc = exact_data.S
+        T_cyc = exact_data.T
+        Nijk = rep.N
+    end
     recon_S_phase4 = recon_S
 
     # TensorCategories assumes the unit object is at index 1.
@@ -158,6 +206,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                                    S = S_cyc,
                                    T = T_for_phase4,
                                    return_all = true,
+                                   primes = all_primes,
                                    verbose = verbose)
     fr_result.F === nothing && error("Phase 4 could not produce any (F,R) solution")
     isempty(fr_result.candidates) && error("Phase 4 produced no valid (F,R) candidates")
@@ -526,6 +575,7 @@ function classify_mtcs_at_conductor(N::Int;
                                                 reconstruction_bound = reconstruction_bound,
                                                 galois_sector = gi,
                                                 test_primes = used,
+                                                catalog = catalog,
                                                 skip_FR = true,
                                                 verbose = verbose)
                     sector_ok = true
@@ -573,15 +623,27 @@ function classify_mtcs_at_conductor(N::Int;
         rep_idx = idxs[1]
         rep = out[rep_idx]
         verbose && println("  key=$key: members=$(length(idxs)), rank=$(rep.rank)")
-        fr_result = compute_FR_from_ST(rep.Nijk;
-                                       context = CyclotomicContext(rep.N),
-                                       S = rep.S_cyclotomic,
-                                       T = rep.T_cyclotomic,
-                                       return_all = true,
-                                       primes = primes,
-                                       verbose = verbose)
-        fr_result.F === nothing && error("Phase 4 could not produce any (F,R) solution for key=$key")
-        isempty(fr_result.candidates) && error("Phase 4 produced no valid (F,R) candidates for key=$key")
+        local fr_result
+        try
+            fr_result = compute_FR_from_ST(rep.Nijk;
+                                           context = CyclotomicContext(rep.N),
+                                           S = rep.S_cyclotomic,
+                                           T = rep.T_cyclotomic,
+                                           return_all = true,
+                                           primes = chosen_primes,
+                                           verbose = verbose)
+        catch err
+            msg = sprint(showerror, err)
+            if occursin("exact Phase 4 did not find", msg)
+                verbose && println("    Phase 4 found no (F,R) solution; leaving members without F/R")
+                continue
+            end
+            rethrow()
+        end
+        if fr_result.F === nothing || isempty(fr_result.candidates)
+            verbose && println("    Phase 4 produced no valid (F,R) candidates; leaving members without F/R")
+            continue
+        end
 
         # OBSOLETE: old behavior selected using only the fusion-rule
         # representative (`rep`). New behavior assigns `(F,R)` per `(S,T)`

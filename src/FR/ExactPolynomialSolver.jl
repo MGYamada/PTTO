@@ -50,6 +50,47 @@ function _coerce_poly_to_field_ring(f, vars_K, K)
     return _lift_qq_poly_to_field(f, vars_K, K)
 end
 
+function _substitute_fixed_one_polys(eqs, n::Int, fixed_indices::Vector{Int};
+                                     var_prefix::Symbol = :x)
+    isempty(fixed_indices) && return (eqs = eqs, n = n, free_indices = collect(1:n))
+    fixed = Set(fixed_indices)
+    free_indices = [i for i in 1:n if !(i in fixed)]
+    isempty(eqs) && return (eqs = eqs, n = length(free_indices), free_indices = free_indices)
+
+    K = base_ring(parent(eqs[1]))
+    R_new, vars_new = polynomial_ring(K, length(free_indices), var_prefix)
+    free_pos = Dict(idx => pos for (pos, idx) in enumerate(free_indices))
+
+    function subst_poly(f)
+        iszero(f) && return zero(R_new)
+        out = zero(R_new)
+        for (c, m) in zip(coefficients(f), monomials(f))
+            term = R_new(c)
+            for (old_idx, d) in enumerate(degrees(m))
+                d == 0 && continue
+                if haskey(free_pos, old_idx)
+                    term *= vars_new[free_pos[old_idx]]^d
+                end
+            end
+            out += term
+        end
+        return out
+    end
+
+    reduced = filter(!iszero, unique([subst_poly(eq) for eq in eqs]))
+    return (eqs = reduced, n = length(free_indices), free_indices = free_indices)
+end
+
+function _expand_fixed_one_solution(sol, n::Int, free_indices::Vector{Int}, K)
+    full = [one(K) for _ in 1:n]
+    length(sol) == length(free_indices) ||
+        error("reduced solution length $(length(sol)) != free variable count $(length(free_indices))")
+    for (pos, old_idx) in enumerate(free_indices)
+        full[old_idx] = sol[pos]
+    end
+    return full
+end
+
 function _eval_exact_poly(f, sol::Vector)
     K = parent(sol[1])
     v = zero(K)
