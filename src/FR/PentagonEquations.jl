@@ -60,7 +60,7 @@ function get_pentagon_system(Nijk::Array{Int,3}, r::Int)
 
     local C, eqs_raw
     try
-        C, eqs_raw = pentagon_equations(Nijk, one_vec)
+        C, eqs_raw = TensorCategories.pentagon_equations(Nijk, one_vec)
     catch err
         if err isa ArgumentError && occursin("empty collection", sprint(showerror, err))
             R0, _ = polynomial_ring(QQ, 0, :x)

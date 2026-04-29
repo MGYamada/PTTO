@@ -62,6 +62,7 @@ include("Reconstruction/CRT.jl")
 include("Reconstruction/CyclotomicCRT.jl")
 
 # FR: exact F/R equations and solvers over cyclotomic fields.
+include("FR/EquationInfrastructure.jl")
 include("FR/PentagonEquations.jl")
 include("FR/HexagonEquations.jl")
 include("FR/ExactPolynomialSolver.jl")
@@ -161,6 +162,22 @@ export gauge_parameters, symbol_coordinates, f_symbol_weight, r_symbol_weight
 export gauge_weight_matrix, smith_gauge_split, ineffective_kernel_rank
 export residual_gauge_orders, apply_gauge_mod_p, stabilizer_size_mod_p
 export stacky_weight_mod_p
+
+# v0.8: backend-neutral multiplicity-free F/R equation infrastructure
+export EquationVariable, EquationTerm, EquationExpr, PolynomialEquation, EquationSystem
+export FSymbolVariable, RSymbolVariable, GaugeVariable
+export FREquationSystem, FiniteFieldEquationSystem
+export simple_objects, fusion_product, fusion_channels, is_admissible
+export is_multiplicity_free
+export require_multiplicity_free
+export fsymbol_variables, rsymbol_variables, pentagon_equations
+export left_hexagon_equations, right_hexagon_equations
+export fr_equation_system, gauge_variables, gauge_transform_fsymbol
+export gauge_transform_rsymbol, gauge_fix, validate_fr_system
+export solve_finite_field, cyclotomic_reconstruct, frobenius_metadata
+export check_modular_data
+export semion_fusion_rules, fibonacci_fusion_rules, toric_code_fusion_rules
+export ising_fusion_rules
 
 # End-to-end pipeline
 export ClassifiedMTC, FRRoundtripReport, FRStatus
