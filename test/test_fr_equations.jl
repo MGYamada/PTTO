@@ -11,21 +11,19 @@ using ACMG
     @test (2, 2, 1) in ACMG.admissible_triples(fib)
     @test !isempty(ACMG.admissible_quadruples(fib))
 
-    sf = fsymbol_variables(semion)
-    sr = rsymbol_variables(semion)
-    @test !isempty(pentagon_equations(semion, sf))
-    @test !isempty(hexagon_equations(semion, sf, sr))
+    @test_throws UndefVarError fsymbol_variables(semion)
+    @test_throws UndefVarError rsymbol_variables(semion)
 
-    ff = fsymbol_variables(fib)
-    fr = rsymbol_variables(fib)
-    pent = pentagon_equations(fib, ff)
-    hex = hexagon_equations(fib, ff, fr)
+    pent = pentagon_equations(fib)
+    hex = hexagon_equations(fib)
     @test !isempty(pent)
     @test !isempty(hex)
-    @test any(eq -> eq.metadata[:kind] == :pentagon, pent)
+    @test pent == get_pentagon_system(fib.N, fib.rank)[2]
+    @test hex == get_hexagon_fr_system(fib.N, fib.rank)[2]
 
     isys = fr_equation_system(ising)
     @test validate_fr_system(isys)
-    @test isys.metadata[:f_variables] == length(isys.fvars)
-    @test isys.metadata[:r_variables] == length(isys.rvars)
+    @test isys.metadata[:f_variables] == get_pentagon_system(ising.N, ising.rank)[3]
+    @test isys.metadata[:r_variables] == sum(ising.N[a, b, c]^2 for a in 1:ising.rank, b in 1:ising.rank, c in 1:ising.rank)
+    @test isys.metadata[:include_hexagon]
 end

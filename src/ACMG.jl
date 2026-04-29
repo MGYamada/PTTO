@@ -91,6 +91,10 @@ include("GaussSums/HigherCentralCharge.jl")
 # Experimental: finite-field F/R prototypes.
 include("Experimental/FiniteFieldHigherCentralCharge.jl")
 
+# Braid representations and experimental finite-field Zariski diagnostics.
+include("BraidRepresentations/BraidRepresentations.jl")
+include("ZariskiDiagnostics/ZariskiDiagnostics.jl")
+
 # IO: JSON export/import and Markdown reports for classification outputs.
 include("IO/Serialization.jl")
 
@@ -153,6 +157,7 @@ export reconstruct_rational, reconstruct_cyclotomic_element_from_residues
 export get_pentagon_system
 export solve_pentagon_modular_crt, solve_pentagon_homotopy, solve_pentagon_newton
 export assign_F_to_associator!, hexagon_equations, get_hexagon_system
+export get_hexagon_fr_system
 export number_of_variables_in_hexagon_equations
 export solve_hexagon_modular_crt, solve_hexagon_homotopy
 export DiscreteLogTable, lift_T_Fp_to_cyclotomic
@@ -165,19 +170,24 @@ export stacky_weight_mod_p
 
 # v0.8: backend-neutral multiplicity-free F/R equation infrastructure
 export EquationVariable, EquationTerm, EquationExpr, PolynomialEquation, EquationSystem
-export FSymbolVariable, RSymbolVariable, GaugeVariable
+export GaugeVariable
 export FREquationSystem, FiniteFieldEquationSystem
 export simple_objects, fusion_product, fusion_channels, is_admissible
 export is_multiplicity_free
 export require_multiplicity_free
-export fsymbol_variables, rsymbol_variables, pentagon_equations
-export left_hexagon_equations, right_hexagon_equations
-export fr_equation_system, gauge_variables, gauge_transform_fsymbol
-export gauge_transform_rsymbol, gauge_fix, validate_fr_system
+export pentagon_equations
+export fr_equation_system, gauge_variables, gauge_fix, validate_fr_system
 export solve_finite_field, cyclotomic_reconstruct, frobenius_metadata
 export check_modular_data
 export semion_fusion_rules, fibonacci_fusion_rules, toric_code_fusion_rules
 export ising_fusion_rules
+export FusionPath, FusionTreeBasis, FRData, BraidRepresentation, FiniteFieldBraidRepresentation
+export MatrixAlgebraDiagnostics, CommutantDiagnostics, ZariskiClosureDiagnostics
+export fusion_basis, fusion_paths, dim
+export braid_representation, braid_generator, braid_generators
+export check_braid_relations, finite_group_diagnostics, generated_subgroup
+export generated_matrix_algebra, commutant, zariski_closure_diagnostics
+export semion_fr_data, fibonacci_fr_data, ising_fr_data
 
 # End-to-end pipeline
 export ClassifiedMTC, FRRoundtripReport, FRStatus

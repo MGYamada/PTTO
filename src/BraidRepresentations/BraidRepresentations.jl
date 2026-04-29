@@ -1,0 +1,5 @@
+include("fusion_spaces.jl")
+include("braid_generators.jl")
+include("braid_relations.jl")
+include("finite_field_reduction.jl")
+include("diagnostics.jl")

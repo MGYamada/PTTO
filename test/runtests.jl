@@ -11,8 +11,6 @@ using Test
     include("test_higher_central_charge.jl")
     include("test_io.jl")
     include("test_public_api.jl")
-    include("test_fsymbols.jl")
-    include("test_rsymbols.jl")
     include("test_fr_equations.jl")
     include("test_gauge.jl")
     include("test_finite_fields.jl")
@@ -21,4 +19,8 @@ using Test
     include("test_pipeline_primes.jl")
     include("test_pipeline_end_to_end.jl")
     include("test_pipeline_rank23_smoke.jl")
+    include("braid_representations.jl")
+    include("braid_relations.jl")
+    include("finite_field_braid.jl")
+    include("zariski_diagnostics.jl")
 end

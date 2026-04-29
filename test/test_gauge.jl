@@ -11,8 +11,8 @@ using ACMG
         system = fr_equation_system(rules)
         action = gauge_transform(system)
         @test length(action.gauge_variables) == length(gvars)
-        @test length(action.F) == length(system.fvars)
-        @test length(action.R) == length(system.rvars)
+        @test isempty(action.F)
+        @test isempty(action.R)
 
         fixed = gauge_fix(system; strategy = :safe)
         @test validate_fr_system(fixed)

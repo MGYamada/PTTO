@@ -33,27 +33,10 @@ end
 
 struct EquationSystem
     variables::Vector{EquationVariable}
-    equations::Vector{PolynomialEquation}
+    equations::Vector{Any}
     metadata::Dict{Symbol, Any}
     assumptions::Vector{String}
     base_ring::Symbol
-end
-
-struct FSymbolVariable
-    variable::EquationVariable
-    a::Int
-    b::Int
-    c::Int
-    d::Int
-    e::Int
-    f::Int
-end
-
-struct RSymbolVariable
-    variable::EquationVariable
-    a::Int
-    b::Int
-    c::Int
 end
 
 struct GaugeVariable
@@ -65,10 +48,8 @@ end
 
 struct FREquationSystem
     rules::FusionRule
-    fvars::Vector{FSymbolVariable}
-    rvars::Vector{RSymbolVariable}
     variables::Vector{EquationVariable}
-    equations::Vector{PolynomialEquation}
+    equations::Vector{Any}
     metadata::Dict{Symbol, Any}
     assumptions::Vector{String}
     base_ring::Symbol
@@ -78,7 +59,7 @@ struct FiniteFieldEquationSystem
     system::FREquationSystem
     p::Int
     variables::Vector{EquationVariable}
-    equations::Vector{PolynomialEquation}
+    equations::Vector{Any}
     metadata::Dict{Symbol, Any}
 end
 
@@ -175,8 +156,8 @@ function Base.show(io::IO, ::MIME"text/plain", sys::EquationSystem)
 end
 
 function Base.show(io::IO, ::MIME"text/plain", sys::FREquationSystem)
-    print(io, "FREquationSystem(rank = $(sys.rules.rank), F = $(length(sys.fvars)), ",
-          "R = $(length(sys.rvars)), equations = $(length(sys.equations)))")
+    print(io, "FREquationSystem(rank = $(sys.rules.rank), variables = $(length(sys.variables)), ",
+          "equations = $(length(sys.equations)))")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", sys::FiniteFieldEquationSystem)
@@ -237,130 +218,34 @@ function _check_object(fr::FusionRule, a::Int)
     return true
 end
 
-"""
-    fsymbol_variables(rules)
-
-Generate valid multiplicity-free F-symbol variables
-`F^{a,b,c}_d[e,f]`.
-"""
-function fsymbol_variables(rules)
-    fr = _fusion_rule(rules)
-    require_multiplicity_free(fr)
-    out = FSymbolVariable[]
-    for a in 1:fr.rank, b in 1:fr.rank, c in 1:fr.rank, d in 1:fr.rank
-        left = [e for e in 1:fr.rank if fr.N[a, b, e] != 0 && fr.N[e, c, d] != 0]
-        right = [f for f in 1:fr.rank if fr.N[b, c, f] != 0 && fr.N[a, f, d] != 0]
-        for e in left, f in right
-            v = EquationVariable(_fr_name("F", a, b, c, d, e, f), :F,
-                                 (a, b, c, d, e, f), :nonzero)
-            push!(out, FSymbolVariable(v, a, b, c, d, e, f))
-        end
-    end
-    return out
-end
-
-"""
-    rsymbol_variables(rules)
-
-Generate valid multiplicity-free R-symbol variables `R^{a,b}_c`.
-"""
-function rsymbol_variables(rules)
-    fr = _fusion_rule(rules)
-    require_multiplicity_free(fr)
-    out = RSymbolVariable[]
-    for a in 1:fr.rank, b in 1:fr.rank, c in 1:fr.rank
-        fr.N[a, b, c] == 0 && continue
-        v = EquationVariable(_fr_name("R", a, b, c), :R, (a, b, c), :nonzero)
-        push!(out, RSymbolVariable(v, a, b, c))
-    end
-    return out
-end
-
-function _fmap(fvars::Vector{FSymbolVariable})
-    return Dict((v.a, v.b, v.c, v.d, v.e, v.f) => v for v in fvars)
-end
-
-function _rmap(rvars::Vector{RSymbolVariable})
-    return Dict((v.a, v.b, v.c) => v for v in rvars)
-end
-
-_fv(fdict, a, b, c, d, e, f) = get(fdict, (a, b, c, d, e, f), nothing)
-_rv(rdict, a, b, c) = get(rdict, (a, b, c), nothing)
-_vexpr(x::FSymbolVariable) = _var_expr(x.variable)
-_vexpr(x::RSymbolVariable) = _var_expr(x.variable)
 _vexpr(x::GaugeVariable) = _var_expr(x.variable)
 
-function unit_fsymbol_normalizations(rules, fvars = fsymbol_variables(rules))
-    return [v for v in fvars if v.a == 1 || v.b == 1 || v.c == 1]
-end
-
-function unit_rsymbol_normalizations(rules, rvars = rsymbol_variables(rules))
-    return [v for v in rvars if v.a == 1 || v.b == 1]
+function _forward_r_var_count_for_fusion(rules)
+    fr = _fusion_rule(rules)
+    return sum(fr.N[a, b, c]^2 for a in 1:fr.rank, b in 1:fr.rank, c in 1:fr.rank)
 end
 
 """
-    pentagon_equations(rules, fvars)
+    pentagon_equations(rules)
 
-Generate multiplicity-free pentagon equations in a sparse backend-neutral
-representation.  The convention records both paths from `(((a*b)*c)*d)` to
-`a*(b*(c*d))`; impossible channels are skipped.
+Return the TensorCategories-backed pentagon equations used by
+`get_pentagon_system`.  Variable ordering is the TensorCategories/internal
+`PentagonEquations.jl` ordering.
 """
-function pentagon_equations(rules, fvars::Vector{FSymbolVariable};
+function pentagon_equations(rules::Union{FusionRule, Array{Int, 3}};
                             normalize_unit::Bool = true)
+    normalize_unit || @warn "normalize_unit=false is ignored by TensorCategories-backed pentagon_equations"
     fr = _fusion_rule(rules)
     require_multiplicity_free(fr)
-    fdict = _fmap(fvars)
-    eqs = PolynomialEquation[]
-    for a in 1:fr.rank, b in 1:fr.rank, c in 1:fr.rank, d in 1:fr.rank
-        for x in fusion_channels(fr, a, b),
-            y in fusion_channels(fr, x, c),
-            z in fusion_channels(fr, y, d),
-            u in fusion_channels(fr, b, c),
-            v in fusion_channels(fr, a, u)
-
-            fr.N[v, d, z] == 0 && continue
-            lhs1 = _fv(fdict, a, b, c, v, x, u)
-            lhs1 === nothing && continue
-            for w in fusion_channels(fr, u, d)
-                fr.N[a, w, z] == 0 && continue
-                lhs2 = _fv(fdict, a, u, d, z, v, w)
-                lhs2 === nothing && continue
-                lhs = _vexpr(lhs1) * _vexpr(lhs2)
-                rhs = _zero_expr()
-                for n in fusion_channels(fr, c, d)
-                    fr.N[x, n, z] == 0 && continue
-                    fr.N[b, n, w] == 0 && continue
-                    r1 = _fv(fdict, x, c, d, z, y, n)
-                    r2 = _fv(fdict, a, b, n, z, x, w)
-                    r3 = _fv(fdict, b, c, d, w, u, n)
-                    (r1 === nothing || r2 === nothing || r3 === nothing) && continue
-                    rhs = rhs + (_vexpr(r1) * _vexpr(r2) * _vexpr(r3))
-                end
-                iszero(lhs - rhs) || push!(eqs, _equation(lhs, rhs;
-                    metadata = Dict(:kind => :pentagon, :objects => (a, b, c, d),
-                                    :target => z, :channels => (x, y, u, v, w))))
-            end
-        end
-    end
-    if normalize_unit
-        for v in unit_fsymbol_normalizations(fr, fvars)
-            push!(eqs, _equation(_vexpr(v), _one_expr();
-                metadata = Dict(:kind => :unit_F_normalization, :indices => v.variable.indices)))
-        end
-    end
-    return _unique_equations(eqs)
+    _, eqs, _ = get_pentagon_system(fr.N, fr.rank)
+    return eqs
 end
 
-pentagon_equations(rules::Union{FusionRule, Array{Int, 3}};
-                   normalize_unit::Bool = true) =
-    pentagon_equations(rules, fsymbol_variables(rules);
-                       normalize_unit = normalize_unit)
-
-function _unique_equations(eqs::Vector{PolynomialEquation})
+function _unique_equations(eqs::AbstractVector)
     seen = Set{String}()
-    out = PolynomialEquation[]
+    out = Any[]
     for eq in eqs
-        key = string(eq.lhs - eq.rhs)
+        key = eq isa PolynomialEquation ? string(eq.lhs - eq.rhs) : string(eq)
         key in seen && continue
         push!(seen, key)
         push!(out, eq)
@@ -368,73 +253,12 @@ function _unique_equations(eqs::Vector{PolynomialEquation})
     return out
 end
 
-function left_hexagon_equations(rules, fvars = fsymbol_variables(rules),
-                                rvars = rsymbol_variables(rules);
-                                normalize_unit::Bool = true)
+function hexagon_equations(rules::Union{FusionRule, Array{Int, 3}}; context = nothing)
     fr = _fusion_rule(rules)
     require_multiplicity_free(fr)
-    fdict = _fmap(fvars); rdict = _rmap(rvars)
-    eqs = PolynomialEquation[]
-    for fv in fvars
-        for g in fusion_channels(fr, fv.a, fv.c)
-            fr.N[fv.b, g, fv.d] == 0 && continue
-            lf = _rv(rdict, fv.a, fv.f, fv.d)
-            r1 = _rv(rdict, fv.a, fv.b, fv.e)
-            r2 = _rv(rdict, fv.a, fv.c, g)
-            f2 = _fv(fdict, fv.b, fv.a, fv.c, fv.d, fv.e, g)
-            (lf === nothing || r1 === nothing || r2 === nothing || f2 === nothing) && continue
-            push!(eqs, _equation(_vexpr(lf) * _vexpr(fv),
-                                 _vexpr(r1) * _vexpr(r2) * _vexpr(f2);
-                                 metadata = Dict(:kind => :left_hexagon,
-                                                 :indices => fv.variable.indices,
-                                                 :channel => g)))
-        end
-    end
-    if normalize_unit
-        for v in unit_rsymbol_normalizations(fr, rvars)
-            push!(eqs, _equation(_vexpr(v), _one_expr();
-                metadata = Dict(:kind => :unit_R_normalization, :indices => v.variable.indices)))
-        end
-    end
-    return _unique_equations(eqs)
+    _, eqs, _ = get_hexagon_fr_system(fr.N, fr.rank; context = context)
+    return eqs
 end
-
-function right_hexagon_equations(rules, fvars = fsymbol_variables(rules),
-                                 rvars = rsymbol_variables(rules);
-                                 normalize_unit::Bool = true)
-    fr = _fusion_rule(rules)
-    require_multiplicity_free(fr)
-    fdict = _fmap(fvars); rdict = _rmap(rvars)
-    eqs = PolynomialEquation[]
-    for fv in fvars
-        for g in fusion_channels(fr, fv.a, fv.c)
-            fr.N[g, fv.b, fv.d] == 0 && continue
-            lf = _rv(rdict, fv.e, fv.c, fv.d)
-            r1 = _rv(rdict, fv.b, fv.c, fv.f)
-            r2 = _rv(rdict, fv.a, fv.c, g)
-            f2 = _fv(fdict, fv.a, fv.c, fv.b, fv.d, g, fv.f)
-            (lf === nothing || r1 === nothing || r2 === nothing || f2 === nothing) && continue
-            push!(eqs, _equation(_vexpr(lf) * _vexpr(fv),
-                                 _vexpr(r1) * _vexpr(r2) * _vexpr(f2);
-                                 metadata = Dict(:kind => :right_hexagon,
-                                                 :indices => fv.variable.indices,
-                                                 :channel => g)))
-        end
-    end
-    if normalize_unit
-        for v in unit_rsymbol_normalizations(fr, rvars)
-            push!(eqs, _equation(_vexpr(v), _one_expr();
-                metadata = Dict(:kind => :unit_R_normalization, :indices => v.variable.indices)))
-        end
-    end
-    return _unique_equations(eqs)
-end
-
-hexagon_equations(rules::Union{FusionRule, Array{Int, 3}},
-                  fvars::Vector{FSymbolVariable},
-                  rvars::Vector{RSymbolVariable}; kwargs...) =
-    _unique_equations(vcat(left_hexagon_equations(rules, fvars, rvars; kwargs...),
-                          right_hexagon_equations(rules, fvars, rvars; kwargs...)))
 
 """
     fr_equation_system(rules; include_pentagon=true, include_hexagon=true)
@@ -448,32 +272,38 @@ function fr_equation_system(rules; include_pentagon::Bool = true,
                             base_ring::Symbol = :ZZ)
     fr = _fusion_rule(rules)
     require_multiplicity_free(fr)
-    fvars = fsymbol_variables(fr)
-    rvars = rsymbol_variables(fr)
-    eqs = PolynomialEquation[]
-    include_pentagon && append!(eqs, pentagon_equations(fr, fvars;
+    eqs = Any[]
+    Rpent, _, nF = get_pentagon_system(fr.N, fr.rank)
+    nR = _forward_r_var_count_for_fusion(fr)
+    include_pentagon && append!(eqs, pentagon_equations(fr;
                                                         normalize_unit = normalize_unit))
-    include_hexagon && append!(eqs, hexagon_equations(fr, fvars, rvars;
-                                                      normalize_unit = normalize_unit))
-    variables = vcat([v.variable for v in fvars], [v.variable for v in rvars])
+    if include_hexagon
+        append!(eqs, hexagon_equations(fr))
+    end
+    variables = EquationVariable[]
     assumptions = ["multiplicity-free fusion rule", "unit object has label 1",
-                   "hexagon equations use scalar multiplicity-free channels"]
+                   "pentagon and hexagon equations are TensorCategories-backed"]
     metadata = Dict{Symbol, Any}(:rank => fr.rank,
-                                 :f_variables => length(fvars),
-                                 :r_variables => length(rvars),
+                                 :f_variables => nF,
+                                 :r_variables => nR,
+                                 :hexagon_inverse_r_variables => include_hexagon ? nR : 0,
                                  :include_pentagon => include_pentagon,
                                  :include_hexagon => include_hexagon,
+                                 :hexagon_variables_include_F_and_R => include_hexagon,
                                  :normalizations => normalize_unit)
-    return FREquationSystem(fr, fvars, rvars, variables, _unique_equations(eqs),
+    return FREquationSystem(fr, variables, _unique_equations(eqs),
                             metadata, assumptions, base_ring)
 end
 
 function validate_fr_system(system::FREquationSystem)
     require_multiplicity_free(system.rules)
     vars = Set(system.variables)
-    for eq in system.equations, side in (eq.lhs, eq.rhs), term in side.terms, p in term.powers
+    for eq in system.equations
+        eq isa PolynomialEquation || continue
+        for side in (eq.lhs, eq.rhs), term in side.terms, p in term.powers
         p.first in vars || error("equation references variable $(p.first.name) not present in system")
         p.second > 0 || error("negative or zero exponents are not supported in polynomial equations")
+        end
     end
     return true
 end
@@ -495,68 +325,23 @@ function _gauge_map(gvars::Vector{GaugeVariable})
     return Dict((v.a, v.b, v.c) => v for v in gvars)
 end
 
-function gauge_transform_fsymbol(var::FSymbolVariable,
-                                 gvars::Vector{GaugeVariable} = GaugeVariable[])
-    gdict = _gauge_map(gvars)
-    factor = _one_expr()
-    for (ch, exp) in (((var.a, var.b, var.e), 1),
-                      ((var.e, var.c, var.d), 1),
-                      ((var.b, var.c, var.f), -1),
-                      ((var.a, var.f, var.d), -1))
-        exp < 0 && continue
-        gv = get(gdict, ch, nothing)
-        gv === nothing && continue
-        factor = factor * _vexpr(gv)
-    end
-    # Negative exponents are recorded as metadata rather than forced into a
-    # polynomial expression; solver backends can introduce inverse variables.
-    return (symbol = var, transformed = _vexpr(var) * factor,
-            denominator = [ch for (ch, exp) in (((var.a, var.b, var.e), 1),
-                                               ((var.e, var.c, var.d), 1),
-                                               ((var.b, var.c, var.f), -1),
-                                               ((var.a, var.f, var.d), -1)) if exp < 0])
-end
-
-function gauge_transform_rsymbol(var::RSymbolVariable,
-                                 gvars::Vector{GaugeVariable} = GaugeVariable[])
-    gdict = _gauge_map(gvars)
-    numerator = get(gdict, (var.b, var.a, var.c), nothing)
-    denominator = get(gdict, (var.a, var.b, var.c), nothing)
-    transformed = _vexpr(var)
-    numerator === nothing || (transformed = transformed * _vexpr(numerator))
-    return (symbol = var, transformed = transformed,
-            denominator = denominator === nothing ? Tuple{Int,Int,Int}[] : [(var.a, var.b, var.c)])
-end
-
 function gauge_transform(system::FREquationSystem)
     gvars = gauge_variables(system.rules)
-    f_actions = [gauge_transform_fsymbol(v, gvars) for v in system.fvars]
-    r_actions = [gauge_transform_rsymbol(v, gvars) for v in system.rvars]
-    return (gauge_variables = gvars, F = f_actions, R = r_actions)
+    return (gauge_variables = gvars, F = NamedTuple[], R = NamedTuple[],
+            note = "symbolic F/R variable coordinate actions were removed with fsymbol_variables/rsymbol_variables")
 end
 
 function gauge_fix(system::FREquationSystem; strategy::Symbol = :safe)
     strategy == :safe || error("only strategy=:safe is implemented for v0.8 gauge_fix")
     fixed_eqs = copy(system.equations)
     fixed = Vector{NamedTuple}()
-    for v in unit_fsymbol_normalizations(system.rules, system.fvars)
-        push!(fixed_eqs, _equation(_vexpr(v), _one_expr();
-            metadata = Dict(:kind => :safe_gauge_fix, :reason => :unit_F,
-                            :indices => v.variable.indices)))
-        push!(fixed, (kind = :F, reason = :unit, indices = v.variable.indices))
-    end
-    for v in unit_rsymbol_normalizations(system.rules, system.rvars)
-        push!(fixed_eqs, _equation(_vexpr(v), _one_expr();
-            metadata = Dict(:kind => :safe_gauge_fix, :reason => :unit_R,
-                            :indices => v.variable.indices)))
-        push!(fixed, (kind = :R, reason = :unit, indices = v.variable.indices))
-    end
     meta = copy(system.metadata)
     meta[:gauge_fix_strategy] = :safe
     meta[:fixed_symbols] = fixed
+    meta[:gauge_fix_note] = "TensorCategories-backed equations already carry their variable convention; obsolete F/R coordinate fixes are not added"
     meta[:residual_gauge_variables] = [v.variable.name for v in gauge_variables(system.rules)
                                        if v.a != 1 && v.b != 1]
-    return FREquationSystem(system.rules, system.fvars, system.rvars, system.variables,
+    return FREquationSystem(system.rules, system.variables,
                             _unique_equations(fixed_eqs), meta, system.assumptions,
                             system.base_ring)
 end
@@ -579,11 +364,14 @@ end
 function reduce_mod_p(system::FREquationSystem, p::Integer)
     p > 1 && isprime(Int(p)) || error("p must be prime, got $p")
     pp = Int(p)
-    eqs = [PolynomialEquation(_reduce_expr_mod_p(eq.lhs, pp),
-                              _reduce_expr_mod_p(eq.rhs, pp),
-                              copy(eq.metadata)) for eq in system.equations]
+    eqs = Any[eq isa PolynomialEquation ?
+              PolynomialEquation(_reduce_expr_mod_p(eq.lhs, pp),
+                                 _reduce_expr_mod_p(eq.rhs, pp),
+                                 copy(eq.metadata)) : eq
+              for eq in system.equations]
     meta = copy(system.metadata)
     meta[:base_field] = Symbol("F_$pp")
+    meta[:tensorcategories_equations_copied] = any(eq -> !(eq isa PolynomialEquation), system.equations)
     if haskey(meta, :conductor)
         meta[:p_mod_conductor] = mod(pp, meta[:conductor])
     end
@@ -645,7 +433,8 @@ function ising_fusion_rules()
     N[1, 2, 2] = 1; N[2, 1, 2] = 1
     N[1, 3, 3] = 1; N[3, 1, 3] = 1
     N[2, 2, 1] = 1
-    N[2, 3, 3] = 1; N[3, 2, 3] = 1
-    N[3, 3, 1] = 1; N[3, 3, 2] = 1
+    N[2, 2, 3] = 1
+    N[2, 3, 2] = 1; N[3, 2, 2] = 1
+    N[3, 3, 1] = 1
     return FusionRule(N)
 end

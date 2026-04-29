@@ -1,20 +1,16 @@
 # F/R equation infrastructure
 
-ACMG v0.8 adds a backend-neutral layer for generating polynomial equations
-from multiplicity-free fusion rules.  It is intended as infrastructure for
-passing F-symbol, R-symbol, pentagon, hexagon, gauge, and finite-field data to
-future algebra backends.
+ACMG v0.8.1 uses TensorCategories.jl as the single computation substrate for
+pentagon and hexagon equations.  Public helpers return the same equations as
+the internal `PentagonEquations.jl` / `HexagonEquations.jl` paths.
 
 ```julia
 using ACMG
 
 rules = fibonacci_fusion_rules()
 
-fvars = fsymbol_variables(rules)
-rvars = rsymbol_variables(rules)
-
-pent = pentagon_equations(rules, fvars)
-hex = hexagon_equations(rules, fvars, rvars)
+pent = pentagon_equations(rules)
+hex = hexagon_equations(rules)
 
 system = fr_equation_system(rules)
 validate_fr_system(system)
@@ -23,11 +19,27 @@ fixed = gauge_fix(system; strategy = :safe)
 fp_system = reduce_mod_p(fixed, 11)
 ```
 
-The equation representation stores sparse polynomial expressions using
-`EquationVariable`, `EquationTerm`, `EquationExpr`, and `PolynomialEquation`.
-It does not require Symbolics.jl, Nemo.jl, Oscar.jl, or TensorCategories.jl at
-the representation boundary, although older exact Phase-4 APIs in ACMG still
-use Oscar/TensorCategories internally.
+`pentagon_equations(rules)` is TensorCategories-backed and uses the same
+variable ordering as `get_pentagon_system`.
+
+`hexagon_equations(rules)` constructs a TensorCategories-backed polynomial
+system in one ring containing both F-symbol variables and R-symbol variables.
+It is the public wrapper for `get_hexagon_fr_system`.
+
+```julia
+H, hex, nvars = get_hexagon_fr_system(rules.N, rules.rank)
+```
+
+The older `hexagon_equations(rules, F_values; context = ctx)` specialization
+has been retired as a public API.  The Phase-4 solver still uses
+`get_hexagon_system(Nijk, rank, F_values; context = ctx)` internally after
+solving pentagon equations, but public equation generation no longer requires
+concrete F-values.
+
+The old `fsymbol_variables()` and `rsymbol_variables()` helpers have been
+removed.  The authoritative variable ordering now lives in the returned
+TensorCategories/Oscar polynomial rings and in `get_pentagon_system` /
+`get_hexagon_fr_system` metadata.
 
 # Scope and limitations
 
@@ -39,9 +51,10 @@ multiplicity needs matrix-valued F/R symbols and is left for a later release.
 normalizations that are visibly forced by unit channels and records what was
 fixed in metadata, along with residual gauge information.
 
-Finite-field support is currently reduction infrastructure.  `reduce_mod_p`
-checks that `p` is prime and reduces integer/rational coefficients in the
-equation system to `F_p`; a general finite-field FR solver is not implemented.
+Finite-field support is currently reduction metadata for FR equation systems.
+`reduce_mod_p` checks that `p` is prime.  TensorCategories polynomial systems
+are kept in their internal representation; a general finite-field FR solver is
+not implemented.
 
 Cyclotomic reconstruction is experimental.  The v0.8 API provides metadata and
 validation hooks such as `frobenius_metadata` and `cyclotomic_reconstruct`, but

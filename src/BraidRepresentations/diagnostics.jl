@@ -1,0 +1,108 @@
+struct FiniteGroupDiagnostics
+    dimension::Int
+    p::Int
+    number_of_generators::Int
+    generator_orders::Vector{Union{Int, Nothing}}
+    projective_generator_orders::Vector{Union{Int, Nothing}}
+    determinant_values::Vector{Int}
+    group_size::Union{Int, Nothing}
+    enumeration_truncated::Bool
+    sample_trace_set::Vector{Int}
+end
+
+_modmat(A, p) = mod.(Int.(A), p)
+_matkey(A) = Tuple(vec(A))
+_eye(n, p) = Matrix{Int}(I, n, n)
+
+function _det_mod(A::AbstractMatrix{<:Integer}, p::Int)
+    n = size(A, 1)
+    M = mod.(Int.(A), p)
+    det = 1
+    row = 1
+    for col in 1:n
+        piv = findfirst(r -> M[r, col] != 0, row:n)
+        piv === nothing && return 0
+        piv = row + piv - 1
+        if piv != row
+            M[row, :], M[piv, :] = M[piv, :], M[row, :]
+            det = mod(-det, p)
+        end
+        det = mod(det * M[row, col], p)
+        invp = invmod(M[row, col], p)
+        for r in (row + 1):n
+            factor = mod(M[r, col] * invp, p)
+            factor == 0 && continue
+            M[r, :] = mod.(M[r, :] .- factor .* M[row, :], p)
+        end
+        row += 1
+    end
+    return det
+end
+
+function _matrix_order(A, p; max_order = 100000)
+    n = size(A, 1)
+    I0 = _eye(n, p)
+    P = I0
+    for k in 1:max_order
+        P = matmul_mod(P, A, p)
+        P == I0 && return k
+    end
+    return nothing
+end
+
+function _projective_order(A, p; max_order = 100000)
+    n = size(A, 1)
+    P = _eye(n, p)
+    for k in 1:max_order
+        P = matmul_mod(P, A, p)
+        λ = P[1, 1]
+        ok = true
+        for i in 1:n, j in 1:n
+            target = i == j ? λ : 0
+            if mod(P[i, j] - target, p) != 0
+                ok = false
+                break
+            end
+        end
+        ok && return k
+    end
+    return nothing
+end
+
+function generated_subgroup(sigmas::AbstractVector{<:AbstractMatrix{<:Integer}}, p::Int; max_size = 100000)
+    isempty(sigmas) && return Matrix{Int}[]
+    n = size(sigmas[1], 1)
+    gens = [_modmat(g, p) for g in sigmas]
+    invgens = Matrix{Int}[]
+    # Avoid inversion machinery here; positive monoid is enough for bounded diagnostics.
+    allgens = gens
+    seen = Dict(_matkey(_eye(n, p)) => _eye(n, p))
+    queue = [_eye(n, p)]
+    head = 1
+    truncated = false
+    while head <= length(queue)
+        A = queue[head]; head += 1
+        for g in allgens
+            B = matmul_mod(A, g, p)
+            key = _matkey(B)
+            haskey(seen, key) && continue
+            seen[key] = B
+            push!(queue, B)
+            if length(seen) >= max_size
+                truncated = true
+                return collect(values(seen)), truncated
+            end
+        end
+    end
+    return collect(values(seen)), truncated
+end
+
+function finite_group_diagnostics(br::FiniteFieldBraidRepresentation; max_size = 100000)
+    group, truncated = generated_subgroup(br.generators, br.p; max_size = max_size)
+    traces = sort(unique([mod(sum(A[i, i] for i in 1:size(A, 1)), br.p) for A in group[1:min(end, 200)]]))
+    return FiniteGroupDiagnostics(size(first(br.generators), 1), br.p, length(br.generators),
+        [_matrix_order(g, br.p; max_order = max_size) for g in br.generators],
+        [_projective_order(g, br.p; max_order = max_size) for g in br.generators],
+        sort(unique([_det_mod(g, br.p) for g in br.generators])),
+        truncated ? nothing : length(group), truncated, traces)
+end

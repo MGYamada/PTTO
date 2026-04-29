@@ -1,0 +1,6 @@
+include("matrix_algebra.jl")
+include("commutant.jl")
+include("invariant_subspaces.jl")
+include("projective_image.jl")
+include("vanishing_ideal.jl")
+include("reports.jl")
