@@ -70,6 +70,9 @@ include("FR/HexagonSolver.jl")
 include("Reconstruction/ModularDataLift.jl")
 
 # Gauge: public gauge API surface and gauge-fixing helpers.
+include("Gauge/GaugeWeights.jl")
+include("Gauge/ToricGauge.jl")
+include("Gauge/FiniteFieldGauge.jl")
 include("Gauge/Gauge.jl")
 
 # Pipeline: result records, prime selection, FR layer, and conductor-first orchestration.
@@ -154,6 +157,10 @@ export solve_hexagon_modular_crt, solve_hexagon_homotopy
 export DiscreteLogTable, lift_T_Fp_to_cyclotomic
 export GaugeTransform, canonical_gauge, gauge_equivalent, gauge_transform
 export gauge_fixing_plan, is_gauge_fixed
+export gauge_parameters, symbol_coordinates, f_symbol_weight, r_symbol_weight
+export gauge_weight_matrix, smith_gauge_split, ineffective_kernel_rank
+export residual_gauge_orders, apply_gauge_mod_p, stabilizer_size_mod_p
+export stacky_weight_mod_p
 
 # End-to-end pipeline
 export ClassifiedMTC, FRRoundtripReport, FRStatus

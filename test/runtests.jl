@@ -11,6 +11,7 @@ using Test
     include("test_higher_central_charge.jl")
     include("test_io.jl")
     include("test_public_api.jl")
+    include("test_toric_gauge.jl")
     include("test_phase4_roundtrip.jl")
     include("test_pipeline_primes.jl")
     include("test_pipeline_end_to_end.jl")

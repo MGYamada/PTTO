@@ -81,6 +81,19 @@ function _twists(data)
     return [data.T[i, i] for i in 1:r]
 end
 
+function _eval_exact_equation(eq, values)
+    K = parent(values[1])
+    v = zero(K)
+    for (c, m) in zip(coefficients(eq), monomials(eq))
+        term = K(c)
+        for (i, d) in enumerate(degrees(m))
+            d > 0 && (term *= values[i]^d)
+        end
+        v += term
+    end
+    return v
+end
+
 @testset "Exact cyclotomic Phase 4 roundtrip" begin
     cases = [
         (name = "semion", N = 8, primes = [17, 41],
@@ -115,6 +128,23 @@ end
             @test iszero(roundtrip.T_max)
             @test iszero(roundtrip.S_error)
             @test iszero(roundtrip.T_error)
+
+            K = parent(result.F[1])
+            symmetric_channel_value(ch) =
+                case.name == "Ising" ? one(K) :
+                (ch[1] == 1 || ch[2] == 1) ? one(K) :
+                K(10 * min(ch[1], ch[2]) + max(ch[1], ch[2]) + ch[3])
+            gauge = GaugeTransform(Dict(ch => symmetric_channel_value(ch)
+                                        for ch in gauge_parameters(case.fusion)),
+                                   Int[], true)
+            moved = gauge_transform(result.F, result.R, gauge; Nijk = case.fusion)
+            _, pentagon_eqs, _ = get_pentagon_system(case.fusion, size(case.fusion, 1))
+            @test all(iszero(_eval_exact_equation(eq, moved.F)) for eq in pentagon_eqs)
+            if case.name != "Ising"
+                _, hexagon_eqs, _ = get_hexagon_system(case.fusion, size(case.fusion, 1), moved.F;
+                                                       context = case.data.context)
+                @test all(iszero(_eval_exact_equation(eq, moved.R)) for eq in hexagon_eqs)
+            end
         end
     end
 end
