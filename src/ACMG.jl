@@ -23,6 +23,7 @@ Module organisation (all at ACMG top level — no submodules):
 - Search:          stratum enumeration and finite-field block-U search
 - Reconstruction:  CRT, Galois-aware grouping, and exact cyclotomic lift
 - FR:              exact F/R equation generation and solvers
+- Gauge:           gauge representatives, transforms, and fixing helpers
 - Pipeline:        conductor-first orchestration and output records
 - IO:              repository-facing serialization and reporting hooks
 - Experimental:    incubating code outside stable public APIs
@@ -66,8 +67,10 @@ include("FR/HexagonEquations.jl")
 include("FR/ExactPolynomialSolver.jl")
 include("FR/PentagonSolver.jl")
 include("FR/HexagonSolver.jl")
-include("FR/Gauge.jl")
 include("Reconstruction/ModularDataLift.jl")
+
+# Gauge: public gauge API surface and gauge-fixing helpers.
+include("Gauge/Gauge.jl")
 
 # Pipeline: result records, prime selection, FR layer, and conductor-first orchestration.
 include("Pipeline/Types.jl")
@@ -102,6 +105,9 @@ export validate_modular_data, build_modular_datum, compute_alpha, compute_charge
 export check_modular_relations, check_unitarity, check_verlinde_integrality
 export check_twist_balance, check_vafa_constraints, check_galois_symmetry
 export validate_exact_modular_data, validate_exact_mtc
+export fusion_automorphisms, is_fusion_automorphism
+export modular_data_automorphisms, is_modular_data_automorphism
+export galois_anyon_action, galois_anyon_orbits
 export extract_fusion_rule_Fp, lift_fusion_to_Z, extract_and_lift
 export verlinde_coefficient
 export is_square, sqrt_mod, primitive_root, root_of_unity, roots_of_unity
@@ -153,5 +159,6 @@ export compute_FR_from_ST, classify_from_group
 export classify_mtcs_at_conductor, classify_mtcs_auto
 export save_classification, load_classification
 export export_modular_data, export_fusion_rule, export_FR, write_report
+export conductor_sanity_table, conductor_sanity_markdown
 
 end # module ACMG

@@ -23,6 +23,27 @@ end
     @test validate_exact_modular_data(data).valid
     @test validate_exact_mtc(nothing, nothing, data.S, data.T, Nijk).valid
 
+    @test fusion_automorphisms(Nijk) == [[1, 2]]
+    @test is_fusion_automorphism(Nijk, [1, 2])
+    @test modular_data_automorphisms(data) == [[1, 2]]
+    @test is_modular_data_automorphism(data, [1, 2])
+
+    st3 = galois_action(data.S, data.T, 3; context = data.context)
+    @test st3.S == galois_action(data, 3).S
+    @test st3.T == galois_action(data, 3).T
+    anyon_action = galois_anyon_action(data, 3)
+    @test anyon_action.perm == [1, 2]
+    @test galois_anyon_orbits(data) == [[1], [2]]
+
+    sanity = conductor_sanity_table(data)
+    @test length(sanity) == 1
+    @test sanity[1].N == 8
+    @test sanity[1].fusion_automorphisms == 1
+    @test sanity[1].modular_data_automorphisms == 1
+    @test sanity[1].galois_units == 4
+    @test sanity[1].exact_ok
+    @test occursin("| N | rank |", conductor_sanity_markdown(data))
+
     result = compute_FR_from_ST(Nijk;
                                 conductor = 8,
                                 primes = [17, 41],

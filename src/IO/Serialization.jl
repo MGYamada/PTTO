@@ -159,6 +159,89 @@ function _io_classification_payload(result)
     )
 end
 
+function _sanity_items(result)
+    return result isa AbstractVector ? result : [result]
+end
+
+function _sanity_modular_data(m::ClassifiedMTC)
+    labels = [Symbol("x$i") for i in 1:m.rank]
+    T = m.T_cyclotomic
+    return ModularData(CyclotomicContext(m.N), labels, m.S_cyclotomic, T,
+                       m.N, m.N, nothing)
+end
+
+_sanity_modular_data(data::ModularData) = data
+
+function _sanity_fusion_tensor(data::ModularData)
+    v = check_verlinde_integrality(data.S)
+    return v.valid ? v.Nijk : nothing
+end
+
+_sanity_fusion_tensor(m::ClassifiedMTC) = m.Nijk
+_sanity_fr_status(::ModularData) = nothing
+_sanity_fr_status(m::ClassifiedMTC) = m.fr_status
+
+function _sanity_row(item)
+    data = _sanity_modular_data(item)
+    Nijk = _sanity_fusion_tensor(item)
+    exact = validate_exact_modular_data(data)
+    fan = Nijk === nothing ? nothing : length(fusion_automorphisms(Nijk))
+    man = length(modular_data_automorphisms(data))
+    anyon_orbits = try
+        galois_anyon_orbits(data)
+    catch
+        nothing
+    end
+    return (N = conductor(data.context),
+            rank = length(data.labels),
+            cond_S = data.cond_S,
+            cond_T = data.cond_T,
+            fusion_automorphisms = fan,
+            modular_data_automorphisms = man,
+            galois_units = length(_galois_units(data.context.N)),
+            galois_anyon_orbits = anyon_orbits,
+            exact_ok = exact.ok,
+            fr_status = _sanity_fr_status(item))
+end
+
+"""
+    conductor_sanity_table(result) -> Vector{NamedTuple}
+
+Build one sanity-check row per `ModularData` or `ClassifiedMTC`, including
+fusion-rule automorphism count, modular-data automorphism count, Galois
+unit count, and Galois anyon orbits.
+"""
+function conductor_sanity_table(result)
+    return [_sanity_row(item) for item in _sanity_items(result)]
+end
+
+function _sanity_cell(x)
+    x === nothing && return ""
+    x isa Bool && return x ? "true" : "false"
+    x isa FRStatus && return string(x)
+    x isa AbstractVector && return string(x)
+    return string(x)
+end
+
+"""
+    conductor_sanity_markdown(result) -> String
+
+Render `conductor_sanity_table(result)` as a compact Markdown table.
+"""
+function conductor_sanity_markdown(result)
+    rows = conductor_sanity_table(result)
+    headers = [:N, :rank, :cond_S, :cond_T, :fusion_automorphisms,
+               :modular_data_automorphisms, :galois_units,
+               :galois_anyon_orbits, :exact_ok, :fr_status]
+    io = IOBuffer()
+    println(io, "| ", join(string.(headers), " | "), " |")
+    println(io, "| ", join(fill("---", length(headers)), " | "), " |")
+    for row in rows
+        println(io, "| ", join((_sanity_cell(getproperty(row, h)) for h in headers), " | "), " |")
+    end
+    return String(take!(io))
+end
+
 function _io_json_string(payload)
     return JSON.json(payload)
 end

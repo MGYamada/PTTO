@@ -158,6 +158,53 @@ function fusion_isomorphic(fr1::FusionRule, fr2::FusionRule)
     return false
 end
 
+"""
+    fusion_automorphisms(fr_or_Nijk) -> Vector{Vector{Int}}
+
+Return all based-ring automorphisms of a fusion rule, represented as
+1-indexed permutations fixing the tensor unit at index `1`.
+"""
+function fusion_automorphisms(Nijk::Array{Int, 3})
+    r = size(Nijk, 1)
+    size(Nijk) == (r, r, r) || error("Nijk must be a cube")
+    r == 1 && return [Int[1]]
+    autos = Vector{Vector{Int}}()
+    for rest in _permutations(2:r)
+        perm = [1; rest...]
+        ok = true
+        @inbounds for i in 1:r, j in 1:r, k in 1:r
+            if Nijk[perm[i], perm[j], perm[k]] != Nijk[i, j, k]
+                ok = false
+                break
+            end
+        end
+        ok && push!(autos, perm)
+    end
+    return autos
+end
+
+fusion_automorphisms(fr::FusionRule) = fusion_automorphisms(fr.N)
+
+"""
+    is_fusion_automorphism(fr_or_Nijk, perm) -> Bool
+
+Test whether `perm` is a unit-fixing automorphism of a fusion rule.
+"""
+function is_fusion_automorphism(Nijk::Array{Int, 3}, perm::AbstractVector{<:Integer})
+    r = size(Nijk, 1)
+    size(Nijk) == (r, r, r) || return false
+    length(perm) == r || return false
+    collect(sort(perm)) == collect(1:r) || return false
+    perm[1] == 1 || return false
+    @inbounds for i in 1:r, j in 1:r, k in 1:r
+        Nijk[perm[i], perm[j], perm[k]] == Nijk[i, j, k] || return false
+    end
+    return true
+end
+
+is_fusion_automorphism(fr::FusionRule, perm::AbstractVector{<:Integer}) =
+    is_fusion_automorphism(fr.N, perm)
+
 # Simple permutation generator (for small ranks only — up to rank 8 or so)
 function _permutations(v)
     v = collect(v)

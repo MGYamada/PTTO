@@ -201,6 +201,31 @@ entrywise to context-carrying modular data:
 
 ```julia
 galois_action(fib, 3)
+galois_action(fib.S, fib.T, 3; context = fib.context)
+```
+
+Fusion-rule and modular-data automorphisms are exposed as unit-fixing
+1-indexed permutations:
+
+```julia
+Nijk = check_verlinde_integrality(semion.S).Nijk
+fusion_automorphisms(Nijk)
+modular_data_automorphisms(semion)
+```
+
+The Galois action on anyon labels is recovered from projective rows of
+`S`:
+
+```julia
+galois_anyon_action(ising, 3)
+galois_anyon_orbits(ising)
+```
+
+For conductor-wise smoke checks, use the compact sanity table:
+
+```julia
+conductor_sanity_table([semion, ising])
+println(conductor_sanity_markdown([semion, ising]))
 ```
 
 For a prime `p` coprime to `N`, Frobenius is represented by the same
@@ -245,6 +270,7 @@ src/
   Search/                 stratum enumeration and block-U search
   Reconstruction/         CRT, Galois-aware grouping, cyclotomic lifting
   FR/                     exact pentagon/hexagon systems and F/R solvers
+  Gauge/                  gauge representatives, transforms, and fixing helpers
   Pipeline/               conductor-first orchestration and result records
   IO/                     JSON serialization and Markdown reporting
   Experimental/           reserved for incubating non-stable code
