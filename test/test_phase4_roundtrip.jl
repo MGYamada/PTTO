@@ -107,6 +107,8 @@ end
             @test !isempty(result.F)
             @test !isempty(result.R)
             @test !hasproperty(result, :candidates)
+            @test is_gauge_fixed(result.F, case.fusion)
+            @test canonical_gauge(result.F, result.R, case.fusion).gauge.complete
             @test roundtrip.ok
             @test roundtrip isa ACMG.FRRoundtripReport
             @test iszero(roundtrip.S_max)

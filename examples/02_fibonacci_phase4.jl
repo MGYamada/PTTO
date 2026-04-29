@@ -20,4 +20,7 @@ fr = compute_FR_from_ST(fibonacci_fusion();
 
 println("F entries: ", length(fr.F))
 println("R entries: ", length(fr.R))
+println("Gauge fixed: ", is_gauge_fixed(fr.F, fibonacci_fusion()))
+println("Gauge-fixed F indices: ",
+        [entry.var_idx for entry in gauge_fixing_plan(fr.F, fibonacci_fusion())])
 println("Roundtrip: ", fr.report === nothing ? "not scored" : fr.report.ok)

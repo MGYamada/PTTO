@@ -152,7 +152,8 @@ export assign_F_to_associator!, hexagon_equations, get_hexagon_system
 export number_of_variables_in_hexagon_equations
 export solve_hexagon_modular_crt, solve_hexagon_homotopy
 export DiscreteLogTable, lift_T_Fp_to_cyclotomic
-export canonical_gauge, gauge_equivalent, gauge_transform
+export GaugeTransform, canonical_gauge, gauge_equivalent, gauge_transform
+export gauge_fixing_plan, is_gauge_fixed
 
 # End-to-end pipeline
 export ClassifiedMTC, FRRoundtripReport, FRStatus

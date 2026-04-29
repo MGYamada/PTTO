@@ -269,6 +269,7 @@ function compute_FR_from_ST(Nijk::Array{Int,3};
                             max_ambiguous_crt_coords::Int = 4096,
                             exact_fallback::Bool = true,
                             pentagon_gauge_fixing::Bool = false,
+                            canonicalize_gauge::Bool = true,
                             verbose::Bool = false,
                             kwargs...)
     isempty(kwargs) || error("unsupported keyword arguments: $(collect(keys(kwargs)))")
@@ -280,8 +281,10 @@ function compute_FR_from_ST(Nijk::Array{Int,3};
         R = elem_type(K)[one(K), one(K)]
         candidates = NamedTuple[(F = F, R = R, report = nothing)]
         selected = _select_phase4_candidate(candidates, Nijk, ctx, S, T)
-        result = (F = selected.F,
-                  R = selected.R,
+        fixed = canonicalize_gauge ? canonical_gauge(selected.F, selected.R, Nijk) :
+                (F = selected.F, R = selected.R, gauge = nothing)
+        result = (F = fixed.F,
+                  R = fixed.R,
                   report = selected.report)
         return return_all ? merge(result, (candidates = candidates,)) : result
     end
@@ -331,8 +334,10 @@ function compute_FR_from_ST(Nijk::Array{Int,3};
     end
     isempty(candidates) && _phase4_removed_error()
     selected = _select_phase4_candidate(candidates, Nijk, ctx, S, T)
-    result = (F = selected.F,
-              R = selected.R,
+    fixed = canonicalize_gauge ? canonical_gauge(selected.F, selected.R, Nijk) :
+            (F = selected.F, R = selected.R, gauge = nothing)
+    result = (F = fixed.F,
+              R = fixed.R,
               report = selected.report)
     return return_all ? merge(result, (candidates = candidates,)) : result
 end
