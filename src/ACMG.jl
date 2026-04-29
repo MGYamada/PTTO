@@ -84,6 +84,9 @@ include("Pipeline/Pipeline.jl")
 include("GaussSums/GaussSums.jl")
 include("GaussSums/HigherCentralCharge.jl")
 
+# Experimental: finite-field F/R prototypes.
+include("Experimental/FiniteFieldHigherCentralCharge.jl")
+
 # IO: JSON export/import and Markdown reports for classification outputs.
 include("IO/Serialization.jl")
 
@@ -95,12 +98,15 @@ include("IO/Serialization.jl")
 export ModularDatumFp, FusionRule
 export CyclotomicContext, ModularData
 export field, zeta, conductor, cond_S, cond_T, cond_F
-export semion_modular_data, fibonacci_modular_data, ising_modular_data, modular_data
+export semion_modular_data, fibonacci_modular_data, ising_modular_data
+export toric_code_modular_data, modular_data
 export galois_action, galois_orbit, frobenius, reduce_mod_p
 export quantum_dimensions
 export total_quantum_dimension_squared, gauss_sum_plus, gauss_sum_minus
 export normalized_gauss_sum, HigherCentralChargeResult
 export higher_central_charge, higher_central_charges, central_charge
+export FRSolutionModP, HigherCentralChargeModPResult
+export solve_FR_mod_p, lift_higher_central_charge
 export validate_modular_data, build_modular_datum, compute_alpha, compute_charge_conjugation
 export check_modular_relations, check_unitarity, check_verlinde_integrality
 export check_twist_balance, check_vafa_constraints, check_galois_symmetry

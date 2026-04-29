@@ -47,7 +47,19 @@ for the raw `τ_n^+ / D` ratio at arbitrary integer `n`, or `:D2` for
 """
 function higher_central_charge(category_or_modular_data;
                                n::Integer = 1,
-                               normalization::Symbol = :galois)
+                               normalization::Symbol = :galois,
+                               method::Symbol = :modular_data,
+                               p::Union{Integer, Nothing} = nothing,
+                               kwargs...)
+    if method == :finite_field
+        p === nothing && error("finite-field higher central charge requires keyword p")
+        solution = solve_FR_mod_p(category_or_modular_data, Int(p); kwargs...)
+        fp_normalization = normalization == :galois ? :D : normalization
+        return higher_central_charge(solution, Int(n); normalization = fp_normalization)
+    elseif method != :modular_data
+        error("unknown higher central charge method: $method; expected :modular_data or :finite_field")
+    end
+    isempty(kwargs) || error("unsupported keyword arguments: $(collect(keys(kwargs)))")
     input = try
         _gauss_input(category_or_modular_data)
     catch err
@@ -95,10 +107,19 @@ end
 Compute higher central charges for each integer in `ns`.
 """
 function higher_central_charges(category_or_modular_data, ns;
-                                normalization::Symbol = :galois)
+                                normalization::Symbol = :galois,
+                                method::Symbol = :modular_data,
+                                p::Union{Integer, Nothing} = nothing,
+                                kwargs...)
     return [higher_central_charge(category_or_modular_data; n = n,
-                                  normalization = normalization) for n in ns]
+                                  normalization = normalization,
+                                  method = method,
+                                  p = p,
+                                  kwargs...) for n in ns]
 end
+
+higher_central_charge(category_or_modular_data, n::Integer; kwargs...) =
+    higher_central_charge(category_or_modular_data; n = n, kwargs...)
 
 """
     central_charge(category_or_modular_data)

@@ -20,6 +20,11 @@ using ACMG
         z20 = ACMG.zeta(fib.context)
         # This is the convention currently encoded by fibonacci_modular_data().
         @test central_charge(fib) == 2 * z20^7 - z20^3 + z20
+
+        toric = toric_code_modular_data()
+        @test central_charge(toric) == one(ACMG.field(toric))
+        @test higher_central_charge(toric, 1; normalization = :D).value ==
+              one(ACMG.field(toric))
     end
 
     @testset "exact dimensions and normalizations" begin
@@ -50,5 +55,44 @@ using ACMG
         @test blocked.value === nothing
         @test normalized_gauss_sum(semion; n = 2, normalization = :D) ==
               gauss_sum_plus(semion; n = 2) / inv(semion.S[1, 1])
+    end
+
+    @testset "D-normalized periodicity" begin
+        for data in (semion_modular_data(), toric_code_modular_data(),
+                     fibonacci_modular_data(), ising_modular_data())
+            N = ACMG.conductor(data)
+            for n in -2:5
+                lhs = higher_central_charge(data, n + N; normalization = :D)
+                rhs = higher_central_charge(data, n; normalization = :D)
+                @test lhs.ok
+                @test rhs.ok
+                @test lhs.value == rhs.value
+            end
+        end
+    end
+
+    @testset "finite-field Fibonacci prototype agrees after reduction" begin
+        data = fibonacci_modular_data()
+        sol = solve_FR_mod_p(:fibonacci, 41)
+
+        @test sol.category == :fibonacci
+        @test sol.p == 41
+        @test sol.conductor == 20
+        @test !isempty(sol.F)
+        @test !isempty(sol.R)
+
+        for n in 1:5
+            exact = normalized_gauss_sum(data; n = n, normalization = :D)
+            exact_mod_p = reduce_mod_p(data.context, exact, sol.p)
+            finite_field = higher_central_charge(sol, n)
+            @test finite_field.ok
+            @test finite_field.value == exact_mod_p
+        end
+    end
+
+    @testset "finite-field method dispatch" begin
+        direct = solve_FR_mod_p(:semion, 17; compute_fr = false)
+        via_method = higher_central_charge(:semion, 1; method = :finite_field, p = 17)
+        @test via_method.value == higher_central_charge(direct, 1).value
     end
 end

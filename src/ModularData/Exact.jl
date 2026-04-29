@@ -87,6 +87,24 @@ function ising_modular_data(ctx::CyclotomicContext = CyclotomicContext(16))
     return ModularData(ctx, [:one, :sigma, :psi], S, T, 16, 16, nothing)
 end
 
+"""
+    toric_code_modular_data(ctx = CyclotomicContext(2))
+"""
+function toric_code_modular_data(ctx::CyclotomicContext = CyclotomicContext(2))
+    _require_same_context(ctx, :toric_code, 2)
+    K, z = ctx.field, ctx.zeta
+    S = (K(1) // K(2)) * matrix(K, 4, 4,
+                                [1, 1, 1, 1,
+                                 1, 1, -1, -1,
+                                 1, -1, 1, -1,
+                                 1, -1, -1, 1])
+    T = matrix(K, 4, 4, [1, 0, 0, 0,
+                         0, 1, 0, 0,
+                         0, 0, 1, 0,
+                         0, 0, 0, z])
+    return ModularData(ctx, [:one, :e, :m, :epsilon], S, T, 1, 2, nothing)
+end
+
 function modular_data(name::Symbol; conductor::Union{Int, Nothing} = nothing)
     if name == :Semion || name == :semion
         ctx = CyclotomicContext(conductor === nothing ? 8 : conductor)
@@ -97,6 +115,9 @@ function modular_data(name::Symbol; conductor::Union{Int, Nothing} = nothing)
     elseif name == :Ising || name == :ising
         ctx = CyclotomicContext(conductor === nothing ? 16 : conductor)
         return ising_modular_data(ctx)
+    elseif name == :ToricCode || name == :toric_code || name == :toric
+        ctx = CyclotomicContext(conductor === nothing ? 2 : conductor)
+        return toric_code_modular_data(ctx)
     end
     error("unknown modular-data family: $name")
 end
