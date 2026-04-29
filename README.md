@@ -120,6 +120,21 @@ reconstructs F/R coordinates by bounded CRT in the power basis of
 lift is inconclusive, it falls back to exact triangular Groebner over
 `Q(ζ_N)` and filters those exact candidates by their modular reductions.
 
+v0.8 also exposes a lower-level, backend-neutral equation layer for
+multiplicity-free fusion rules:
+
+```julia
+rules = fibonacci_fusion_rules()
+system = fr_equation_system(rules)
+fixed = gauge_fix(system; strategy = :safe)
+fp_system = reduce_mod_p(fixed, 11)
+```
+
+This layer generates F-symbol variables, R-symbol variables, pentagon
+equations, left/right hexagon equations, safe unit-channel gauge fixing,
+and finite-field reductions without requiring a solver backend at the
+representation boundary.  See `docs/FRInfrastructure.md`.
+
 `ClassifiedMTC` records carry an explicit `fr_status` field.  Use
 `fr_status(m)` to distinguish skipped, solved, reconstruction-failed, and
 verification-failed Phase 4 outcomes.
