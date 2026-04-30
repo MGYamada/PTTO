@@ -178,6 +178,19 @@ end
 
     @test !selection.selected_ok
     @test !target_roundtrip.ok
-    @test ACMG._fr_roundtrip_attachable(target_roundtrip)
+    @test !ACMG._fr_roundtrip_attachable(target_roundtrip)
     @test self_roundtrip.ok
+end
+
+@testset "Reference Ising FRData roundtrips target T" begin
+    data = ising_modular_data()
+    fr = ising_fr_data()
+    twists = _twists(data)
+    roundtrip = ACMG._modular_data_roundtrip(fr.F_values, fr.R_values,
+                                             fr.rules.N, data.S, twists, 16)
+
+    @test roundtrip.ok
+    @test iszero(roundtrip.S_error)
+    @test iszero(roundtrip.T_error)
+    @test roundtrip.T_roundtrip == twists
 end
