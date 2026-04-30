@@ -102,6 +102,10 @@ include("ZariskiDiagnostics/ZariskiDiagnostics.jl")
 # IO: JSON export/import and Markdown reports for classification outputs.
 include("IO/Serialization.jl")
 
+# Documentation-only attachments for exported APIs whose definitions live in
+# compact implementation files.
+include("Documentation.jl")
+
 # ============================================================
 #  Exports
 # ============================================================
@@ -199,7 +203,7 @@ export FusionPath, FusionTreeBasis, FRData, BraidRepresentation, FiniteFieldBrai
 export MatrixAlgebraDiagnostics, CommutantDiagnostics, ZariskiClosureDiagnostics
 export fusion_basis, fusion_paths, dim
 export braid_representation, braid_generator, braid_generators
-# TODO(v1.0): diagnostics exports are kept for compatibility in v0.8.5 but
+# TODO(v1.0): diagnostics exports are kept for compatibility in v0.8.6 but
 # documented as experimental computational evidence rather than stable proofs.
 export check_braid_relations, finite_group_diagnostics, generated_subgroup
 export generated_matrix_algebra, commutant, zariski_closure_diagnostics

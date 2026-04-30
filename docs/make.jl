@@ -10,7 +10,11 @@ DocMeta.setdocmeta!(ACMG, :DocTestSetup, :(using ACMG); recursive = true)
 makedocs(;
     modules = [ACMG],
     sitename = "ACMG.jl",
-    format = Documenter.HTML(; prettyurls = get(ENV, "CI", "false") == "true"),
+    format = Documenter.HTML(;
+        prettyurls = get(ENV, "CI", "false") == "true",
+        size_threshold = 300 * 1024,
+        size_threshold_warn = 250 * 1024,
+    ),
     pages = [
         "Home" => "index.md",
         "Getting Started" => "getting_started.md",
@@ -23,7 +27,11 @@ makedocs(;
         "Block-U Search" => "search_blocku.md",
         "Zariski Diagnostics" => "zariski_diagnostics.md",
         "API Stability" => "api_stability.md",
-        "API Reference" => "api_reference.md",
+        "API Reference" => "api.md",
     ],
     warnonly = true,
+)
+
+deploydocs(;
+    repo = "github.com/MGYamada/ACMG.jl.git",
 )

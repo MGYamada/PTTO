@@ -387,7 +387,7 @@ Attempt to solve a reduced F/R equation system over a finite field.
 
 The input is a `FiniteFieldEquationSystem`, normally produced by
 `reduce_mod_p(::FREquationSystem, p)`.  A future implementation may return
-finite-field solution records; v0.8.5 only validates the interface and reports
+finite-field solution records; v0.8.6 only validates the interface and reports
 that the general solver is not implemented.
 
 Mathematical caveats: finite-field solutions require lifting and exact
@@ -407,7 +407,7 @@ Experimental API.
 Reconstruct cyclotomic data from finite-field solution data.
 
 The input is a finite-field solution-like object and a positive conductor.
-The intended output is a cyclotomic lift, but v0.8.5 only validates the
+The intended output is a cyclotomic lift, but v0.8.6 only validates the
 conductor and reports that the reconstruction backend is incomplete.
 
 Mathematical caveats: modular residues are not a proof of a cyclotomic lift

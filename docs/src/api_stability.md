@@ -53,7 +53,7 @@ without separate mathematical verification.
 - status: experimental
 - input/output may change before v1.0
 - mathematical caveat: general finite-field F/R solving is not implemented in
-  v0.8.5; future solutions require exact verification
+  v0.8.6; future solutions require exact verification
 - stable alternative: use `fr_equation_system`, exact Phase-4 helpers, or
   built-in exact F/R data
 
@@ -138,7 +138,7 @@ before v1.0.  This includes cache structures, polynomial equation internals,
 search heuristics, low-level Block-U enumeration state, and private helper
 functions whose names begin with `_`.
 
-Some internal or experimental helpers remain exported in v0.8.5 for backward
+Some internal or experimental helpers remain exported in v0.8.6 for backward
 compatibility.  They are classified here rather than removed to avoid a
 breaking release.
 

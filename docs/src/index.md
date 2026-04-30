@@ -5,15 +5,15 @@ condensed matter geometry and modular tensor category experiments.
 
 The package currently focuses on exact modular data, Galois actions, higher
 central charges, F/R symbols, gauge fixing, braid representations, and
-finite-field experiments.  v0.8.5 is a documentation and API-classification
-release; it does not introduce new mathematical algorithms.
+finite-field experiments.  v0.8.6 is a documentation hardening release; it does
+not introduce new mathematical algorithms.
 
 ## Documentation map
 
 - [Getting Started](@ref) introduces the basic conductor-first workflow.
 - [Concepts](@ref) summarizes the main mathematical objects.
 - [API Stability](@ref) defines stable, experimental, and internal APIs.
-- [API Reference](@ref) lists the main documented stable entry points.
+- [API reference](@ref) lists the exported API via `@autodocs`.
 
 Experimental diagnostics should be treated as computational evidence, not as
 mathematical theorems.

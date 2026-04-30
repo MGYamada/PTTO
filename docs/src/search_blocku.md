@@ -1,15 +1,51 @@
 # Block-U Search
 
-The search layer enumerates conductor strata and performs finite-field block-U
-searches used by the conductor-first pipeline.
+## What this page covers
 
-Representative functions:
+The search layer enumerates SL(2, Z/N) strata and performs finite-field
+Block-U searches used by the conductor-first pipeline.
 
-- `enumerate_strata`, `count_strata`, `describe_stratum`
-- `find_mtcs_at_prime`
-- `classify_mtcs_at_conductor`, `classify_mtcs_auto`
-- `estimate_search_complexity`, `recommend_primes`
+## Minimal example
 
-Notes: the public search entry points are the conductor-level pipeline
-functions.  Low-level enumeration helpers in `Search/BlockU.jl` are classified
-as experimental/internal in v0.8.5 even if exported for compatibility.
+```julia
+using ACMG
+
+result = classify_mtcs_auto(8;
+    max_rank_candidates = [2],
+    min_primes = 1,
+    prime_start = 17,
+    prime_max = 50,
+    skip_FR = true,
+    verbose = false,
+)
+
+@assert all(m -> m.N_input == 8, result.classified)
+```
+
+## Mathematical meaning
+
+The conductor-level pipeline starts with `N`, builds arithmetic representation
+data modulo `N`, searches finite-field candidates at admissible primes, groups
+Galois-related data, and attempts exact cyclotomic reconstruction.
+
+## API overview
+
+- Stable pipeline: `classify_mtcs_at_conductor`, `classify_mtcs_auto`
+- Strategy helpers: `select_admissible_primes`, `recommend_primes`,
+  `recommend_skip_FR`
+- Records: `ClassifiedMTC`, `FRRoundtripReport`, `fr_status`
+- Lower-level search: `enumerate_strata`, `find_mtcs_at_prime`, Block-U
+  enumeration helpers
+
+## Common pitfalls
+
+- Low-level enumeration order and pruning are implementation details.
+- Heavy searches do not belong in docs examples.
+- `skip_FR=true` is appropriate for fast modular-data-only exploration.
+
+## Stability notes
+
+The conductor-level classification entry points and result records are the
+stable API.  Low-level Block-U helpers, fixed-stratum reconstruction hooks, and
+internal search diagnostics remain experimental or semi-public compatibility
+exports in v0.8.6.

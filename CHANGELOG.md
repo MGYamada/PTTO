@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.8.6 - Documentation Hardening
+
+### Added
+- Added a documentation coverage inventory at `docs/DocCoverage.md`.
+- Added an `@autodocs` API reference page at `docs/src/api.md`.
+- Added runnable documentation examples for conductor-first modular data,
+  F/R-gauge-braid usage, and export helpers.
+
+### Changed
+- Expanded docstrings for exported public API groups across cyclotomics,
+  modular data, higher central charges, F/R infrastructure, gauge helpers,
+  braid representations, pipeline records, diagnostics, and IO/export helpers.
+- Reworked concept pages around the standard structure: scope, minimal
+  example, mathematical meaning, API overview, common pitfalls, and stability
+  notes.
+- Shortened README and moved detailed explanations into the manual pages.
+- Clarified stable, semi-public, experimental, and internal API boundaries.
+
+### Compatibility
+- No intentional functional changes.
+- Existing exported names, type names, and return values are unchanged.
+
+### Tests
+- Documentation examples were run locally with `julia --project=.`
+  invocations.
+- Full package tests and docs build were checked for this documentation-only
+  release.
+
 ## v0.8.5 - API Stability Documentation and Experimental API Marking
 
 ### Added

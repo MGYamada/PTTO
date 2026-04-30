@@ -9,6 +9,19 @@ changing conductor choices implicitly.
     ModularData
 
 Exact modular data over a fixed cyclotomic context.
+
+# Fields
+- `context`: `CyclotomicContext` determining the ground field.
+- `labels`: Simple-object labels.
+- `S`: Exact S-matrix.
+- `T`: Exact T-matrix or diagonal data, depending on constructor.
+- `cond_S`: Declared conductor for S entries.
+- `cond_T`: Declared conductor for T entries.
+- `cond_F`: Optional conductor for attached F/R data.
+
+# Notes
+Stable public API.  Constructors in ACMG do not silently change conductor; pass
+an explicit context when the ground field matters.
 """
 struct ModularData
     context::CyclotomicContext
