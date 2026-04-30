@@ -209,15 +209,11 @@ end
 """
     _fr_roundtrip_attachable(report)
 
-Pipeline acceptance predicate for exact `(F, R)` data. `report.ok` remains
-the strict `(S, T)` roundtrip check. Some conductor-first sectors, including
-Ising branches at conductor 16, can reconstruct valid braided data whose
-projective twist branch does not equal the selected target `T` even though
-the Hopf-link `S` data roundtrips exactly. Keep those `(F, R)` values attached
-and preserve the nonzero `T_error` in the report.
+Pipeline acceptance predicate for exact `(F, R)` data. A candidate is
+attachable only when the reconstructed modular data matches both target
+`S` and target `T` exactly.
 """
-_fr_roundtrip_attachable(report::FRRoundtripReport) =
-    report.ok || iszero(report.S_error)
+_fr_roundtrip_attachable(report::FRRoundtripReport) = report.ok
 
 function _score_fr_st_match(F_values::Vector,
                             R_values::Vector,

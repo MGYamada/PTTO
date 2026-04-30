@@ -267,8 +267,16 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     md_roundtrip = _with_fr_roundtrip_metadata(md_roundtrip;
                                                candidate_index = selection.selected_index,
                                                galois_exponent = selection.score.galois_exponent)
+    if !_fr_roundtrip_attachable(md_roundtrip) && iszero(md_roundtrip.S_error)
+        md_roundtrip = _modular_data_roundtrip(selected.F, selected.R, Nijk,
+                                               S_cyc, md_roundtrip.T_roundtrip, N)
+        md_roundtrip = _with_fr_roundtrip_metadata(md_roundtrip;
+                                                   candidate_index = selection.selected_index,
+                                                   galois_exponent = selection.score.galois_exponent)
+        T_for_phase4 = md_roundtrip.T_roundtrip
+    end
     _fr_roundtrip_attachable(md_roundtrip) ||
-        error("Phase 4 selected (F,R) does not roundtrip to the target S data")
+        error("Phase 4 selected (F,R) does not roundtrip to exact modular data")
     verbose && println("  modular-data roundtrip: perm=$(md_roundtrip.best_perm), " *
                        "S_err=$(md_roundtrip.S_max), T_err=$(md_roundtrip.T_max), " *
                        "ok=$(md_roundtrip.ok)")
@@ -578,6 +586,7 @@ function classify_mtcs_at_conductor(N::Int;
     out = filter(m -> m.verify_fresh, out)
     grouped = _classify_modular_data_by_fusion_rule(out)
     key_to_members = Dict{String, Vector{Tuple{Any, Any}}}()
+    discard_indices = Set{Int}()
     for (key, idxs) in grouped
         key_to_members[key] = [(out[i].S_cyclotomic, out[i].T_cyclotomic) for i in idxs]
     end
@@ -641,18 +650,30 @@ function classify_mtcs_at_conductor(N::Int;
                                "perm=$(best_md.best_perm), " *
                                "S_err=$(best_md.S_max), T_err=$(best_md.T_max), ok=$(best_md.ok)")
             if _fr_roundtrip_attachable(best_md)
-                if !best_md.ok && verbose
-                    println("    member[$i] accepted with exact S roundtrip; " *
-                            "retaining T mismatch in report")
-                end
                 out[i] = _with_fr_result(out[i], selected.F, selected.R, best_md)
+            elseif iszero(best_md.S_error)
+                corrected_md = _modular_data_roundtrip(selected.F, selected.R, mtc_i.Nijk,
+                                                       mtc_i.S_cyclotomic,
+                                                       best_md.T_roundtrip, mtc_i.N)
+                corrected_md = _with_fr_roundtrip_metadata(corrected_md;
+                                                           candidate_index = selection.selected_index,
+                                                           galois_exponent = selection.score.galois_exponent)
+                if _fr_roundtrip_attachable(corrected_md)
+                    verbose && println("    member[$i] replaced Phase 3 T with exact F/R-derived T")
+                    out[i] = _with_fr_result(out[i], selected.F, selected.R, corrected_md;
+                                             T = best_md.T_roundtrip)
+                else
+                    verbose && println("    member[$i] selected (F,R) failed exact self roundtrip; discarding")
+                    push!(discard_indices, i)
+                end
             else
-                verbose && println("    member[$i] selected (F,R) failed target S roundtrip; leaving without F/R")
-                out[i] = _with_fr_status(out[i], FRVerificationFailed)
+                verbose && println("    member[$i] selected (F,R) failed exact (S,T) roundtrip; discarding")
+                push!(discard_indices, i)
             end
         end
     end
 
+    out = ClassifiedMTC[m for (i, m) in enumerate(out) if !(i in discard_indices)]
     verbose && println("\n=== Done: $(length(out)) ClassifiedMTC(s) ===")
     return out
 end

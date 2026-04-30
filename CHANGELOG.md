@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.8.4 - Block-U Refactor and Strict Phase 4 Roundtrips
+
+### Changed
+- Split the large `src/Search/BlockU.jl` implementation into focused files
+  under `src/Search/BlockU/` for types, finite-field helpers, block assembly,
+  constraints, enumeration, canonicalization, and search orchestration.
+- Kept `src/Search/BlockU.jl` as a thin aggregator so existing
+  `include("Search/BlockU.jl")` users continue to work.
+- Tightened exact `(F, R)` attachment: Phase 4 candidates are now attachable
+  only after strict exact `(S, T)` roundtrip verification.
+- When Phase 3 carries a projective or SL2-representation `T` branch that
+  disagrees with a valid exact `(F, R)` solution, the pipeline now replaces it
+  with the exact `T` reconstructed from the selected braiding data and then
+  rechecks strict roundtrip consistency.
+
+### Fixed
+- Fixed the built-in Ising reference `FRData` braiding signs so it roundtrips
+  to the target Ising `T` matrix.
+- Fixed conductor-16 Ising classification so rank-3 Ising sectors are retained
+  with exact `(F, R) roundtrip=✓` instead of being returned as `S✓/T✗` or
+  discarded.
+
+### Tests
+- Added coverage for the Ising reference `FRData` exact `T` roundtrip.
+- Verified the full test suite with `julia --project=. -e 'using Pkg; Pkg.test()'`.
+
 ## v0.8.3 - FRData-Centered Gauge Refactor
 
 ### Added
