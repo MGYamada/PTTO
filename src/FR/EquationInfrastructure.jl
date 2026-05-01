@@ -209,7 +209,7 @@ is_multiplicity_free(rules) = all(x -> x == 0 || x == 1, _fusion_tensor(rules))
 
 function require_multiplicity_free(rules)
     is_multiplicity_free(rules) ||
-        error("v0.8 F/R equation infrastructure currently supports multiplicity-free fusion rules only")
+        error("F/R equation infrastructure currently supports multiplicity-free fusion rules only")
     return true
 end
 
@@ -331,18 +331,94 @@ function gauge_transform(system::FREquationSystem)
             note = "symbolic F/R variable coordinate actions were removed with fsymbol_variables/rsymbol_variables")
 end
 
-function gauge_fix(system::FREquationSystem; strategy::Symbol = :safe)
-    strategy == :safe || error("only strategy=:safe is implemented for v0.8 gauge_fix")
-    fixed_eqs = copy(system.equations)
-    fixed = Vector{NamedTuple}()
+function _substitute_fixed_one_polys_by_total_vars(eqs::Vector{Any},
+                                                   n::Int,
+                                                   fixed_indices::Vector{Int};
+                                                   var_prefix::Symbol)
+    fixed = Set(fixed_indices)
+    free_indices = [i for i in 1:n if !(i in fixed)]
+    polys = Any[eq for eq in eqs if !(eq isa PolynomialEquation) && nvars(parent(eq)) == n]
+    isempty(polys) && return (eqs = Any[], n = length(free_indices),
+                              free_indices = free_indices)
+    reduced = _substitute_fixed_one_polys(polys, n, fixed_indices; var_prefix = var_prefix)
+    return (eqs = Any[eq for eq in reduced.eqs],
+            n = reduced.n,
+            free_indices = reduced.free_indices)
+end
+
+function _normalize_equation_gauge_strategy(strategy::Symbol)
+    strategy in (:default, :toric_snf) && return :toric_snf
+    strategy == :none && return :none
+    error("unknown gauge_fix strategy $(repr(strategy)); expected :toric_snf, :default, or :none")
+end
+
+"""
+    gauge_fix(system::FREquationSystem; strategy=:toric_snf)
+
+Fix scalar F-symbol gauge freedom in an F/R equation system by setting a
+deterministic independent set of F-symbol coordinates to `1`.
+
+For multiplicity-free TensorCategories-backed systems, the selected F
+coordinates are a deterministic Smith-normal-form toric slice for the
+F-symbol character matrix.  The returned system has those coordinates
+substituted out of both pentagon equations and the F-part of hexagon
+equations.  Metadata records the original variable counts, fixed indices,
+free-index maps, and residual gauge variables so solver outputs can be
+expanded back to full TensorCategories coordinate order.
+"""
+function gauge_fix(system::FREquationSystem; strategy::Symbol = :toric_snf)
+    require_multiplicity_free(system.rules)
+    normalized_strategy = _normalize_equation_gauge_strategy(strategy)
+    nF = Int(system.metadata[:f_variables])
+    nR = Int(system.metadata[:r_variables])
+    include_hexagon = get(system.metadata, :include_hexagon, false)
+    nH = nF + (include_hexagon ? 2 * nR : 0)
+    toric_slice = normalized_strategy == :none ? nothing :
+        toric_gauge_slice(system.rules; coordinate_kind = :F)
+    fixed_f = toric_slice === nothing ? Int[] :
+        Int[i for i in toric_slice.fixed_indices if i <= nF]
+    fixed_full = fixed_f
+
+    pentagon = _substitute_fixed_one_polys_by_total_vars(system.equations, nF, fixed_f;
+                                                         var_prefix = :x)
+    reduced_eqs = copy(pentagon.eqs)
+    fixed_set = Set(fixed_full)
+    hexagon = (eqs = Any[], n = nH - length(fixed_full),
+               free_indices = [i for i in 1:nH if !(i in fixed_set)])
+    if include_hexagon
+        hexagon = _substitute_fixed_one_polys_by_total_vars(system.equations, nH, fixed_full;
+                                                            var_prefix = :h)
+        append!(reduced_eqs, hexagon.eqs)
+    end
+
+    fixed = [(kind = :F, index = idx, value = 1) for idx in fixed_f]
     meta = copy(system.metadata)
-    meta[:gauge_fix_strategy] = :safe
+    meta[:gauge_fix_strategy] = strategy
+    meta[:gauge_fix_method] = normalized_strategy == :none ? :none : :toric_snf_f_slice
     meta[:fixed_symbols] = fixed
-    meta[:gauge_fix_note] = "TensorCategories-backed equations already carry their variable convention; obsolete F/R coordinate fixes are not added"
+    meta[:gauge_fix_note] = isempty(fixed) ?
+        "no independent scalar F-symbol gauge coordinates were selected" :
+        "selected F-symbol gauge coordinates were substituted by 1"
+    meta[:original_f_variables] = nF
+    meta[:original_r_variables] = nR
+    meta[:original_hexagon_variables] = nH
+    meta[:f_variables] = pentagon.n
+    meta[:r_variables] = nR
+    meta[:hexagon_inverse_r_variables] = include_hexagon ? nR : 0
+    meta[:hexagon_variables] = include_hexagon ? hexagon.n : pentagon.n
+    meta[:fixed_f_indices] = fixed_f
+    meta[:free_f_indices] = pentagon.free_indices
+    meta[:free_hexagon_indices] = include_hexagon ? hexagon.free_indices : pentagon.free_indices
+    if toric_slice !== nothing
+        meta[:toric_gauge_slice] = toric_slice
+        meta[:smith_split] = toric_slice.split
+    end
+    meta[:gauge_fix_complete] = toric_slice === nothing ||
+        (toric_slice.complete && length(fixed_f) == toric_slice.split.effective_rank)
     meta[:residual_gauge_variables] = [v.variable.name for v in gauge_variables(system.rules)
                                        if v.a != 1 && v.b != 1]
     return FREquationSystem(system.rules, system.variables,
-                            _unique_equations(fixed_eqs), meta, system.assumptions,
+                            _unique_equations(reduced_eqs), meta, system.assumptions,
                             system.base_ring)
 end
 
@@ -387,7 +463,7 @@ Attempt to solve a reduced F/R equation system over a finite field.
 
 The input is a `FiniteFieldEquationSystem`, normally produced by
 `reduce_mod_p(::FREquationSystem, p)`.  A future implementation may return
-finite-field solution records; v0.8.6 only validates the interface and reports
+finite-field solution records; the current general API validates the interface and reports
 that the general solver is not implemented.
 
 Mathematical caveats: finite-field solutions require lifting and exact
@@ -396,7 +472,7 @@ and outputs may change before v1.0.
 """
 function solve_finite_field(system::FiniteFieldEquationSystem; kwargs...)
     warn_experimental("solve_finite_field")
-    error("solve_finite_field is not implemented for general FR systems; v0.8 only provides reduction infrastructure")
+    error("solve_finite_field is not implemented for general FR systems; only reduction infrastructure is available")
 end
 
 """
@@ -407,7 +483,7 @@ Experimental API.
 Reconstruct cyclotomic data from finite-field solution data.
 
 The input is a finite-field solution-like object and a positive conductor.
-The intended output is a cyclotomic lift, but v0.8.6 only validates the
+The intended output is a cyclotomic lift, but the current general API only validates the
 conductor and reports that the reconstruction backend is incomplete.
 
 Mathematical caveats: modular residues are not a proof of a cyclotomic lift

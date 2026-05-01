@@ -15,4 +15,24 @@ using ACMG
     @test σ1 == σ2
     @test !iszero(σ1[1, 1])
     @test σ1[1, 1]^2 == FpElem(-1, 17)
+
+    phase4 = solve_fr_mod_p(semion_fusion_rules(), 17;
+                            solver = :phase4,
+                            primes = [17],
+                            max_solutions = 4)
+    @test fr_metadata(phase4)[:solver] == :phase4
+    @test verify_FRData(phase4)
+    @test_throws ErrorException solve_fr_mod_p(semion_fusion_rules(), 17;
+                                               solver = :direct,
+                                               primes = [17])
+end
+
+@testset "finite-field FRData with no F-symbol variables" begin
+    trivial = FusionRule(ones(Int, 1, 1, 1))
+    fr = frdata_from_modp_solution(trivial, [1, 1], 5)
+
+    @test isempty(F_values(fr))
+    @test verify_pentagon(fr)
+    @test verify_hexagon(fr)
+    @test verify_FRData(fr)
 end

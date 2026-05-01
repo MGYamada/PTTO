@@ -78,9 +78,14 @@ include("BraidRepresentations/BraidRepresentations.jl")
 
 # Gauge: public gauge API surface and gauge-fixing helpers over FRData accessors.
 include("Gauge/GaugeWeights.jl")
+include("Gauge/GaugeTypes.jl")
 include("Gauge/ToricGauge.jl")
 include("Gauge/FiniteFieldGauge.jl")
 include("Gauge/Gauge.jl")
+include("Gauge/GaugeActions.jl")
+include("Gauge/GaugeConstraints.jl")
+include("Gauge/GaugeValidation.jl")
+include("Gauge/GaugeNormalForms.jl")
 
 # Pipeline: result records, prime selection, FR layer, and conductor-first orchestration.
 include("Pipeline/Types.jl")
@@ -123,7 +128,7 @@ export total_quantum_dimension_squared, gauss_sum_plus, gauss_sum_minus
 export normalized_gauss_sum, HigherCentralChargeResult
 export higher_central_charge, higher_central_charges, central_charge
 export FRSolutionModP, HigherCentralChargeModPResult
-export solve_FR_mod_p, lift_higher_central_charge
+export lift_higher_central_charge
 export validate_modular_data, build_modular_datum, compute_alpha, compute_charge_conjugation
 export check_modular_relations, check_unitarity, check_verlinde_integrality
 export check_twist_balance, check_vafa_constraints, check_galois_symmetry
@@ -173,15 +178,24 @@ export get_hexagon_fr_system
 export number_of_variables_in_hexagon_equations
 export solve_hexagon_modular_crt, solve_hexagon_homotopy
 export DiscreteLogTable, lift_T_Fp_to_cyclotomic
-export GaugeTransform, GaugeParameters, GaugeChoice, GaugeFixingResult
+export GaugeTransform, GaugeParameters, GaugeChoice, GaugeAction, GaugeFixingResult
+export ToricGaugeNormalFormResult
+export GaugeDegreeOfFreedom, GaugeConstraint, FixUnitConstraints
+export FixSelectedFSymbols, FixSelectedRSymbols, NormalizationConstraint
 export canonical_gauge, gauge_equivalent, gauge_transform
+export identity_gauge, apply_gauge, compose_gauge, inverse_gauge
+export validate_gauge_action, validate_frdata
 export gauge_fixing_plan, is_gauge_fixed
+export gauge_degrees_of_freedom, build_gauge_constraints, solve_gauge_constraints
+export gauge_normal_form, validate_gauge_fixed
 export gauge_parameters, symbol_coordinates, f_symbol_weight, r_symbol_weight
+export fr_symbol_coordinates, toric_gauge_data, toric_gauge_normal_form
+export toric_gauge_normal_form_mod_p
 export gauge_weight_matrix, smith_gauge_split, ineffective_kernel_rank
 export residual_gauge_orders, apply_gauge_mod_p, stabilizer_size_mod_p
 export stacky_weight_mod_p
 
-# v0.8: backend-neutral multiplicity-free F/R equation infrastructure
+# Backend-neutral multiplicity-free F/R equation infrastructure
 export EquationVariable, EquationTerm, EquationExpr, PolynomialEquation, EquationSystem
 export GaugeVariable
 export FREquationSystem, FiniteFieldEquationSystem
@@ -201,12 +215,13 @@ export check_modular_data
 export semion_fusion_rules, fibonacci_fusion_rules, toric_code_fusion_rules
 export ising_fusion_rules
 export FusionPath, FusionTreeBasis, FRData, FiniteFieldFRData
+export FRModPSolveFailure
 export BraidRepresentation, FiniteFieldBraidRepresentation
 export MatrixAlgebraDiagnostics, CommutantDiagnostics, ZariskiClosureDiagnostics
 export fusion_basis, fusion_paths, dim
 export braid_representation, braid_generator, braid_generators
 export braid_generators_B3
-# TODO(v1.0): diagnostics exports are kept for compatibility in v0.8.6 but
+# TODO(v1.0): diagnostics exports are kept for compatibility but
 # documented as experimental computational evidence rather than stable proofs.
 export check_braid_relations, finite_group_diagnostics, generated_subgroup
 export generated_matrix_algebra, commutant, zariski_closure_diagnostics

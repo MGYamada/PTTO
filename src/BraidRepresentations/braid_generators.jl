@@ -96,8 +96,9 @@ function braid_representation(fr_data::FRData{T}, objects::AbstractVector, total
     basis = fusion_basis(fusion_rule(fr_data), objects, total)
     gens = Matrix{T}[_matrix_for_generator(fr_data, basis, i)
                      for i in 1:(length(basis.objects) - 1)]
+    metadata = Dict{Symbol, Any}(:multiplicity_free => true)
     return BraidRepresentation{T, Matrix{T}}(fr_data, basis.objects, basis.total, basis,
-                                             gens, Dict(:multiplicity_free => true))
+                                             gens, metadata)
 end
 
 braid_generator(br::BraidRepresentation, i::Int) = br.generators[i]

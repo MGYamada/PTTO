@@ -29,6 +29,9 @@ end
 _check_same_field(a::FpElem, b::FpElem) =
     a.p == b.p || error("cannot mix F_$(a.p) and F_$(b.p) elements")
 
+_mul_mod_int(a::Integer, b::Integer, p::Integer) =
+    Int(mod(widemul(Int(a), Int(b)), Int(p)))
+
 Base.show(io::IO, x::FpElem) = print(io, x.value, " mod ", x.p)
 Base.broadcastable(x::FpElem) = Ref(x)
 Base.zero(x::FpElem) = FpElem(0, x.p)
@@ -47,7 +50,7 @@ function Base.:-(a::FpElem, b::FpElem)
 end
 function Base.:*(a::FpElem, b::FpElem)
     _check_same_field(a, b)
-    return FpElem(a.value * b.value, a.p)
+    return FpElem(_mul_mod_int(a.value, b.value, a.p), a.p)
 end
 function Base.inv(a::FpElem)
     iszero(a) && error("zero has no inverse in F_$(a.p)")
@@ -283,11 +286,12 @@ function matmul_mod(A::AbstractMatrix{<:Integer}, B::AbstractMatrix{<:Integer}, 
     m, n = size(A)
     n2, k = size(B)
     n == n2 || error("matrix dimensions mismatch: $(size(A)) * $(size(B))")
+    pp = Int(p)
     C = zeros(Int, m, k)
     for i in 1:m, j in 1:k
         s = 0
         for ℓ in 1:n
-            s = (s + Int(A[i, ℓ]) * Int(B[ℓ, j])) % p
+            s = Int(mod(Int128(s) + widemul(Int(A[i, ℓ]), Int(B[ℓ, j])), pp))
         end
         C[i, j] = s
     end

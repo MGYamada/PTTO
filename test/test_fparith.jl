@@ -54,6 +54,13 @@ import ACMG: matmul_mod, matpow_mod, diagmul_right, diagmul_left, lift_symmetric
     @test matpow_mod(A, 3, 17) == mod.(A^3, 17)
     @test matpow_mod(A, 0, 17) == Matrix{Int}(I, 2, 2)
 
+    p_big = 3037000507
+    @test matmul_mod(reshape([p_big - 2], 1, 1),
+                     reshape([p_big - 3], 1, 1),
+                     p_big) == reshape([6], 1, 1)
+    @test ACMG.FpElem(p_big - 2, p_big) * ACMG.FpElem(p_big - 3, p_big) ==
+          ACMG.FpElem(6, p_big)
+
     @test diagmul_right([1 2 3; 4 5 6], [2, 3, 5], 17) == [2 6 15; 8 15 30%17]
     @test diagmul_left([2, 3], [1 2; 3 4], 17) == [2 4; 9 12]
 

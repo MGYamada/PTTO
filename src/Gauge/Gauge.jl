@@ -5,46 +5,12 @@ For a fusion channel basis vector `V_ab^c`, a gauge scalar `u[a,b,c]`
 acts by
 
     F'^{ijk}_{o;a,b} = u[i,j,a] u[a,k,o] / (u[j,k,b] u[i,b,o]) F^{ijk}_{o;a,b}
-    R'^{ij}_k       = u[j,i,k] / u[i,j,k] R^{ij}_k
+    R'^{ij}_k       = u[i,j,k] / u[j,i,k] R^{ij}_k
 
 with unit channels normalized to `1`.  The current implementation is
 intentionally exact and multiplicity-free; higher multiplicity needs full
 change-of-basis matrices rather than channel scalars.
 """
-
-struct GaugeTransform{T}
-    scalars::Dict{Tuple{Int,Int,Int}, T}
-    fixed_indices::Vector{Int}
-    complete::Bool
-end
-
-"""
-    GaugeParameters
-
-Typed gauge parameters with an explicit Hom-basis index.  Keys are
-`(a,b,c,μ)` for a basis vector of `Hom(a ⊗ b, c)`.  The legacy
-`GaugeTransform` scalar dictionary is still accepted and represents the
-multiplicity-free `μ = 1` case.
-"""
-struct GaugeParameters{T, D<:AbstractDict{Symbol}}
-    values::Dict{Tuple{Int,Int,Int,Int}, T}
-    metadata::D
-end
-
-GaugeParameters(values::Dict{Tuple{Int,Int,Int,Int}, T};
-                metadata::Dict{Symbol, Any} = Dict{Symbol, Any}()) where {T} =
-    GaugeParameters{T, typeof(metadata)}(values, metadata)
-
-const GaugeChoice = GaugeParameters
-
-struct GaugeFixingResult{FT,RT,GT,D<:AbstractDict{Symbol}}
-    F::FT
-    R::RT
-    gauge::GT
-    fixed_indices::Vector{Int}
-    complete::Bool
-    metadata::D
-end
 
 function _identity_gauge(Nijk::Array{Int,3})
     r = size(Nijk, 1)
@@ -110,6 +76,8 @@ function _gauge_scalar(gauge, ch::Tuple{Int,Int,Int}, default_one)
         return get(gauge.scalars, ch, default_one)
     elseif gauge isa GaugeParameters
         return get(gauge.values, (ch[1], ch[2], ch[3], 1), default_one)
+    elseif gauge isa GaugeAction
+        return get(gauge.parameters, (ch[1], ch[2], ch[3], 1), default_one)
     elseif gauge isa AbstractDict
         return get(gauge, ch, default_one)
     elseif gauge === nothing
@@ -152,8 +120,8 @@ function _r_forward_transform_factor(Nijk::Array{Int,3},
                                      i::Int, j::Int, k::Int,
                                      gauge,
                                      one_value)
-    numerator = _gauge_scalar(gauge, (j, i, k), one_value)
-    denominator = _gauge_scalar(gauge, (i, j, k), one_value)
+    numerator = _gauge_scalar(gauge, (i, j, k), one_value)
+    denominator = _gauge_scalar(gauge, (j, i, k), one_value)
     return numerator / denominator
 end
 
@@ -161,9 +129,7 @@ function _r_inverse_transform_factor(Nijk::Array{Int,3},
                                      i::Int, j::Int, k::Int,
                                      gauge,
                                      one_value)
-    numerator = _gauge_scalar(gauge, (i, j, k), one_value)
-    denominator = _gauge_scalar(gauge, (j, i, k), one_value)
-    return numerator / denominator
+    return _r_forward_transform_factor(Nijk, i, j, k, gauge, one_value)
 end
 
 function _transform_F_values(F, fusion_rule, gauge, one_value)

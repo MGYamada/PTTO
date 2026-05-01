@@ -1,7 +1,8 @@
 using Test
 using ACMG
+include("fixtures/frdata.jl")
 
-@testset "v0.8 gauge infrastructure" begin
+@testset "gauge infrastructure" begin
     for rules in (semion_fusion_rules(), toric_code_fusion_rules(),
                   fibonacci_fusion_rules(), ising_fusion_rules())
         gvars = gauge_variables(rules)
@@ -14,15 +15,32 @@ using ACMG
         @test isempty(action.F)
         @test isempty(action.R)
 
-        fixed = gauge_fix(system; strategy = :safe)
+        fixed = gauge_fix(system; strategy = :toric_snf)
         @test validate_fr_system(fixed)
-        @test fixed.metadata[:gauge_fix_strategy] == :safe
+        @test fixed.metadata[:gauge_fix_strategy] == :toric_snf
         @test haskey(fixed.metadata, :fixed_symbols)
         @test haskey(fixed.metadata, :residual_gauge_variables)
+        @test fixed.metadata[:original_f_variables] == system.metadata[:f_variables]
+        @test fixed.metadata[:f_variables] ==
+              fixed.metadata[:original_f_variables] - length(fixed.metadata[:fixed_f_indices])
+        @test fixed.metadata[:hexagon_variables] ==
+              fixed.metadata[:original_hexagon_variables] - length(fixed.metadata[:fixed_f_indices])
+        @test all(idx -> !(idx in fixed.metadata[:free_hexagon_indices]),
+                  fixed.metadata[:fixed_f_indices])
+        @test length(fixed.metadata[:fixed_symbols]) == length(fixed.metadata[:fixed_f_indices])
     end
 
+    fib_default = gauge_fix(fr_equation_system(fibonacci_fusion_rules()))
+    fib_toric = gauge_fix(fr_equation_system(fibonacci_fusion_rules()); strategy = :toric_snf)
+    @test fib_toric.metadata[:fixed_f_indices] == fib_default.metadata[:fixed_f_indices]
+    @test fib_toric.metadata[:gauge_fix_complete]
+    fib_none = gauge_fix(fr_equation_system(fibonacci_fusion_rules()); strategy = :none)
+    @test isempty(fib_none.metadata[:fixed_f_indices])
+    @test fib_none.metadata[:gauge_fix_method] == :none
     @test_throws ErrorException gauge_fix(fr_equation_system(fibonacci_fusion_rules());
                                           strategy = :canonical)
+    @test_throws ErrorException gauge_fix(fr_equation_system(fibonacci_fusion_rules());
+                                          strategy = :safe)
 end
 
 @testset "FRData-backed gauge accessors and transforms" begin
@@ -64,4 +82,66 @@ end
     @test fixed.complete
     @test fixed.F == canonical_gauge(moved.F_values, moved.R_values, moved.rules.N).F
     @test gauge_equivalent(fib, moved)
+end
+
+@testset "FRData GaugeAction API" begin
+    examples = [
+        semion_fr_data_mod_p(17),
+        fibonacci_fr_data_mod_p(101),
+    ]
+
+    for fr in examples
+        p = fr_metadata(fr)[:p]
+        one_value = fr_value_one(fr)
+        identity = identity_gauge(fr)
+
+        @test identity isa GaugeAction
+        @test validate_gauge_action(fr, identity)
+        @test gauge_degrees_of_freedom(fr) isa Vector{GaugeDegreeOfFreedom}
+        @test apply_gauge(fr, identity) == fr
+        @test validate_frdata(apply_gauge(fr, identity))
+
+        scalars = Dict((ch[1], ch[2], ch[3]) =>
+                       (ch[1] == 1 || ch[2] == 1 ? one_value :
+                        FpElem(ch[1] + 2ch[2] + 3ch[3], p))
+                       for ch in gauge_parameters(fr))
+        action = GaugeAction(scalars; field = Symbol("F_$p"))
+        @test validate_gauge_action(fr, action)
+
+        moved = apply_gauge(fr, action)
+        @test verify_pentagon(moved)
+        @test verify_hexagon(moved)
+        @test verify_FRData(moved)
+
+        returned = apply_gauge(moved, inverse_gauge(action))
+        @test returned == fr
+
+        composed = compose_gauge(action, inverse_gauge(action))
+        @test apply_gauge(fr, composed) == fr
+
+        f_only = apply_gauge(fr, action; target = :F)
+        r_only = apply_gauge(fr, action; target = :R)
+        @test f_only.R_values == fr.R_values
+        @test r_only.F_values == fr.F_values
+
+        constraints = build_gauge_constraints(moved; strategy = :default)
+        solved = solve_gauge_constraints(moved, constraints)
+        @test solved isa GaugeAction
+        normal1 = gauge_normal_form(moved; constraints = constraints)
+        normal2 = gauge_normal_form(moved; constraints = constraints)
+        @test normal1.F == normal2.F
+        @test normal1.R == normal2.R
+        @test validate_gauge_fixed(normal1.metadata[:frdata])
+    end
+
+    ising = test_ising_fr_data_mod_p_17()
+    p = fr_metadata(ising)[:p]
+    scalars = Dict((ch[1], ch[2], ch[3]) =>
+                   (ch[1] == 1 || ch[2] == 1 ? fr_value_one(ising) :
+                    FpElem(ch[1] + 2ch[2] + 3ch[3], p))
+                   for ch in gauge_parameters(ising))
+    moved_ising = apply_gauge(ising, GaugeAction(scalars; field = :F_17))
+    @test verify_pentagon(moved_ising)
+    @test verify_hexagon(moved_ising)
+    @test apply_gauge(moved_ising, inverse_gauge(GaugeAction(scalars; field = :F_17))) == ising
 end

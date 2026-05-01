@@ -73,7 +73,7 @@ using ACMG
 
     @testset "finite-field Fibonacci prototype agrees after reduction" begin
         data = fibonacci_modular_data()
-        sol = solve_FR_mod_p(:fibonacci, 41)
+        sol = solve_fr_mod_p(:fibonacci, 41)
 
         @test sol.category == :fibonacci
         @test sol.p == 41
@@ -91,8 +91,29 @@ using ACMG
     end
 
     @testset "finite-field method dispatch" begin
-        direct = solve_FR_mod_p(:semion, 17; compute_fr = false)
+        direct = solve_fr_mod_p(:semion, 17; compute_fr = false)
         via_method = higher_central_charge(:semion, 1; method = :finite_field, p = 17)
         @test via_method.value == higher_central_charge(direct, 1).value
+
+        @test_deprecated ACMG.solve_FR_mod_p(:semion, 17; compute_fr = false)
+    end
+
+    @testset "FRData finite-field higher central charge is toric-gauge invariant" begin
+        fr = fibonacci_fr_data_mod_p(101)
+        p = fr_metadata(fr)[:p]
+        scalars = Dict(ch => (ch[1] == 1 || ch[2] == 1 ? FpElem(1, p) :
+                              FpElem(i + 2, p))
+                       for (i, ch) in enumerate(gauge_parameters(fr)))
+        moved = apply_gauge(fr, GaugeAction(scalars; field = :F_101))
+
+        @test verify_FRData(moved)
+        raw = higher_central_charge(moved, 1)
+        fixed = higher_central_charge(fr, 1)
+        @test raw.ok
+        @test fixed.ok
+        @test raw.value == fixed.value
+        @test higher_central_charge(moved; n = 1, method = :finite_field).value == raw.value
+        @test higher_central_charges(fr, 1:3)[1].value ==
+              fixed.value
     end
 end

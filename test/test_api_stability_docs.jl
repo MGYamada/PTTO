@@ -3,7 +3,7 @@
     @test isfile(joinpath(root, "docs", "src", "api_stability.md"))
 
     documented_experimental = [
-        :solve_FR_mod_p,
+        :solve_fr_mod_p,
         :lift_higher_central_charge,
         :solve_finite_field,
         :cyclotomic_reconstruct,
@@ -14,6 +14,7 @@
         :zariski_closure_diagnostics,
     ]
     @test all(sym -> isdefined(ACMG, sym), documented_experimental)
+    @test :solve_FR_mod_p ∉ names(ACMG)
 end
 
 @testset "experimental warning helper" begin

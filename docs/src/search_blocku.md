@@ -48,4 +48,4 @@ Galois-related data, and attempts exact cyclotomic reconstruction.
 The conductor-level classification entry points and result records are the
 stable API.  Low-level Block-U helpers, fixed-stratum reconstruction hooks, and
 internal search diagnostics remain experimental or semi-public compatibility
-exports in v0.8.6.
+exports.

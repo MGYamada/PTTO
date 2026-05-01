@@ -5,8 +5,7 @@ condensed matter geometry and modular tensor category experiments.
 
 The package currently focuses on exact modular data, Galois actions, higher
 central charges, F/R symbols, gauge fixing, braid representations, and
-finite-field experiments.  v0.8.6 is a documentation hardening release; it does
-not introduce new mathematical algorithms.
+finite-field experiments.
 
 ## Documentation map
 

@@ -53,6 +53,6 @@ TensorCategories replacement.
 ## Stability notes
 
 `FRData`, F/R accessors, fusion-rule constructors, and equation-system
-construction are stable public API in v0.8.6.  Finite-field F/R solving is the
-preferred small-example computation path, while cyclotomic reconstruction
-remains experimental.
+construction are stable public API.  Finite-field F/R solving is the preferred
+small-example computation path, while cyclotomic reconstruction remains
+experimental.
