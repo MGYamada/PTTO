@@ -9,7 +9,7 @@ using ACMG
         (name = "Fibonacci", N = 20, primes = [41, 61], max_rank = 2, expected_rank = 2,
          skip_FR = false),
         (name = "Ising", N = 16, primes = [17, 97], max_rank = 3, expected_rank = 3,
-         skip_FR = true),
+         skip_FR = false),
     ]
 
     for case in cases
@@ -26,6 +26,13 @@ using ACMG
             @test all(m -> m.N == case.N, classified)
             @test all(m -> parent(m.T_cyclotomic[1]) == cyclotomic_field(case.N)[1],
                       classified)
+            if case.name == "Ising"
+                rank3 = filter(m -> m.rank == 3, classified)
+                @test !isempty(rank3)
+                @test all(m -> m.verify_report !== nothing && m.verify_report.ok, rank3)
+                @test all(m -> iszero(m.verify_report.T_error), rank3)
+                @test all(m -> m.T_cyclotomic[3]^8 == -one(parent(m.T_cyclotomic[3])), rank3)
+            end
         end
     end
 end

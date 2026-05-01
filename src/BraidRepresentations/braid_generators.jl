@@ -106,6 +106,45 @@ braid_generator(fr_data::FRData, objects::AbstractVector, total, i::Int) =
     braid_generator(braid_representation(fr_data, objects, total), i)
 braid_generators(fr_data::FRData, objects::AbstractVector, total) =
     braid_generators(braid_representation(fr_data, objects, total))
+braid_generator(fr_data::FRData, objects::AbstractVector, i::Int; total_charge) =
+    braid_generator(fr_data, objects, total_charge, i)
+
+function _identity_like(A::AbstractMatrix{T}) where {T}
+    n, m = size(A)
+    n == m || error("identity requested for non-square matrix of size $(size(A))")
+    oneval = one(A[1, 1])
+    return T[i == j ? oneval : zero(oneval) for i in 1:n, j in 1:n]
+end
+
+function _matrix_power_generic(A::AbstractMatrix, n::Integer)
+    n == 0 && return _identity_like(A)
+    n < 0 && return _matrix_power_generic(_matrix_inverse_generic(A), -n)
+    out = _identity_like(A)
+    base = A
+    k = Int(n)
+    while k > 0
+        isodd(k) && (out = out * base)
+        k ÷= 2
+        k > 0 && (base = base * base)
+    end
+    return out
+end
+
+function braid_representation(fr_data::FRData, braid_word::AbstractVector{<:Integer},
+                              objects::AbstractVector; total_charge)
+    gens = braid_generators(fr_data, objects, total_charge)
+    isempty(gens) && return Matrix{fr_scalar_type(fr_data)}(undef, 0, 0)
+    out = _identity_like(first(gens))
+    for letter in braid_word
+        idx = abs(Int(letter))
+        1 <= idx <= length(gens) || error("braid generator σ_$idx is outside 1:$(length(gens))")
+        out = out * _matrix_power_generic(gens[idx], letter < 0 ? -1 : 1)
+    end
+    return out
+end
+
+braid_generators_B3(fr_data::FRData, objects::AbstractVector; total_charge) =
+    Tuple(braid_generators(fr_data, objects, total_charge))
 
 function braid_representation(fr_tuple::NamedTuple, objects::AbstractVector, total)
     return braid_representation(frdata_from_namedtuple(fr_tuple), objects, total)

@@ -110,8 +110,9 @@ Finite-field braid representation helpers
 - status: experimental
 - input/output may change before v1.0
 - mathematical caveat: finite-field reductions require split-prime conditions
-  and do not replace exact verification
-- stable alternative: exact `braid_representation` and `check_braid_relations`
+  and do not replace exact mathematical verification
+- stable alternative: finite-field `FRData` plus `braid_representation` and
+  `check_braid_relations` over the selected prime field
 
 GaugeFixing low-level normal form helpers
 

@@ -22,16 +22,6 @@ R_inverse_values(data::FRData) = data.R_inverse_values
 fr_metadata(data::FRData) = data.metadata
 fr_scalar_type(::FRData{T}) where {T} = T
 
-_object_label(x::Integer) = Int(x)
-_object_label(x::AbstractString) = _object_label(Symbol(x))
-_object_label(x::Symbol) = x === :one || x === Symbol("1") ? 1 :
-    x === :τ || x === :tau || x === :Tau ? 2 :
-    x === :s ? 2 :
-    x === :σ || x === :sigma ? 2 :
-    x === :ψ || x === :psi ? 3 :
-    error("unsupported symbolic simple-object label $x; pass integer labels or record labels in FRData metadata")
-_object_labels(xs) = [_object_label(x) for x in xs]
-
 """
     simples(frdata)
 
@@ -39,8 +29,7 @@ Return the simple-object labels carried by `frdata`.  If no explicit labels
 are recorded, ACMG's internal `1:rank` labels are returned.
 """
 function simples(data::FRData)
-    labels = get(data.metadata, :simple_objects,
-                 get(data.metadata, :object_labels, nothing))
+    labels = get(data.metadata, :simple_objects, nothing)
     labels === nothing && return simple_objects(data.rules)
     length(labels) == data.rules.rank ||
         error("FRData object label metadata has length $(length(labels)); expected $(data.rules.rank)")
@@ -57,7 +46,9 @@ function _frdata_object_index(data::FRData, x)
             parsed = tryparse(Int, String(x))
             found = parsed === nothing ? findfirst(==(Symbol(x)), labels) : parsed
         end
-        idx = found === nothing ? _object_label(x) : Int(found)
+        found === nothing &&
+            error("unsupported simple-object label $x; pass an integer label in 1:$(data.rules.rank)")
+        idx = Int(found)
     end
     _check_object(data.rules, idx)
     return idx
@@ -71,11 +62,18 @@ simple_objects(data::FRData) = simples(data)
     fusion_coeff(frdata, a, b, c)
 
 Return `N_ab^c`, accepting either internal integer labels or labels recorded
-in `frdata.metadata[:simple_objects]` / `:object_labels`.
+in `frdata.metadata[:simple_objects]`.
 """
 function fusion_coeff(data::FRData, a, b, c)
     ia, ib, ic = _frdata_object_indices(data, a, b, c)
     return data.rules.N[ia, ib, ic]
+end
+
+function fusion_coeff(data::FRData, a::Int, b::Int, c::Int)
+    _check_object(data.rules, a)
+    _check_object(data.rules, b)
+    _check_object(data.rules, c)
+    return data.rules.N[a, b, c]
 end
 
 fusion_coeff(rules::Union{FusionRule, Array{Int, 3}}, a::Int, b::Int, c::Int) =
@@ -85,6 +83,13 @@ function fusion_channels(data::FRData, a, b)
     ia, ib = _frdata_object_indices(data, a, b)
     labels = simples(data)
     return [labels[c] for c in 1:data.rules.rank if data.rules.N[ia, ib, c] != 0]
+end
+
+function fusion_channels(data::FRData, a::Int, b::Int)
+    _check_object(data.rules, a)
+    _check_object(data.rules, b)
+    labels = simples(data)
+    return [labels[c] for c in 1:data.rules.rank if data.rules.N[a, b, c] != 0]
 end
 
 """
@@ -285,92 +290,3 @@ fr_pentagon_values(data::FRData) = F_values(data)
 
 _fr_hexagon_values(data::FRData) = fr_hexagon_values(data)
 _fr_pentagon_values(data::FRData) = fr_pentagon_values(data)
-
-function semion_fr_data(ctx::CyclotomicContext = CyclotomicContext(8))
-    data = semion_modular_data(ctx)
-    K, z = field(ctx), zeta(ctx)
-    T = typeof(one(K))
-    F = T[-one(K)]
-    R = T[z^2, one(K), one(K), one(K)]
-    Rinv = T[-z^2, one(K), one(K), one(K)]
-    return frdata_from_vectors(semion_fusion_rules(), F, vcat(R, Rinv);
-        metadata = Dict{Symbol, Any}(:name => :semion, :conductor => 8,
-                                     :modular_data => data,
-                                     :simple_objects => [:one, :s],
-                                     :format => :tensorcategories_variable_order,
-                                     :source => :hardcoded_verified_solution))
-end
-
-function fibonacci_fr_data(ctx::CyclotomicContext = CyclotomicContext(20))
-    data = fibonacci_modular_data(ctx)
-    K, z = field(ctx), zeta(ctx)
-    T = typeof(one(K))
-    F = T[z^6 - z^4,
-          one(K),
-          -z^6 + z^4,
-          -z^6 + z^4,
-          one(K)]
-    R = T[-z^4,
-          z^6 - z^4 + z^2 - one(K),
-          one(K),
-          one(K),
-          one(K)]
-    Rinv = T[z^6,
-             -z^2,
-             one(K),
-             one(K),
-             one(K)]
-    return frdata_from_vectors(fibonacci_fusion_rules(), F, vcat(R, Rinv);
-        metadata = Dict{Symbol, Any}(:name => :fibonacci, :conductor => 20,
-                                     :modular_data => data,
-                                     :simple_objects => [:one, :τ],
-                                     :format => :tensorcategories_variable_order,
-                                     :source => :hardcoded_verified_solution))
-end
-
-function ising_fr_data(ctx::CyclotomicContext = CyclotomicContext(16))
-    data = ising_modular_data(ctx)
-    K, z = field(ctx), zeta(ctx)
-    s = (-z^6 + z^2) // K(2)
-    T = typeof(one(K))
-    F = T[one(K),
-          one(K),
-          -one(K),
-          one(K),
-          one(K),
-          one(K),
-          one(K),
-          -one(K),
-          -one(K),
-          -one(K),
-          s,
-          -s,
-          s,
-          s]
-    R = T[-one(K),
-          z^4,
-          one(K),
-          z^4,
-          z^3,
-          -z^7,
-          one(K),
-          one(K),
-          one(K),
-          one(K)]
-    Rinv = T[-one(K),
-             -z^4,
-             one(K),
-             -z^4,
-             -z^5,
-             z,
-             one(K),
-             one(K),
-             one(K),
-             one(K)]
-    return frdata_from_vectors(ising_fusion_rules(), F, vcat(R, Rinv);
-        metadata = Dict{Symbol, Any}(:name => :ising, :conductor => 16,
-                                     :modular_data => data,
-                                     :simple_objects => [:one, :σ, :ψ],
-                                     :format => :tensorcategories_variable_order,
-                                     :source => :hardcoded_verified_solution))
-end

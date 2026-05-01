@@ -45,14 +45,13 @@ using ACMG
         @test all(m -> m.verify_exact_lift === true, classified)
     end
 
-    @testset "N=8 rank-3 groups without F/R do not abort pipeline" begin
+    @testset "N=8 rejects Ising-like rank-3 sectors with invalid twists" begin
         classified = ACMG.classify_mtcs_at_conductor(8;
                                                      max_rank = 3,
                                                      primes = [41, 73],
                                                      verbose = false)
-        @test length(classified) == 6
-        @test count(m -> m.rank == 3, classified) == 2
-        @test all(m -> m.verify_report === nothing, filter(m -> m.rank == 3, classified))
+        @test length(classified) == 4
+        @test count(m -> m.rank == 3, classified) == 0
         @test all(m -> m.verify_report !== nothing && m.verify_report.ok,
                   filter(m -> m.rank <= 2, classified))
     end
@@ -61,9 +60,9 @@ using ACMG
         classified = ACMG.classify_mtcs_at_conductor(8;
                                                      max_rank = 3,
                                                      verbose = false)
-        @test length(classified) == 6
+        @test length(classified) == 4
         @test count(m -> m.rank == 2, classified) == 2
-        @test count(m -> m.rank == 3, classified) == 2
+        @test count(m -> m.rank == 3, classified) == 0
         @test all(m -> m.verify_fresh, classified)
         @test all(m -> m.verify_exact_lift === true, classified)
         @test all(m -> m.verify_report !== nothing && m.verify_report.ok,
@@ -102,5 +101,29 @@ using ACMG
         @test classified.S_cyclotomic[1, 1] == one(parent(classified.S_cyclotomic[1, 1]))
         @test !haskey(ACMG._CRT_MITM_LEFT_CACHE,
                       (4, 50, (1, 1), (p1, p2)))
+    end
+
+    @testset "fusion grouping preserves same-rule sign variants" begin
+        Nijk = zeros(Int, 2, 2, 2)
+        Nijk[1, 1, 1] = 1
+        Nijk[1, 2, 2] = 1
+        Nijk[2, 1, 2] = 1
+        Nijk[2, 2, 1] = 1
+        p1, p2 = 17, 41
+        cands = Dict(
+            p1 => [
+                ACMG.MTCCandidate(p1, :a, [1 1; 1 -1], [1, 4], 1, Nijk, [1, 1], 2),
+                ACMG.MTCCandidate(p1, :b, [1 -1; -1 -1], [1, 4], 1, Nijk, [1, 1], 2),
+            ],
+            p2 => [
+                ACMG.MTCCandidate(p2, :c, [1 1; 1 -1], [1, 9], 1, Nijk, [1, 1], 2),
+                ACMG.MTCCandidate(p2, :d, [1 -1; -1 -1], [1, 9], 1, Nijk, [1, 1], 2),
+            ],
+        )
+
+        groups = group_mtcs_by_fusion(cands)
+        @test length(groups) == 4
+        @test all(g -> sort(collect(keys(g))) == [p1, p2], groups)
+        @test length(unique([(Tuple(vec(g[p1].S_Fp)), Tuple(vec(g[p2].S_Fp))) for g in groups])) == 4
     end
 end

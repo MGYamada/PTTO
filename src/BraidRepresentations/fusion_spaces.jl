@@ -19,13 +19,18 @@ Base.length(b::FusionTreeBasis) = length(b.paths)
 Base.iterate(b::FusionTreeBasis, st...) = iterate(b.paths, st...)
 dim(b::FusionTreeBasis) = length(b)
 
+function _fusion_space_object_index(fr::FusionRule, x)
+    x isa Integer || error("fusion-space object labels must be integers in 1:$(fr.rank); got $(repr(x))")
+    idx = Int(x)
+    _check_object(fr, idx)
+    return idx
+end
+
 function fusion_paths(rules, objects::AbstractVector, total)
     fr = _fusion_rule(rules)
     require_multiplicity_free(fr)
-    objs = _object_labels(objects)
-    tgt = _object_label(total)
-    foreach(a -> _check_object(fr, a), objs)
-    _check_object(fr, tgt)
+    objs = [_fusion_space_object_index(fr, x) for x in objects]
+    tgt = _fusion_space_object_index(fr, total)
     isempty(objs) && return FusionPath[]
     length(objs) == 1 && return objs[1] == tgt ? [FusionPath(objs, tgt, [tgt])] : FusionPath[]
     paths = FusionPath[]
@@ -45,6 +50,9 @@ function fusion_paths(rules, objects::AbstractVector, total)
     return paths
 end
 
-fusion_basis(rules, objects::AbstractVector, total) =
-    FusionTreeBasis(_fusion_rule(rules), _object_labels(objects), _object_label(total),
-                    fusion_paths(rules, objects, total))
+function fusion_basis(rules, objects::AbstractVector, total)
+    fr = _fusion_rule(rules)
+    return FusionTreeBasis(fr, [_fusion_space_object_index(fr, x) for x in objects],
+                           _fusion_space_object_index(fr, total),
+                           fusion_paths(fr, objects, total))
+end

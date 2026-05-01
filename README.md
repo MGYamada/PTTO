@@ -21,10 +21,12 @@ hcc = higher_central_charge(fib; n = 1)
 
 ## Main design principle
 
-ACMG.jl is conductor-first:
+ACMG.jl is conductor-first, and new F/R braid computations are equation-first:
 
 ```text
 N -> Q(zeta_N) -> modular data/F/R -> Galois and F_p reduction
+
+fusion rules -> pentagon/hexagon scheme -> F_p FRData -> braid matrices over F_p
 ```
 
 The conductor `N` is not only an invariant inferred after the fact.  It selects
@@ -38,6 +40,7 @@ actions, finite-field reduction, and reconstruction in the same context.
 - exact modular-data validation, Verlinde checks, and Gauss sums
 - higher central charge utilities over exact modular data
 - multiplicity-free F/R equation containers and `FRData` accessors
+- finite-field Phase-4 F/R solving via `solve_fr_mod_p`
 - safe gauge records and gauge-fixing entry points
 - exact multiplicity-free braid representation construction
 - conductor-level pipeline entry points and classification result records
@@ -80,6 +83,7 @@ Important pages:
 
 - `docs/src/concepts.md`
 - `docs/src/fr_symbols.md`
+- `docs/src/finite_field_fr_data.md`
 - `docs/src/api_stability.md`
 - `docs/src/api.md`
 - `docs/DocCoverage.md`

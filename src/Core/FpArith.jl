@@ -10,6 +10,79 @@ using Oscar
 # ===== Finite-field arithmetic helpers =====
 
 """
+    FpElem(value, p)
+
+Small exact scalar wrapper for arithmetic in the prime field `F_p`.
+It is intentionally lightweight: values are stored as canonical integer
+residues, while arithmetic checks that operands live over the same prime.
+"""
+struct FpElem
+    value::Int
+    p::Int
+    function FpElem(value::Integer, p::Integer)
+        pp = Int(p)
+        pp > 1 && isprime(pp) || error("FpElem requires a prime p, got $p")
+        return new(mod(Int(value), pp), pp)
+    end
+end
+
+_check_same_field(a::FpElem, b::FpElem) =
+    a.p == b.p || error("cannot mix F_$(a.p) and F_$(b.p) elements")
+
+Base.show(io::IO, x::FpElem) = print(io, x.value, " mod ", x.p)
+Base.broadcastable(x::FpElem) = Ref(x)
+Base.zero(x::FpElem) = FpElem(0, x.p)
+Base.one(x::FpElem) = FpElem(1, x.p)
+Base.iszero(x::FpElem) = x.value == 0
+Base.:(==)(a::FpElem, b::FpElem) = a.p == b.p && a.value == b.value
+Base.hash(x::FpElem, h::UInt) = hash((x.value, x.p), h)
+Base.:-(a::FpElem) = FpElem(-a.value, a.p)
+function Base.:+(a::FpElem, b::FpElem)
+    _check_same_field(a, b)
+    return FpElem(a.value + b.value, a.p)
+end
+function Base.:-(a::FpElem, b::FpElem)
+    _check_same_field(a, b)
+    return FpElem(a.value - b.value, a.p)
+end
+function Base.:*(a::FpElem, b::FpElem)
+    _check_same_field(a, b)
+    return FpElem(a.value * b.value, a.p)
+end
+function Base.inv(a::FpElem)
+    iszero(a) && error("zero has no inverse in F_$(a.p)")
+    return FpElem(invmod(a.value, a.p), a.p)
+end
+Base.:/(a::FpElem, b::FpElem) = a * inv(b)
+Base.:+(a::FpElem, b::Integer) = a + FpElem(b, a.p)
+Base.:+(a::Integer, b::FpElem) = FpElem(a, b.p) + b
+Base.:-(a::FpElem, b::Integer) = a - FpElem(b, a.p)
+Base.:-(a::Integer, b::FpElem) = FpElem(a, b.p) - b
+Base.:*(a::FpElem, b::Integer) = a * FpElem(b, a.p)
+Base.:*(a::Integer, b::FpElem) = FpElem(a, b.p) * b
+Base.:/(a::FpElem, b::Integer) = a / FpElem(b, a.p)
+Base.:^(a::FpElem, n::Integer) =
+    n >= 0 ? FpElem(powermod(a.value, Int(n), a.p), a.p) : inv(a)^(-n)
+
+function Base.:*(A::AbstractMatrix{FpElem}, B::AbstractMatrix{FpElem})
+    size(A, 2) == size(B, 1) ||
+        error("matrix dimensions mismatch: $(size(A)) * $(size(B))")
+    isempty(A) && return Matrix{FpElem}(undef, size(A, 1), size(B, 2))
+    p = A[1, 1].p
+    all(x -> x.p == p, A) && all(x -> x.p == p, B) ||
+        error("cannot multiply matrices over different prime fields")
+    C = fill(FpElem(0, p), size(A, 1), size(B, 2))
+    for i in axes(A, 1), j in axes(B, 2)
+        s = FpElem(0, p)
+        for k in axes(A, 2)
+            s += A[i, k] * B[k, j]
+        end
+        C[i, j] = s
+    end
+    return C
+end
+
+"""
 Finite field arithmetic over F_p.
 
 Uses Julia's native Int/BigInt arithmetic with `mod(·, p)` wrapping

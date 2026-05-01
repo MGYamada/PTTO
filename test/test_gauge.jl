@@ -26,26 +26,26 @@ using ACMG
 end
 
 @testset "FRData-backed gauge accessors and transforms" begin
-    fib = fibonacci_fr_data()
+    fib = fibonacci_fr_data_mod_p(101)
 
-    @test simples(fib) == [:one, :τ]
-    @test fusion_coeff(fib, :τ, :τ, :one) == 1
-    @test fusion_coeff(fib, "τ", "τ", "τ") == 1
-    @test fusion_channels(fib, :τ, :τ) == [:one, :τ]
-    @test hom_basis(fib, :τ, :τ, :τ) == [1]
-    @test gauge_basis_indices(fib, :τ, :τ, :τ) == [1]
+    @test simples(fib) == [1, 2]
+    @test fusion_coeff(fib, 2, 2, 1) == 1
+    @test fusion_coeff(fib, "2", "2", "2") == 1
+    @test fusion_channels(fib, 2, 2) == [1, 2]
+    @test hom_basis(fib, 2, 2, 2) == [1]
+    @test gauge_basis_indices(fib, 2, 2, 2) == [1]
     @test validate_frdata_for_gauge(fib)
-    @test has_F_symbol(fib, :τ, :τ, :τ, :τ; e = :one, f = :τ)
-    @test has_R_symbol(fib, :τ, :τ, :one)
+    @test has_F_symbol(fib, 2, 2, 2, 2; e = 1, f = 2)
+    @test has_R_symbol(fib, 2, 2, 1)
 
     identity = gauge_transform(fib, nothing)
     @test identity isa FRData
     @test identity.F_values == fib.F_values
     @test identity.R_values == fib.R_values
 
-    K = parent(fib.F_values[1])
+    p = fr_metadata(fib)[:p]
     scalars = Dict((ch[1], ch[2], ch[3]) =>
-                   (ch[1] == 1 || ch[2] == 1 ? one(K) : K(ch[1] + ch[2] + ch[3]))
+                   (ch[1] == 1 || ch[2] == 1 ? one(fib.F_values[1]) : FpElem(ch[1] + ch[2] + ch[3], p))
                    for ch in gauge_parameters(fib))
     moved = gauge_transform(fib, GaugeTransform(scalars, Int[], false))
     moved_legacy = gauge_transform(fib.F_values, fib.R_values,

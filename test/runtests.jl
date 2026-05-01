@@ -22,6 +22,9 @@ using Test
     include("braid_representations.jl")
     include("braid_relations.jl")
     include("finite_field_braid.jl")
+    include("fr_modp_semion.jl")
+    include("fr_modp_fibonacci.jl")
+    include("braid_modp_fibonacci.jl")
     include("zariski_diagnostics.jl")
     include("test_api_stability_docs.jl")
 end

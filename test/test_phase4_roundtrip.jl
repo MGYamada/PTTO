@@ -149,6 +149,25 @@ end
     end
 end
 
+@testset "Ising twist validation rejects even 16th-root sigma twists" begin
+    ctx = CyclotomicContext(16)
+    K, z = ACMG.field(ctx), ACMG.zeta(ctx)
+    Nijk = zeros(Int, 3, 3, 3)
+    for i in 1:3
+        Nijk[1, i, i] = 1
+        Nijk[i, 1, i] = 1
+    end
+    Nijk[2, 2, 1] = 1
+    Nijk[2, 3, 3] = 1
+    Nijk[3, 2, 3] = 1
+    Nijk[3, 3, 1] = 1
+    Nijk[3, 3, 2] = 1
+
+    @test check_vafa_constraints([one(K), -one(K), z], Nijk).valid
+    @test !check_vafa_constraints([one(K), -one(K), z^2], Nijk).valid
+    @test !check_vafa_constraints([one(K), -one(K), z^6], Nijk).valid
+end
+
 @testset "Phase 4 roundtrip is checked against the requested target" begin
     data = semion_modular_data()
     Nijk = _semion_fusion()
@@ -180,17 +199,4 @@ end
     @test !target_roundtrip.ok
     @test !ACMG._fr_roundtrip_attachable(target_roundtrip)
     @test self_roundtrip.ok
-end
-
-@testset "Reference Ising FRData roundtrips target T" begin
-    data = ising_modular_data()
-    fr = ising_fr_data()
-    twists = _twists(data)
-    roundtrip = ACMG._modular_data_roundtrip(fr.F_values, fr.R_values,
-                                             fr.rules.N, data.S, twists, 16)
-
-    @test roundtrip.ok
-    @test iszero(roundtrip.S_error)
-    @test iszero(roundtrip.T_error)
-    @test roundtrip.T_roundtrip == twists
 end

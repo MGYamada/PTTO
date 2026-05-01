@@ -23,6 +23,7 @@ makedocs(;
         "F/R Symbols" => "fr_symbols.md",
         "Gauge Fixing" => "gauge_fixing.md",
         "Braid Representations" => "braid_representations.md",
+        "Finite-Field FRData" => "finite_field_fr_data.md",
         "Finite Fields" => "finite_fields.md",
         "Block-U Search" => "search_blocku.md",
         "Zariski Diagnostics" => "zariski_diagnostics.md",
