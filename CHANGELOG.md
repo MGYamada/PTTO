@@ -1,5 +1,55 @@
 # Changelog
 
+## v0.8.9 - Algebraic Gauge Fixing Infrastructure
+
+### Added
+- Added `GaugeAction` as the FRData-centered gauge action record, with
+  `identity_gauge`, `apply_gauge`, `compose_gauge`, `inverse_gauge`, and
+  `validate_gauge_action`.
+- Added explicit gauge-fixing constraint records:
+  `GaugeConstraint`, `FixUnitConstraints`, `FixSelectedFSymbols`,
+  `FixSelectedRSymbols`, and `NormalizationConstraint`.
+- Added staged normal-form helpers:
+  `gauge_degrees_of_freedom`, `build_gauge_constraints`,
+  `solve_gauge_constraints`, `gauge_normal_form`, and
+  `validate_gauge_fixed`.
+- Added FRData equality on the mathematical F/R payload, ignoring metadata, so
+  identity and inverse gauge-action tests can compare representatives directly.
+- Expanded gauge-fixing documentation with the algebraic action formula,
+  finite-field notes, examples, and migration guidance.
+
+### Changed
+- Split gauge infrastructure into focused files for type definitions, actions,
+  constraints, validation, and normal forms while preserving legacy wrappers.
+- Corrected the R-symbol gauge character to match the TensorCategories
+  hexagon convention and explicit inverse-R variables:
+  `R'^{ab}_c = u[a,b,c] / u[b,a,c] R^{ab}_c`.
+- Updated finite-field and toric gauge helpers to consume `GaugeAction`.
+- Gauge tests now avoid invoking the expensive `ising_fr_data_mod_p(17)`
+  solver path; the Ising hexagon-preservation regression uses a precomputed
+  finite-field fixture.
+- Fixed finite-field F/R solver issues carried forward from v0.8.8:
+  `solver=:phase4` now accepts Phase-4 keyword arguments, empty-F pentagon
+  verification no longer throws, known-family branch selection checks target
+  twists, and Ising finite-field fixture tests are included in the default
+  test suite without invoking the expensive solver path.
+- Unified finite-field solver naming on `solve_fr_mod_p`; the old uppercase
+  `solve_FR_mod_p` compatibility wrapper is deprecated and no longer exported.
+- Implemented equation-layer `gauge_fix` end to end: selected F-symbol pivot
+  coordinates are substituted by `1`, solver variables are reduced, and
+  finite-field solutions are expanded back to TensorCategories F/R order.
+- Added Smith-normal-form F-symbol toric gauge slices before finite-field
+  F/R solving, with stabilizer and stacky metadata reported on solved
+  `FRData`.  R-symbols are not gauge-fixed by this pre-solver slice.
+
+### Compatibility
+- Legacy `GaugeTransform`, `GaugeParameters`, `GaugeChoice`,
+  `gauge_transform`, `canonical_gauge`, `gauge_equivalent`,
+  `gauge_fixing_plan`, and `is_gauge_fixed` remain available.
+- Equation-layer `gauge_fix(system; strategy=:safe)` keeps the public entry
+  point while now returning a genuinely reduced equation system with metadata
+  needed to recover the original coordinate order.
+
 ## v0.8.8 - Finite-Field FRData Source of Truth
 
 ### Added

@@ -43,6 +43,6 @@ should not be cited as classification proofs without separate exact arguments.
 
 ## Stability notes
 
-All Zariski and finite-field image diagnostics are experimental in v0.8.6.
-The stable neighbor API is finite-field `FRData` construction plus exact
+All Zariski and finite-field image diagnostics are experimental.  The stable
+neighbor API is finite-field `FRData` construction plus exact
 `check_braid_relations` over the chosen prime field.

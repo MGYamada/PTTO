@@ -43,5 +43,6 @@ over the prime field.
 ## Stability notes
 
 Exact multiplicity-free braid construction and relation checking are stable in
-v0.8.6.  Finite-field reductions, generated subgroup diagnostics, matrix
-algebra diagnostics, commutants, and Zariski-style reports are experimental.
+the public API.  Finite-field reductions, generated subgroup diagnostics,
+matrix algebra diagnostics, commutants, and Zariski-style reports are
+experimental.

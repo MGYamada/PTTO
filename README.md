@@ -33,7 +33,7 @@ The conductor `N` is not only an invariant inferred after the fact.  It selects
 the cyclotomic ground field and keeps exact arithmetic, Frobenius/Galois
 actions, finite-field reduction, and reconstruction in the same context.
 
-## Stable in v0.8.6
+## Stable Public Surface
 
 - `CyclotomicContext` and conductor metadata helpers
 - built-in exact modular data for semion, Fibonacci, Ising, and toric code
@@ -61,9 +61,9 @@ theorems.  Pin ACMG.jl when depending on experimental APIs.
 
 ## Examples
 
-Runnable examples live in `examples/`.  The v0.8.6 examples are intentionally
-small and use explicit conductors, small ranks, `skip_FR=true` where useful,
-and sanity-check assertions.
+Runnable examples live in `examples/`.  They are intentionally small and use
+explicit conductors, small ranks, `skip_FR=true` where useful, and
+sanity-check assertions.
 
 ```bash
 julia --project=. examples/12_conductor_first.jl
@@ -96,12 +96,9 @@ marks diagnostic routines carefully where they should not be read as proofs.
 
 ## Developer notes
 
-Run tests before publishing documentation-focused changes:
+Run tests before publishing changes:
 
 ```bash
 julia --project=. -e 'using Pkg; Pkg.test()'
 julia --project=docs -e 'using Pkg; Pkg.instantiate(); include("docs/make.jl")'
 ```
-
-v0.8.6 is a documentation hardening release with no intentional functional
-changes.

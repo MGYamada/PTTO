@@ -69,7 +69,9 @@ end
                                             GaugeParameters(Dict((a, b, c, 1) => v
                                                                  for ((a, b, c), v) in gauge)),
                                             p)
+            moved_action = apply_gauge_mod_p(symbol_data, GaugeAction(gauge; field = :F_17), p)
             @test moved_typed.values == moved.values
+            @test moved_action.values == moved.values
             returned = apply_gauge_mod_p(moved,
                                          Dict(ch => invmod(v, p) for (ch, v) in gauge),
                                          p)
@@ -83,6 +85,39 @@ end
     @test f_symbol_weight(1, 2, 3, 4, 5, 6) ==
           Dict((1, 2, 5) => 1, (5, 3, 4) => 1,
                (2, 3, 6) => -1, (1, 6, 4) => -1)
-    @test r_symbol_weight(2, 3, 4) == Dict((3, 2, 4) => 1, (2, 3, 4) => -1)
+    @test r_symbol_weight(2, 3, 4) == Dict((2, 3, 4) => 1, (3, 2, 4) => -1)
     @test residual_gauge_orders([2 0; 0 0]) == [2]
+end
+
+@testset "SNF toric gauge normal forms feed braid representations" begin
+    fr = fibonacci_fr_data_mod_p(101)
+    p = fr_metadata(fr)[:p]
+
+    data = toric_gauge_data(fr)
+    @test data.split == smith_gauge_split(data.weight_matrix)
+    @test length(data.coordinates) == length(F_values(fr)) + length(R_values(fr))
+
+    slice = ACMG.toric_gauge_slice(fusion_rule(fr))
+    gf = fr_metadata(fr)[:gauge_fixing]
+    @test gf[:gauge_fix_method] == :toric_snf_f_slice
+    @test gf[:fixed_f_indices] == slice.fixed_indices
+    @test F_values(fr)[gf[:fixed_f_indices]] == fill(FpElem(1, p), length(gf[:fixed_f_indices]))
+
+    normal = toric_gauge_normal_form(fr)
+    @test normal isa ToricGaugeNormalFormResult
+    @test normal.split.effective_rank > 0
+    @test normal.stabilizer_size == stabilizer_size_mod_p(
+        (coordinates = fr_symbol_coordinates(normal.frdata),
+         values = vcat(F_values(normal.frdata), R_values(normal.frdata)),
+         parameters = gauge_parameters(normal.frdata)),
+        fusion_rule(normal.frdata),
+        p)
+    @test normal.stacky_weight == 1 // normal.stabilizer_size
+    @test verify_FRData(normal.frdata)
+    @test is_gauge_fixed(normal.frdata)
+
+    br = braid_representation(fr, [2, 2, 2], 2)
+    @test br.fr_data == fr
+    σ1, σ2 = braid_generators(br)
+    @test σ1 * σ2 * σ1 == σ2 * σ1 * σ2
 end

@@ -122,7 +122,7 @@ function _reduce_vector_mod_p(ctx::CyclotomicContext, values::AbstractVector, p:
 end
 
 """
-    solve_FR_mod_p(category_spec, p; compute_fr = category == :fibonacci)
+    solve_fr_mod_p(category_spec, p; compute_fr = category == :fibonacci)
 
 Experimental API.
 
@@ -141,11 +141,11 @@ Mathematical caveats: finite-field residues are computational evidence and
 are not by themselves a characteristic-zero reconstruction or uniqueness
 proof.  API inputs and outputs may change before v1.0.
 """
-function solve_FR_mod_p(category_spec, p::Integer;
+function solve_fr_mod_p(category_spec::Union{Symbol, AbstractString, ModularData}, p::Integer;
                         compute_fr::Union{Bool, Nothing} = nothing,
                         primes::Vector{Int} = Int[],
                         kwargs...)
-    warn_experimental("solve_FR_mod_p")
+    warn_experimental("solve_fr_mod_p finite-field modular-data prototype")
     isempty(kwargs) || error("unsupported keyword arguments: $(collect(keys(kwargs)))")
     data = _builtin_data_for_finite_field(category_spec)
     sym = _category_symbol(category_spec isa ModularData ? data : category_spec)
@@ -173,6 +173,12 @@ function solve_FR_mod_p(category_spec, p::Integer;
     return FRSolutionModP(sym, p_int, data.context.N, copy(data.labels),
                           reduced.S, T_vec, Fp, Rp, fusion,
                           do_fr ? :reduced_phase4_reference : :reduced_modular_data)
+end
+
+function solve_FR_mod_p(category_spec, p::Integer; kwargs...)
+    Base.depwarn("solve_FR_mod_p is deprecated; use solve_fr_mod_p instead.",
+                 :solve_FR_mod_p)
+    return solve_fr_mod_p(category_spec, p; kwargs...)
 end
 
 function _fp_pow_unit(a::Integer, n::Integer, p::Int)
@@ -245,6 +251,50 @@ higher_central_charge(solution::FRSolutionModP; n::Integer = 1,
 higher_central_charges(solution::FRSolutionModP, ns;
                        normalization::Symbol = :D) =
     [higher_central_charge(solution, n; normalization = normalization) for n in ns]
+
+function _frdata_modp_hcc_solution(data::FRData{FpElem})
+    p = _frdata_prime(data)
+    info = _known_fr_modp_conductor_and_labels(fusion_rule(data))
+    modular = _known_fr_modp_modular_data(info)
+    modular === nothing &&
+        error("finite-field higher central charge from FRData requires known modular metadata")
+    reduced = reduce_mod_p(modular, p)
+    T_vec = [reduced.T[i, i] for i in 1:length(modular.labels)]
+    return FRSolutionModP(info.name, p, info.conductor, copy(modular.labels),
+                          reduced.S, T_vec,
+                          [x.value for x in F_values(data)],
+                          [x.value for x in R_values(data)],
+                          fusion_rule(data).N,
+                          :frdata_modp)
+end
+
+"""
+    higher_central_charge(frdata::FRData{FpElem}, n; normalization=:D)
+
+Compute the finite-field higher central charge associated with solved
+finite-field `FRData`.  Gauge fixing happens before F/R solving; this
+function consumes the solved representative directly.
+"""
+function higher_central_charge(data::FRData{FpElem}, n::Integer;
+                               normalization::Symbol = :D,
+                               method::Symbol = :frdata)
+    method in (:frdata, :finite_field) ||
+        error("unknown FRData higher central charge method: $method; expected :frdata or :finite_field")
+    return higher_central_charge(_frdata_modp_hcc_solution(data), n;
+                                 normalization = normalization)
+end
+
+higher_central_charge(data::FRData{FpElem}; n::Integer = 1,
+                      normalization::Symbol = :D,
+                      method::Symbol = :frdata) =
+    higher_central_charge(data, n; normalization = normalization,
+                          method = method)
+
+higher_central_charges(data::FRData{FpElem}, ns;
+                       normalization::Symbol = :D,
+                       method::Symbol = :frdata) =
+    [higher_central_charge(data, n; normalization = normalization,
+                           method = method) for n in ns]
 
 """
     lift_higher_central_charge(value_mod_p, cyclotomic_field_info)

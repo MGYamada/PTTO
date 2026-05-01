@@ -1,7 +1,7 @@
 using Test
 using ACMG
 
-@testset "v0.8 FR equations" begin
+@testset "FR equations" begin
     semion = semion_fusion_rules()
     fib = fibonacci_fusion_rules()
     ising = ising_fusion_rules()
@@ -20,6 +20,9 @@ using ACMG
     @test !isempty(hex)
     @test pent == get_pentagon_system(fib.N, fib.rank)[2]
     @test hex == get_hexagon_fr_system(fib.N, fib.rank)[2]
+    _, _, nF_combined, nH_combined = ACMG._combined_fr_equations_QQ(fib)
+    @test nF_combined == get_pentagon_system(fib.N, fib.rank)[3]
+    @test nH_combined == get_hexagon_fr_system(fib.N, fib.rank)[3]
 
     isys = fr_equation_system(ising)
     @test validate_fr_system(isys)

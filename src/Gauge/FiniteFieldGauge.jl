@@ -22,6 +22,8 @@ function _gauge_value_mod_p(gauge_element, ch::GaugeParameter, idx::Int, p::Int)
         return mod(Int(get(gauge_element.scalars, ch, 1)), p)
     elseif gauge_element isa GaugeParameters
         return mod(Int(get(gauge_element.values, (ch[1], ch[2], ch[3], 1), 1)), p)
+    elseif gauge_element isa GaugeAction
+        return mod(Int(get(gauge_element.parameters, (ch[1], ch[2], ch[3], 1), 1)), p)
     elseif gauge_element isa AbstractVector
         idx <= length(gauge_element) || error("gauge vector is shorter than the parameter list")
         return mod(Int(gauge_element[idx]), p)
@@ -172,3 +174,72 @@ Return the groupoid-counting weight `1 / |Stab(symbol_data)|`.
 function stacky_weight_mod_p(symbol_data, fusion_rule, p::Integer)
     return 1 // stabilizer_size_mod_p(symbol_data, fusion_rule, p)
 end
+
+function _toric_prime(data::FRData{FpElem})
+    return _frdata_prime(data)
+end
+
+function _toric_prime(data::FRData)
+    p = get(fr_metadata(data), :p, get(fr_metadata(data), :prime, nothing))
+    p === nothing && return nothing
+    return Int(p)
+end
+
+function _toric_symbol_data(data::FRData; include_R::Bool = true)
+    coords = fr_symbol_coordinates(data; include_R = include_R)
+    values = _toric_symbol_values(data; include_R = include_R)
+    return (coordinates = coords,
+            values = values,
+            parameters = gauge_parameters(data))
+end
+
+"""
+    toric_gauge_normal_form(frdata; include_R=true, verify=true)
+
+Inspect the pre-solver Smith-normal-form toric F-slice carried by `FRData`.
+This function does not apply a new post-hoc gauge transform and does not fix
+R-symbols.  The actual gauge fixing happens before F/R solving through
+`gauge_fix(fr_equation_system(...))`; this wrapper reports the slice,
+stabilizer, and stacky metadata for downstream braid and Gauss-sum consumers.
+"""
+function toric_gauge_normal_form(data::FRData; include_R::Bool = true,
+                                 verify::Bool = true)
+    validate_frdata_for_gauge(data)
+    toric = toric_gauge_data(data; include_R = include_R)
+    solver_gauge = get(fr_metadata(data), :gauge_fixing, Dict{Symbol, Any}())
+    slice = get(solver_gauge, :toric_gauge_slice,
+                toric_gauge_slice(fusion_rule(data); coordinate_kind = :F))
+    fixed_indices = Int[i for i in get(slice, :fixed_indices, Int[])]
+    complete = all(i -> F_values(data)[i] == fr_value_one(data), fixed_indices)
+    action = identity_gauge(data)
+    p = _toric_prime(data)
+    symbol_data = _toric_symbol_data(data; include_R = include_R)
+    stabilizer = p === nothing ? nothing :
+        stabilizer_size_mod_p(symbol_data, fusion_rule(data), p)
+    stacky = stabilizer === nothing ? nothing : 1 // stabilizer
+    verification = verify && data isa FRData{FpElem} ? verify_FRData(data) :
+                   verify ? validate_frdata_for_gauge(data) : nothing
+    meta = Dict{Symbol, Any}(:kind => :toric_snf_normal_form,
+                             :include_R => include_R,
+                             :parameters => toric.parameters,
+                             :coordinates => toric.coordinates,
+                             :weight_matrix => toric.weight_matrix,
+                             :smith_split => get(slice, :split, toric.split),
+                             :fixed_indices => fixed_indices,
+                             :complete => complete,
+                             :stage => :fr_solve_preprocessing,
+                             :stabilizer_size => stabilizer,
+                             :stacky_weight => stacky,
+                             :verification => verification)
+    frmeta = copy(fr_metadata(data))
+    frmeta[:toric_gauge_normal_form] = meta
+    reported = frdata_from_vectors(fusion_rule(data), F_values(data),
+                                   vcat(R_values(data), R_inverse_values(data));
+                                   metadata = frmeta)
+    return ToricGaugeNormalFormResult(reported, action, fixed_indices,
+                                      get(slice, :split, toric.split),
+                                      stabilizer, stacky, meta)
+end
+
+toric_gauge_normal_form_mod_p(data::FRData{FpElem}; kwargs...) =
+    toric_gauge_normal_form(data; kwargs...)

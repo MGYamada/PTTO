@@ -8,9 +8,10 @@ scheme, not as a reduction of hand-written complex matrices:
 ```text
 fusion rules
   -> pentagon/hexagon scheme
-  -> safe gauge fixing metadata
+  -> equation-level gauge fixing
   -> finite-field reduction
   -> F_p solution
+  -> expansion to TensorCategories F/R order
   -> FRData{FpElem}
   -> finite-field braid representation
 ```
@@ -40,8 +41,12 @@ These call the finite-field solving path.  The legacy no-argument
 `semion_fr_data`, `fibonacci_fr_data`, and `ising_fr_data` constructors have
 been removed; new examples should use finite-field constructors or
 `solve_fr_mod_p` directly.  `ising_fr_data_mod_p(p)` is available for
-admissible primes such as `17`, but the Ising F/R solve is intentionally kept
-out of the normal lightweight verification path.
+admissible primes such as `17`; the default test suite uses a precomputed
+finite-field Ising fixture for braid and verification regressions so routine
+tests do not pay the full solver cost.
+
+`solve_fr_mod_p` is the finite-field F/R solver.  The older uppercase
+`solve_FR_mod_p` name is deprecated and no longer exported.
 
 ## Verification
 

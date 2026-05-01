@@ -1,8 +1,9 @@
 using Test
 using ACMG
+include("fixtures/frdata.jl")
 
 @testset "finite-field Ising braid representation" begin
-    fr = ising_fr_data_mod_p(17)
+    fr = test_ising_fr_data_mod_p_17()
     @test verify_FRData(fr)
 
     σ1, σ2 = braid_generators_B3(fr, [2, 2, 2]; total_charge = 2)

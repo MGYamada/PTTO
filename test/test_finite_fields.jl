@@ -1,7 +1,7 @@
 using Test
 using ACMG
 
-@testset "v0.8 finite-field reduction" begin
+@testset "finite-field reduction" begin
     for rules in (semion_fusion_rules(), fibonacci_fusion_rules(), ising_fusion_rules())
         system = gauge_fix(fr_equation_system(rules))
         fp = reduce_mod_p(system, 11)

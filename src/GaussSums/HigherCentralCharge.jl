@@ -53,7 +53,7 @@ function higher_central_charge(category_or_modular_data;
                                kwargs...)
     if method == :finite_field
         p === nothing && error("finite-field higher central charge requires keyword p")
-        solution = solve_FR_mod_p(category_or_modular_data, Int(p); kwargs...)
+        solution = solve_fr_mod_p(category_or_modular_data, Int(p); kwargs...)
         fp_normalization = normalization == :galois ? :D : normalization
         return higher_central_charge(solution, Int(n); normalization = fp_normalization)
     elseif method != :modular_data

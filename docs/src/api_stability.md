@@ -29,15 +29,16 @@ without separate mathematical verification.
 
 ### Experimental API list
 
-`solve_FR_mod_p`
+`solve_fr_mod_p`
 
-- status: experimental
-- input/output may change before v1.0
-- mathematical caveat: reduces built-in exact examples to finite fields and
-  optionally stores reference F/R data; residues require exact comparison or
-  lifting before use as cyclotomic data
-- stable alternative: use exact `compute_FR_from_ST`, built-in `FRData`, or
-  exact modular-data higher central charge utilities when possible
+- status: public finite-field F/R entry point; the built-in modular-data
+  prototype overload remains experimental
+- mathematical caveat: finite-field F/R output is a fiber of the
+  pentagon/hexagon scheme, not a cyclotomic lift; modular-data prototype
+  residues likewise require exact comparison or lifting before use as
+  cyclotomic data
+- compatibility note: the old uppercase `solve_FR_mod_p` name is deprecated
+  and no longer exported
 
 `lift_higher_central_charge`
 
@@ -52,8 +53,8 @@ without separate mathematical verification.
 
 - status: experimental
 - input/output may change before v1.0
-- mathematical caveat: general finite-field F/R solving is not implemented in
-  v0.8.6; future solutions require exact verification
+- mathematical caveat: general finite-field F/R solving is incomplete; future
+  solutions require exact verification
 - stable alternative: use `fr_equation_system`, exact Phase-4 helpers, or
   built-in exact F/R data
 
@@ -120,8 +121,9 @@ GaugeFixing low-level normal form helpers
 - input/output may change before v1.0
 - mathematical caveat: low-level normal forms encode implementation choices
   rather than canonical mathematical data
-- stable alternative: `gauge_parameters`, `gauge_fixing_plan`,
-  `is_gauge_fixed`, and `gauge_fix`
+- stable alternative: `GaugeAction`, `apply_gauge`, `identity_gauge`,
+  `gauge_normal_form`, `validate_gauge_fixed`, and the compatibility wrappers
+  `gauge_parameters`, `gauge_fixing_plan`, `is_gauge_fixed`, and `gauge_fix`
 
 Search/BlockU low-level enumeration helpers
 
@@ -139,7 +141,7 @@ before v1.0.  This includes cache structures, polynomial equation internals,
 search heuristics, low-level Block-U enumeration state, and private helper
 functions whose names begin with `_`.
 
-Some internal or experimental helpers remain exported in v0.8.6 for backward
+Some internal or experimental helpers remain exported for backward
 compatibility.  They are classified here rather than removed to avoid a
 breaking release.
 

@@ -15,6 +15,14 @@ struct FRData{T, D<:AbstractDict{Symbol}}
     metadata::D
 end
 
+Base.:(==)(a::FRData, b::FRData) =
+    fusion_rule(a) == fusion_rule(b) &&
+    F_values(a) == F_values(b) &&
+    R_values(a) == R_values(b) &&
+    R_inverse_values(a) == R_inverse_values(b)
+Base.hash(data::FRData, h::UInt) =
+    hash((fusion_rule(data), F_values(data), R_values(data), R_inverse_values(data)), h)
+
 fusion_rule(data::FRData) = data.rules
 F_values(data::FRData) = data.F_values
 R_values(data::FRData) = data.R_values

@@ -64,7 +64,7 @@ Backend-neutral F/R equation system for a multiplicity-free fusion rule.
 - `base_ring`: Symbolic base-ring label.
 
 # Notes
-Stable as an equation-container boundary in v0.8.  General solver backends and
+Stable as an equation-container boundary.  General solver backends and
 finite-field reconstruction are experimental.
 """ FREquationSystem
 
@@ -121,7 +121,7 @@ Experimental finite-field F/R solution record.
 
 # Notes
 Residues must be lifted and verified exactly before use as cyclotomic F/R
-data.  This is not part of the stable v0.8 public surface.
+data.  This is not part of the stable public surface.
 """ FRSolutionModP
 
 @doc """
@@ -168,7 +168,9 @@ _brief_docs = Dict{Symbol, String}(
     :hexagon_equations => "    hexagon_equations(rules; context = nothing)\n\nGenerate TensorCategories-backed hexagon equations for a multiplicity-free fusion rule.",
     :validate_fr_system => "    validate_fr_system(system)\n\nValidate structural assumptions of an `FREquationSystem`.",
     :gauge_variables => "    gauge_variables(rules)\n\nReturn channel gauge variables for a multiplicity-free fusion rule.",
-    :gauge_fix => "    gauge_fix(system; strategy = :safe)\n\nApply safe equation-level gauge fixing metadata to an `FREquationSystem`.",
+    :gauge_fix => "    gauge_fix(system; strategy = :toric_snf)\n\nFix a deterministic F-only toric Smith-normal-form slice by substituting selected F-symbol coordinates to `1`; use strategy=:none to disable equation-level gauge fixing.",
+    :toric_gauge_data => "    toric_gauge_data(frdata; include_R = true)\n\nReturn toric gauge coordinates, character matrix, and Smith-normal-form split for multiplicity-free FRData.",
+    :toric_gauge_normal_form => "    toric_gauge_normal_form(frdata; include_R = true)\n\nReport the pre-solver toric F-slice and Smith-normal-form stabilizer metadata recorded on solved FRData.",
     :frobenius_metadata => "    frobenius_metadata(p, conductor)\n\nReturn metadata describing a prime relative to a conductor.",
     :check_modular_data => "    check_modular_data(candidate, known_data)\n\nCompare a candidate modular-data object with known data.",
     :semion_fusion_rules => "    semion_fusion_rules()\n\nReturn the multiplicity-free fusion rule for the semion category.",
@@ -189,9 +191,7 @@ _brief_docs = Dict{Symbol, String}(
     :frdata_from_namedtuple => "    frdata_from_namedtuple(nt)\n\nConstruct `FRData` from a named-tuple payload produced by ACMG helpers.",
     :fr_pentagon_values => "    fr_pentagon_values(data)\n\nReturn F-symbol values used by pentagon-equation infrastructure.",
     :fr_hexagon_values => "    fr_hexagon_values(data)\n\nReturn F/R values used by hexagon-equation infrastructure.",
-    :GaugeTransform => "    GaugeTransform\n\nMultiplicity-free channel-scalar gauge transform.",
     :GaugeChoice => "    GaugeChoice\n\nAlias for `GaugeParameters`.",
-    :GaugeFixingResult => "    GaugeFixingResult\n\nResult of applying canonical/safe gauge fixing to exact F/R data.",
     :FusionPath => "    FusionPath\n\nOne basis path in a left-associated multiplicity-free fusion tree.",
     :FusionTreeBasis => "    FusionTreeBasis\n\nBasis of fusion paths for a sequence of objects and a total charge.",
     :fusion_paths => "    fusion_paths(rules, objects, total)\n\nEnumerate multiplicity-free fusion paths from `objects` to `total`.",

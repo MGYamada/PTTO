@@ -28,7 +28,7 @@ residue comparisons all depend on that conductor.
 - Reduction: `reduce_mod_p`
 - Frobenius metadata: `frobenius`, `frobenius_metadata`
 - Root utilities: `find_zeta_in_Fp`, `cyclotomic_to_Fp`, `root_of_unity`
-- Experimental F/R hooks: `solve_FR_mod_p`, `solve_finite_field`,
+- Experimental F/R hooks: `solve_fr_mod_p`, `solve_finite_field`,
   `cyclotomic_reconstruct`
 
 ## Common pitfalls

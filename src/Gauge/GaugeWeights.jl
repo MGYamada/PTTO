@@ -4,8 +4,8 @@ Toric gauge weights for multiplicity-free fusion rules.
 The scalar gauge parameter attached to a nonzero fusion channel
 `V_ab^c` is denoted `u[a,b,c]`.  For multiplicity-free symbols,
 
-    F'^{abc}_{d;e,f} = u[a,b,e] u[e,c,d] / (u[b,c,f] u[a,f,d]) F^{abc}_{d;e,f]
-    R'^{ab}_c       = u[b,a,c] / u[a,b,c] R^{ab}_c
+    F'^{abc}_{d;e,f} = u[a,b,e] u[e,c,d] / (u[b,c,f] u[a,f,d]) F^{abc}_{d;e,f}
+    R'^{ab}_c       = u[a,b,c] / u[b,a,c] R^{ab}_c
 
 so every symbol coordinate carries an integral character of the gauge
 torus `prod G_m`.
@@ -82,8 +82,8 @@ Return the gauge character of `R^{ab}_c`.
 """
 function r_symbol_weight(a::Int, b::Int, c::Int)
     w = GaugeWeight()
-    _add_weight!(w, (b, a, c), 1)
-    _add_weight!(w, (a, b, c), -1)
+    _add_weight!(w, (a, b, c), 1)
+    _add_weight!(w, (b, a, c), -1)
     return w
 end
 

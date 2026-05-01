@@ -63,7 +63,7 @@ The most common entry points are:
 
 Conductor contexts, exact built-in modular data, Galois/Frobenius utilities,
 basic F/R containers, gauge accessors, exact braid representations, and
-pipeline entry points are the stable public surface in v0.8.6.
+pipeline entry points are the stable public surface.
 
 Low-level Block-U search helpers, finite-field F/R solving, cyclotomic
 reconstruction hooks, finite-field braid image diagnostics, and Zariski
