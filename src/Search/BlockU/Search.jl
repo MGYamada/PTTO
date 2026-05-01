@@ -16,6 +16,54 @@ function _candidate_from_fixed_S(S_atomic::Matrix{Int}, T_atomic::Vector{Int},
                          u, N_tensor, d, D2)]
 end
 
+function _diagonal_sign_vectors(r::Int)
+    r >= 1 || return [Int[]]
+    signs = ones(Int, r)
+    out = Vector{Vector{Int}}()
+    function rec(i::Int)
+        if i > r
+            push!(out, copy(signs))
+            return
+        end
+        # Global -I acts trivially on S, so fix the first sign.
+        if i == 1
+            signs[i] = 1
+            rec(i + 1)
+        else
+            signs[i] = 1
+            rec(i + 1)
+            signs[i] = -1
+            rec(i + 1)
+        end
+    end
+    rec(1)
+    return out
+end
+
+function _apply_diagonal_signs(S::Matrix{Int}, signs::Vector{Int}, p::Int)
+    r = size(S, 1)
+    return [mod(signs[i] * S[i, j] * signs[j], p) for i in 1:r, j in 1:r]
+end
+
+function _signed_fixed_S_candidates(S_atomic::Matrix{Int}, T_atomic::Vector{Int},
+                                    p::Int, U_params;
+                                    verlinde_threshold::Int)
+    candidates = MTCCandidate[]
+    seen = Set{Tuple{Int, Tuple{Vararg{Int}}, Tuple{Vararg{Int}}}}()
+    for signs in _diagonal_sign_vectors(size(S_atomic, 1))
+        S_signed = _apply_diagonal_signs(S_atomic, signs, p)
+        signed_params = all(==(1), signs) ? U_params : (base = U_params, signs = copy(signs))
+        for c in _candidate_from_fixed_S(S_signed, T_atomic, p, signed_params;
+                                         verlinde_threshold = verlinde_threshold)
+            key = (c.unit_index, Tuple(vec(c.N)), Tuple(vec(c.S_Fp)))
+            key in seen && continue
+            push!(seen, key)
+            push!(candidates, c)
+        end
+    end
+    return candidates
+end
+
 """
     find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
                        p::Int; verlinde_threshold::Int = 3,
@@ -90,13 +138,13 @@ function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
 
     # Case 1: no degeneracy → atomic S is already an MTC candidate (modulo signs)
     if isempty(degenerate)
-        return _candidate_from_fixed_S(S_atomic, T_atomic, p, :atomic;
-                                       verlinde_threshold = verlinde_threshold)
+        return _signed_fixed_S_candidates(S_atomic, T_atomic, p, :atomic;
+                                          verlinde_threshold = verlinde_threshold)
     end
 
     if _orthogonal_block_product_fixes_S(S_atomic, degenerate, p)
-        return _candidate_from_fixed_S(S_atomic, T_atomic, p, :block_invariant;
-                                       verlinde_threshold = verlinde_threshold)
+        return _signed_fixed_S_candidates(S_atomic, T_atomic, p, :block_invariant;
+                                          verlinde_threshold = verlinde_threshold)
     end
 
     # Case 2+: one or more degenerate eigenspaces.
@@ -123,21 +171,11 @@ function find_mtcs_at_prime(catalog::Vector{AtomicIrrep}, stratum::Stratum,
     for block_tuple in Iterators.product(block_candidate_sets...)
         block_choices = collect(block_tuple)
         S_prime = _apply_block_U_product(S_atomic, block_choices, p)
-        if precheck_unit_axiom
-            any_unit = any(u -> passes_unit_axiom(S_prime, p, u), 1:r)
-            any_unit || continue
-        end
-        result = verlinde_find_unit(S_prime, p; threshold = verlinde_threshold)
-        if result !== nothing
-            (u_idx, N_tensor) = result
-            Suu_inv = invmod(S_prime[u_idx, u_idx], p)
-            d = [mod(S_prime[u_idx, i] * Suu_inv, p) for i in 1:r]
-            D2 = sum(mod(d[m] * d[m], p) for m in 1:r) % p
-            U_params = length(block_choices) == 1 ? block_choices[1].U : block_choices
-            push!(candidates, MTCCandidate(
-                p, U_params,
-                copy(S_prime), copy(T_atomic),
-                u_idx, N_tensor, d, D2))
+        U_params = length(block_choices) == 1 ? block_choices[1].U : block_choices
+        for c in _signed_fixed_S_candidates(S_prime, T_atomic, p,
+                                            U_params;
+                                            verlinde_threshold = verlinde_threshold)
+            push!(candidates, c)
         end
     end
     return candidates

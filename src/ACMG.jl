@@ -70,6 +70,7 @@ include("FR/ExactPolynomialSolver.jl")
 include("FR/PentagonSolver.jl")
 include("FR/HexagonSolver.jl")
 include("FR/FRData.jl")
+include("FR/FiniteFieldFRData.jl")
 include("Reconstruction/ModularDataLift.jl")
 
 # Braid representations consume FRData from the FR layer.
@@ -111,7 +112,7 @@ include("Documentation.jl")
 # ============================================================
 
 # Core types and F_p arithmetic
-export ModularDatumFp, FusionRule
+export ModularDatumFp, FusionRule, FpElem
 export CyclotomicContext, ModularData
 export field, zeta, conductor, cond_S, cond_T, cond_F
 export semion_modular_data, fibonacci_modular_data, ising_modular_data
@@ -199,15 +200,19 @@ export solve_finite_field, cyclotomic_reconstruct, frobenius_metadata
 export check_modular_data
 export semion_fusion_rules, fibonacci_fusion_rules, toric_code_fusion_rules
 export ising_fusion_rules
-export FusionPath, FusionTreeBasis, FRData, BraidRepresentation, FiniteFieldBraidRepresentation
+export FusionPath, FusionTreeBasis, FRData, FiniteFieldFRData
+export BraidRepresentation, FiniteFieldBraidRepresentation
 export MatrixAlgebraDiagnostics, CommutantDiagnostics, ZariskiClosureDiagnostics
 export fusion_basis, fusion_paths, dim
 export braid_representation, braid_generator, braid_generators
+export braid_generators_B3
 # TODO(v1.0): diagnostics exports are kept for compatibility in v0.8.6 but
 # documented as experimental computational evidence rather than stable proofs.
 export check_braid_relations, finite_group_diagnostics, generated_subgroup
 export generated_matrix_algebra, commutant, zariski_closure_diagnostics
-export semion_fr_data, fibonacci_fr_data, ising_fr_data
+export solve_fr_mod_p, frdata_from_modp_solution
+export semion_fr_data_mod_p, fibonacci_fr_data_mod_p, ising_fr_data_mod_p
+export verify_pentagon, verify_hexagon, verify_FRData
 
 # End-to-end pipeline
 export ClassifiedMTC, FRRoundtripReport, FRStatus

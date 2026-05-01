@@ -254,7 +254,11 @@ end
 Group MTC candidates from multiple primes into groups, where each group
 corresponds to "the same MTC" (as identified by matching fusion tensors).
 
-Returns a Vector of Dicts, each mapping prime → MTCCandidate.
+Returns a Vector of Dicts, each mapping prime → MTCCandidate.  Multiple
+finite-field candidates can have the same canonical fusion tensor, for example
+from diagonal sign choices preserving `T`.  These variants are kept as
+separate cross-prime groups and downstream cyclotomic reconstruction decides
+which combinations are compatible.
 
 Note: two candidates match by the canonicalized fusion tensor. Downstream
 cyclotomic reconstruction and fresh-prime checks decide whether the finite
@@ -262,13 +266,19 @@ field modular data are compatible.
 """
 function group_mtcs_by_fusion(results_by_prime::Dict{Int, Vector{MTCCandidate}};
                               debug_stable_key::Bool = false)
-    groups_by_key = Dict{String, Dict{Int, MTCCandidate}}()
+    buckets_by_key = Dict{String, Dict{Int, Vector{MTCCandidate}}}()
     key_to_raw = Dict{String, Set{String}}()
     for (p, candidates) in results_by_prime
         for c in candidates
             key = canonical_rule(c.N)
-            group = get!(groups_by_key, key, Dict{Int, MTCCandidate}())
-            haskey(group, p) || (group[p] = c)
+            prime_buckets = get!(buckets_by_key, key, Dict{Int, Vector{MTCCandidate}}())
+            bucket = get!(prime_buckets, p, MTCCandidate[])
+            sig = (c.unit_index, Tuple(vec(c.N)), Tuple(vec(c.S_Fp)), Tuple(c.T_Fp))
+            if !any(existing -> (existing.unit_index, Tuple(vec(existing.N)),
+                                 Tuple(vec(existing.S_Fp)), Tuple(existing.T_Fp)) == sig,
+                    bucket)
+                push!(bucket, c)
+            end
             if debug_stable_key
                 raw = "unit=$(c.unit_index)|" * join(vec(c.N), ",")
                 push!(get!(key_to_raw, key, Set{String}()), raw)
@@ -283,7 +293,24 @@ function group_mtcs_by_fusion(results_by_prime::Dict{Int, Vector{MTCCandidate}};
             end
         end
     end
-    groups = collect(values(groups_by_key))
+    groups = Dict{Int, MTCCandidate}[]
+    for key in sort!(collect(keys(buckets_by_key)))
+        by_prime = buckets_by_key[key]
+        primes = sort!(collect(keys(by_prime)))
+        function emit(pi::Int, current::Dict{Int, MTCCandidate})
+            if pi > length(primes)
+                push!(groups, copy(current))
+                return
+            end
+            p = primes[pi]
+            for c in by_prime[p]
+                current[p] = c
+                emit(pi + 1, current)
+            end
+            delete!(current, p)
+        end
+        emit(1, Dict{Int, MTCCandidate}())
+    end
     return groups
 end
 

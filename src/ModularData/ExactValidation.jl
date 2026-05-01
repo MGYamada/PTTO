@@ -150,7 +150,34 @@ function check_vafa_constraints(T, Nijk::Array{Int,3})
     twists = _exact_twists(T)
     twists === nothing && return _exact_invalid("T is missing")
     length(twists) == size(Nijk, 1) || return _exact_invalid("T and Nijk ranks do not match")
+    ising = _ising_fusion_indices(Nijk)
+    if ising !== nothing
+        K = parent(twists[1])
+        oneK = one(K)
+        twists[1] == oneK ||
+            return _exact_invalid("Ising twist data must have unit twist 1")
+        twists[ising.psi] == -oneK ||
+            return _exact_invalid("Ising invertible object must have twist -1")
+        twists[ising.sigma]^8 == -oneK ||
+            return _exact_invalid("Ising non-invertible twist must be an odd 16th root")
+    end
     return (valid = true, ok = true, reason = "")
+end
+
+function _ising_fusion_indices(Nijk::Array{Int,3})
+    size(Nijk) == (3, 3, 3) || return nothing
+    for psi in 2:3
+        sigma = psi == 2 ? 3 : 2
+        sum(Nijk[psi, psi, :]) == 1 || continue
+        Nijk[psi, psi, 1] == 1 || continue
+        Nijk[psi, sigma, sigma] == 1 || continue
+        Nijk[sigma, psi, sigma] == 1 || continue
+        sum(Nijk[sigma, sigma, :]) == 2 || continue
+        Nijk[sigma, sigma, 1] == 1 || continue
+        Nijk[sigma, sigma, psi] == 1 || continue
+        return (psi = psi, sigma = sigma)
+    end
+    return nothing
 end
 
 """
@@ -204,6 +231,9 @@ function validate_exact_mtc(F, R, S, T, Nijk::Array{Int,3})
     tb = check_twist_balance(S, T, Nijk)
     tb.valid || return (valid = false, ok = false, reason = tb.reason,
                         modular_data = md, twist_balance = tb)
+    vafa = check_vafa_constraints(T, Nijk)
+    vafa.valid || return (valid = false, ok = false, reason = vafa.reason,
+                          modular_data = md, twist_balance = tb, vafa = vafa)
     return (valid = true, ok = true, reason = "", modular_data = md,
-            twist_balance = tb, has_FR = F !== nothing && R !== nothing)
+            twist_balance = tb, vafa = vafa, has_FR = F !== nothing && R !== nothing)
 end

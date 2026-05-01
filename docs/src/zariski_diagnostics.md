@@ -11,19 +11,20 @@ projective-order data.
 ```julia
 using ACMG
 
-data = semion_fr_data()
-br = braid_representation(data, [:s, :s, :s], :s)
-ok = check_braid_relations(br)
+data = semion_fr_data_mod_p(17)
+br = braid_representation(data, [2, 2, 2], 2)
+brp = reduce_mod_p(br)
+ok = check_braid_relations(brp)
 
 @assert ok.ok
+@assert zariski_closure_diagnostics(brp).diagnostic_only
 ```
 
 ## Mathematical meaning
 
-These routines help inspect algebraic behavior suggested by finite-field
-reductions.  They do not compute a full characteristic-zero Zariski closure and
-should not be cited as classification proofs without separate exact
-arguments.
+These routines inspect algebraic behavior suggested by finite-field braid
+matrices.  They do not compute a full characteristic-zero Zariski closure and
+should not be cited as classification proofs without separate exact arguments.
 
 ## API overview
 
@@ -43,5 +44,5 @@ arguments.
 ## Stability notes
 
 All Zariski and finite-field image diagnostics are experimental in v0.8.6.
-The stable neighbor API is exact `braid_representation` plus
-`check_braid_relations`.
+The stable neighbor API is finite-field `FRData` construction plus exact
+`check_braid_relations` over the chosen prime field.

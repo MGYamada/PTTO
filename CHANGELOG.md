@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.8.8 - Finite-Field FRData Source of Truth
+
+### Added
+- Added `FpElem` and `FRData{FpElem}` finite-field F/R data produced by
+  `solve_fr_mod_p(rules, p)`.
+- Added `semion_fr_data_mod_p`, `fibonacci_fr_data_mod_p`, and
+  `ising_fr_data_mod_p` convenience constructors that solve Phase-4
+  pentagon/hexagon fibers over `F_p`.
+- Added finite-field F/R verification helpers: `verify_pentagon`,
+  `verify_hexagon`, and `verify_FRData`.
+- Added finite-field braid tests for Semion, Fibonacci, and Ising, including
+  B3 braid-relation checks over `F_p`.
+- Added finite-field FRData documentation.
+
+### Changed
+- Braid construction now consumes finite-field `FRData{FpElem}` directly.
+- Removed legacy hard-coded small-example F/R constructors; new braid examples
+  use solved finite-field FRData and integer simple-object labels.
+
 ## v0.8.6 - Documentation Hardening
 
 ### Added

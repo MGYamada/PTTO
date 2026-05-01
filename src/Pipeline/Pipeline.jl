@@ -235,6 +235,9 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
         Nijk = Nijk[perm, perm, perm]
     end
     T_for_phase4 = _normalize_T_by_unit(T_cyc)
+    exact_mtc_check = validate_exact_mtc(nothing, nothing, S_cyc, T_for_phase4, Nijk)
+    exact_mtc_check.valid ||
+        error("exact modular data failed fusion/twist validation: $(exact_mtc_check.reason)")
 
     # -------- Exact (F, R) layer --------
     rank = size(Nijk, 1)
@@ -258,8 +261,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     fr_result.F === nothing && error("Phase 4 could not produce any (F,R) solution")
     isempty(fr_result.candidates) && error("Phase 4 produced no valid (F,R) candidates")
 
-    # OBSOLETE: candidate loop with direct `_modular_data_roundtrip`
-    # calls is replaced by Phase 5 API `_select_fr_for_st`.
+    # Select an exact (F,R) branch against the Phase 3 modular data itself.
     selection = _select_fr_for_st(fr_result.candidates, Nijk, S_cyc, T_for_phase4, N)
     selected = selection.selected
     md_roundtrip = _modular_data_roundtrip(selected.F, selected.R, Nijk,
@@ -267,14 +269,6 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     md_roundtrip = _with_fr_roundtrip_metadata(md_roundtrip;
                                                candidate_index = selection.selected_index,
                                                galois_exponent = selection.score.galois_exponent)
-    if !_fr_roundtrip_attachable(md_roundtrip) && iszero(md_roundtrip.S_error)
-        md_roundtrip = _modular_data_roundtrip(selected.F, selected.R, Nijk,
-                                               S_cyc, md_roundtrip.T_roundtrip, N)
-        md_roundtrip = _with_fr_roundtrip_metadata(md_roundtrip;
-                                                   candidate_index = selection.selected_index,
-                                                   galois_exponent = selection.score.galois_exponent)
-        T_for_phase4 = md_roundtrip.T_roundtrip
-    end
     _fr_roundtrip_attachable(md_roundtrip) ||
         error("Phase 4 selected (F,R) does not roundtrip to exact modular data")
     verbose && println("  modular-data roundtrip: perm=$(md_roundtrip.best_perm), " *
@@ -631,9 +625,7 @@ function classify_mtcs_at_conductor(N::Int;
             continue
         end
 
-        # OBSOLETE: old behavior selected using only the fusion-rule
-        # representative (`rep`). New behavior assigns `(F,R)` per `(S,T)`
-        # member within the same fusion-rule group.
+        # Assign `(F,R)` per `(S,T)` member within the same fusion-rule group.
         for i in idxs
             mtc_i = out[i]
             selection = _select_fr_for_st(fr_result.candidates, mtc_i.Nijk,
@@ -651,21 +643,6 @@ function classify_mtcs_at_conductor(N::Int;
                                "S_err=$(best_md.S_max), T_err=$(best_md.T_max), ok=$(best_md.ok)")
             if _fr_roundtrip_attachable(best_md)
                 out[i] = _with_fr_result(out[i], selected.F, selected.R, best_md)
-            elseif iszero(best_md.S_error)
-                corrected_md = _modular_data_roundtrip(selected.F, selected.R, mtc_i.Nijk,
-                                                       mtc_i.S_cyclotomic,
-                                                       best_md.T_roundtrip, mtc_i.N)
-                corrected_md = _with_fr_roundtrip_metadata(corrected_md;
-                                                           candidate_index = selection.selected_index,
-                                                           galois_exponent = selection.score.galois_exponent)
-                if _fr_roundtrip_attachable(corrected_md)
-                    verbose && println("    member[$i] replaced Phase 3 T with exact F/R-derived T")
-                    out[i] = _with_fr_result(out[i], selected.F, selected.R, corrected_md;
-                                             T = best_md.T_roundtrip)
-                else
-                    verbose && println("    member[$i] selected (F,R) failed exact self roundtrip; discarding")
-                    push!(discard_indices, i)
-                end
             else
                 verbose && println("    member[$i] selected (F,R) failed exact (S,T) roundtrip; discarding")
                 push!(discard_indices, i)

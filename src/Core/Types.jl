@@ -63,6 +63,10 @@ struct FusionRule
     dual::Vector{Int}
 end
 
+Base.:(==)(a::FusionRule, b::FusionRule) =
+    a.rank == b.rank && a.N == b.N && a.dual == b.dual
+Base.hash(fr::FusionRule, h::UInt) = hash((fr.rank, fr.N, fr.dual), h)
+
 """
     FusionRule(N::Array{Int, 3}) -> FusionRule
 

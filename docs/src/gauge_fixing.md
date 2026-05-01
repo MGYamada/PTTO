@@ -3,14 +3,14 @@
 ## What this page covers
 
 The gauge layer records channel-scalar gauge parameters and conservative
-normalization choices for exact multiplicity-free F/R data.
+normalization choices for multiplicity-free F/R data.
 
 ## Minimal example
 
 ```julia
 using ACMG
 
-data = semion_fr_data()
+data = semion_fr_data_mod_p(17)
 plan = gauge_fixing_plan(data)
 
 @assert validate_frdata_for_gauge(data)
@@ -28,7 +28,7 @@ normalization.
 
 - Records: `GaugeTransform`, `GaugeParameters`, `GaugeChoice`,
   `GaugeFixingResult`
-- Exact transforms: `gauge_parameters`, `gauge_transform`,
+- Transforms: `gauge_parameters`, `gauge_transform`,
   `gauge_fixing_plan`, `is_gauge_fixed`
 - Equation-layer helpers: `gauge_variables`, `gauge_fix`
 

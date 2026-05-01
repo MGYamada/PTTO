@@ -40,5 +40,16 @@ function reduce_mod_p(br::BraidRepresentation, p::Integer; conductor = nothing)
              :extension_field_required => false))
 end
 
+function reduce_mod_p(br::BraidRepresentation{FpElem})
+    p = fr_metadata(br.fr_data)[:p]
+    gens = Matrix{Int}[[g[i, j].value for i in axes(g, 1), j in axes(g, 2)]
+                        for g in br.generators]
+    return FiniteFieldBraidRepresentation{typeof(br)}(
+        br, Int(p), br.objects, br.total, br.basis, gens,
+        Dict(:p => Int(p),
+             :source => :finite_field_frdata,
+             :extension_field_required => false))
+end
+
 check_braid_relations(br::FiniteFieldBraidRepresentation; kwargs...) =
     check_braid_relations(br.generators, br.p)
