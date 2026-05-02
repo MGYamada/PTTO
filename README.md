@@ -16,7 +16,7 @@ fib = fibonacci_modular_data(ctx)
 @assert validate_exact_modular_data(fib).ok
 
 hcc = higher_central_charge(fib; n = 1)
-@assert hcc.ok
+@assert hcc == central_charge(fib)
 ```
 
 ## Main design principle
@@ -40,7 +40,6 @@ actions, finite-field reduction, and reconstruction in the same context.
 - exact modular-data validation, Verlinde checks, and Gauss sums
 - higher central charge utilities over exact modular data
 - multiplicity-free F/R equation containers and `FRData` accessors
-- finite-field Phase-4 F/R solving via `solve_fr_mod_p`
 - safe gauge records and gauge-fixing entry points
 - exact multiplicity-free braid representation construction
 - conductor-level pipeline entry points and classification result records
@@ -50,7 +49,8 @@ actions, finite-field reduction, and reconstruction in the same context.
 
 The following remain experimental or semi-public compatibility exports:
 
-- finite-field F/R solving and cyclotomic reconstruction hooks
+- exported experimental finite-field Phase-4 F/R solving via `solve_fr_mod_p`
+  and cyclotomic reconstruction hooks
 - low-level Block-U search and fixed-stratum reconstruction helpers
 - finite-field braid image diagnostics
 - Zariski-style diagnostics
