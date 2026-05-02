@@ -242,14 +242,11 @@ end
 """
     central_charge(data)
 
-Return the ordinary exact topological central charge, using the legacy
-Galois-normalized `n = 1` Gauss-sum convention.
+Return the ordinary exact central-charge moment using the same D²-normalized
+convention as `higher_central_charge(data, 1)`.
 """
 function central_charge(category_or_modular_data)
-    result = higher_central_charge_result(category_or_modular_data; n = 1,
-                                          normalization = :galois)
-    result.ok || error(result.message)
-    return result.value
+    return higher_central_charge(category_or_modular_data, 1)
 end
 
 function _qq_to_rational(c)

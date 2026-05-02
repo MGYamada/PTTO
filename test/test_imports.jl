@@ -68,6 +68,9 @@ import ACMG: toric_gauge_normal_form_mod_p
 import ACMG: gauge_weight_matrix, smith_gauge_split, ineffective_kernel_rank
 import ACMG: residual_gauge_orders, apply_gauge_mod_p, stabilizer_size_mod_p
 import ACMG: stacky_weight_mod_p
+import ACMG: StabilizerProblem, StabilizerEquations, StabilizerResult
+import ACMG: stabilizer, stabilizer_equations, stabilizer_order
+import ACMG: automorphisms, is_trivial_stabilizer, stabilizer_metadata
 
 import ACMG: EquationVariable, EquationTerm, EquationExpr, PolynomialEquation, EquationSystem
 import ACMG: GaugeVariable

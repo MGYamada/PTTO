@@ -24,6 +24,7 @@ makedocs(;
         "Higher Central Charge" => "invariants/higher_central_charge.md",
         "F/R Symbols" => "fr_symbols.md",
         "Gauge Fixing" => "gauge_fixing.md",
+        "Gauge Stabilizers" => "gauge_stabilizers.md",
         "Braid Representations" => "braid_representations.md",
         "Finite-Field FRData" => "finite_field_fr_data.md",
         "Finite Fields" => "finite_fields.md",

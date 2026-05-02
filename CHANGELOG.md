@@ -1,5 +1,55 @@
 # Changelog
 
+## v0.9.1 - Gauge Stabilizers and API Boundary Refinements
+
+### Added
+- Added experimental gauge stabilizer infrastructure for computing
+  `Aut(x) = Stab_G(x)` for already available solution data:
+  `StabilizerProblem`, `StabilizerEquations`, `StabilizerResult`,
+  `stabilizer`, `stabilizer_equations`, `stabilizer_order`,
+  `automorphisms`, `is_trivial_stabilizer`, and `stabilizer_metadata`.
+- Added brute-force stabilizer enumeration for small finite gauge groups,
+  with exact structural comparison and no floating-point conversion.
+- Added finite-field toric gauge-group support for multiplicity-free
+  `FRData{FpElem}` and deterministic character-equation generation for
+  active F/R coordinates.
+- Added `docs/src/gauge_stabilizers.md`, explaining gauge stabilizers,
+  their role as future stacky denominators `1 / |Aut(x)|`, and the v0.9.1
+  non-goals around zeta functions, Lefschetz sums, trace formulas, and
+  quotient-stack classification.
+- Added `examples/15_gauge_stabilizers.jl`, a small finite-field toy example
+  computing stabilizer orders and future stacky weights.
+- Added stabilizer tests covering the toy action `F_q^*` on `F_q`,
+  problem/result accessors, equation generation, identity-gauge behavior, and
+  explicit errors for too-large finite gauge groups.
+
+### Changed
+- Bumped the package version to `0.9.1`.
+- Exported `fr_status` so documentation examples can use
+  `fr_status(m)` directly.
+- Marked `FRStatus`, `FRSkipped`, `FRSolved`, `FRNoSolutionFound`,
+  `FRTimeoutLikeFailure`, `FRReconstructionFailed`, and
+  `FRVerificationFailed` as Julia `public` names.
+- Aligned `central_charge(data)` with the D²-normalized convention used by
+  `higher_central_charge(data, 1)`.  The legacy Galois-normalized structured
+  result remains available through
+  `higher_central_charge_result(data; normalization = :galois)`.
+- Clarified that `solve_fr_mod_p` is an exported experimental finite-field
+  F/R entry point rather than part of the stable public surface.
+- Added the gauge stabilizer page to the Documenter navigation and updated
+  API stability docs/tests for the new experimental exports.
+
+### Non-goals
+- v0.9.1 does not implement zeta functions, Euler factors, Lefschetz trace
+  sums, higher-central-charge trace sums, étale cohomology, full stacky point
+  counting, or automatic quotient-stack classification.
+
+### Tests
+- Verified the full package test suite with
+  `julia --project=. -e 'using Pkg; Pkg.test()'`.
+- Verified the documentation build with
+  `julia --project=docs -e 'using Pkg; Pkg.instantiate(); include("docs/make.jl")'`.
+
 ## v0.9.0 - Higher Central Charges, Public API Boundary, and Classification Docs
 
 ### Added

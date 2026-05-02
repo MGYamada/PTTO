@@ -86,6 +86,7 @@ include("Gauge/GaugeActions.jl")
 include("Gauge/GaugeConstraints.jl")
 include("Gauge/GaugeValidation.jl")
 include("Gauge/GaugeNormalForms.jl")
+include("Gauge/Stabilizers.jl")
 
 # Pipeline: result records, prime selection, FR layer, and conductor-first orchestration.
 include("Pipeline/Types.jl")
@@ -122,6 +123,8 @@ include("Documentation.jl")
 
 public HigherCentralChargeResult, HCCGeneratingFunction, HCCLocalFactor
 public higher_central_charge_result
+public FRStatus, FRSkipped, FRSolved, FRNoSolutionFound
+public FRTimeoutLikeFailure, FRReconstructionFailed, FRVerificationFailed
 
 export CyclotomicContext, ModularData, FusionRule, FRData
 export BraidRepresentation, ClassifiedMTC
@@ -162,6 +165,9 @@ export GaugeAction, GaugeParameters, GaugeChoice, GaugeFixingResult
 export identity_gauge, apply_gauge, compose_gauge, inverse_gauge
 export gauge_normal_form, validate_gauge_fixed
 export gauge_parameters, gauge_fixing_plan, is_gauge_fixed, gauge_fix
+export StabilizerProblem, StabilizerEquations, StabilizerResult
+export stabilizer, stabilizer_equations, stabilizer_order
+export automorphisms, is_trivial_stabilizer, stabilizer_metadata
 
 export FusionPath, FusionTreeBasis
 export fusion_paths, fusion_basis, dim
@@ -169,6 +175,7 @@ export braid_representation, braid_generator, braid_generators
 export braid_generators_B3, check_braid_relations
 
 export classify_mtcs_at_conductor, classify_mtcs_auto
+export fr_status
 export recommend_primes, recommend_skip_FR
 export save_classification, load_classification
 export export_modular_data, export_fusion_rule, export_FR, write_report

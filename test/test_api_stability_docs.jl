@@ -11,6 +11,15 @@
         :generated_matrix_algebra,
         :commutant,
         :zariski_closure_diagnostics,
+        :StabilizerProblem,
+        :StabilizerEquations,
+        :StabilizerResult,
+        :stabilizer,
+        :stabilizer_equations,
+        :stabilizer_order,
+        :automorphisms,
+        :is_trivial_stabilizer,
+        :stabilizer_metadata,
     ]
     @test all(sym -> isdefined(ACMG, sym), documented_experimental)
     @test :solve_FR_mod_p ∉ names(ACMG)
@@ -30,6 +39,10 @@ end
         :higher_central_charge_result,
         :higher_central_charge_sequence,
         :HCCGeneratingFunction,
+        :fr_status,
+        :FRStatus,
+        :FRSolved,
+        :FRSkipped,
         :FRData,
         :F_symbol,
         :braid_representation,
@@ -39,7 +52,10 @@ end
     @test Base.isexported(ACMG, :higher_central_charge)
     @test !Base.isexported(ACMG, :higher_central_charge_result)
     @test !Base.isexported(ACMG, :HCCGeneratingFunction)
+    @test Base.isexported(ACMG, :fr_status)
     @test Base.isexported(ACMG, :solve_fr_mod_p)
+    @test Base.isexported(ACMG, :StabilizerProblem)
+    @test Base.isexported(ACMG, :stabilizer)
 
     removed_hcc_prototype_names = [
         :FRSolutionModP,

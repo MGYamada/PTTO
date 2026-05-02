@@ -9,7 +9,7 @@ include("test_imports.jl")
         z8 = ACMG.zeta(semion.context)
         im = z8^2
 
-        @test central_charge(semion) == z8
+        @test central_charge(semion) == higher_central_charge(semion, 1)
         @test ACMG.higher_central_charge_result(semion).ok
         @test ACMG.higher_central_charge_result(semion).value == z8
         @test higher_central_charge(semion, 0) == one(K)
@@ -25,7 +25,7 @@ include("test_imports.jl")
         phi = quantum_dimensions(fib)[2]
         theta = z20^8
         D2fib = one(Kfib) + phi^2
-        @test central_charge(fib) == z20^7
+        @test central_charge(fib) == higher_central_charge(fib, 1)
         @test higher_central_charge(fib, 0) == one(Kfib)
         @test higher_central_charge_period(fib) == 5
         @test higher_central_charge_sequence(fib) ==
@@ -35,7 +35,7 @@ include("test_imports.jl")
         ising = ising_modular_data()
         Kising = ACMG.field(ising)
         z16 = ACMG.zeta(ising.context)
-        @test central_charge(ising) == z16
+        @test central_charge(ising) == higher_central_charge(ising, 1)
         @test higher_central_charge(ising, 0) == one(Kising)
         @test higher_central_charge_period(ising) == 16
         @test higher_central_charge_sequence(ising) ==
@@ -43,7 +43,7 @@ include("test_imports.jl")
                for n in 0:15]
 
         toric = toric_code_modular_data()
-        @test central_charge(toric) == one(ACMG.field(toric))
+        @test central_charge(toric) == higher_central_charge(toric, 1)
     end
 
     @testset "generating function object" begin

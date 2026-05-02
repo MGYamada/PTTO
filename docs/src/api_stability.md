@@ -73,7 +73,8 @@ F/R data, gauge, and braids:
 
 Pipeline and IO:
 
-- `ClassifiedMTC`, `classify_mtcs_at_conductor`, `classify_mtcs_auto`,
+- `ClassifiedMTC`, `FRStatus`, `FRSkipped`, `FRSolved`,
+  `classify_mtcs_at_conductor`, `classify_mtcs_auto`, `fr_status`,
   `recommend_primes`, `recommend_skip_FR`
 - `save_classification`, `load_classification`, `export_modular_data`,
   `export_fusion_rule`, `export_FR`, `write_report`,
@@ -101,6 +102,18 @@ without separate mathematical verification.
   pentagon/hexagon scheme, not a cyclotomic lift
 - compatibility note: the old uppercase `solve_FR_mod_p` name and the
   built-in modular-data prototype overload have been removed
+
+Gauge stabilizers
+
+- status: exported experimental infrastructure introduced in ACMG.jl v0.9.1:
+  `StabilizerProblem`, `StabilizerEquations`, `StabilizerResult`,
+  `stabilizer`, `stabilizer_equations`, `stabilizer_order`,
+  `automorphisms`, `is_trivial_stabilizer`, and `stabilizer_metadata`
+- scope: brute-force stabilizer enumeration for small finite gauge groups and
+  equation containers for future algebraic solving
+- mathematical caveat: these APIs compute stabilizers of already available
+  points; they do not implement quotient-stack classification, zeta functions,
+  Lefschetz trace sums, or stacky point-counting as a full feature
 
 Finite-field higher central charge helpers
 
