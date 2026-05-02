@@ -74,7 +74,7 @@ end
                        precheck_unit_axiom::Bool = true)
         -> Vector{MTCCandidate}
 
-Top-level Phase 2 driver at a single prime.
+Top-level fixed-stratum search driver at a single prime.
 
 Steps:
 1. Build block-diagonal atomic (S, T) from stratum + catalog.

@@ -2,9 +2,10 @@
 SL(2, ℤ/N) irreducible representation catalog (atomic irreps).
 
 This module provides:
-- `AtomicIrrep`: data structure for a single SL(2, ℤ/N) irrep realized over Q(ζ_N)
-- `build_atomic_catalog`: enumerate all SL(2, ℤ/N) irreps of a given conductor N
-  using GAP's SL2Reps package (accessed via Oscar.GAP)
+- `AtomicIrrep`: data structure for a single `SL(2, ℤ/N)` irrep realized over
+  `Q(ζ_N)`
+- `build_atomic_catalog`: enumerate irreps needed by the conductor-first
+  classification pipeline using GAP's SL2Reps package through Oscar.GAP
 
 Dependency: Oscar.jl only. GAP is reached through Oscar's bundled GAP instance
 (Oscar.GAP). The SL2Reps package must be installed in GAP (once per machine):
@@ -12,12 +13,11 @@ Dependency: Oscar.jl only. GAP is reached through Oscar's bundled GAP instance
     julia> using Oscar
     julia> Oscar.GAP.Packages.install("SL2Reps")
 
-Based on v5's `build_atomic_catalog` (mtc_pipeline.jl). Helpers that were in
-v5's unavailable `mtc_types.jl` are reimplemented here:
-- matrix_conductor: min N such that entries of M lie in Q(ζ_N)
-- gap_to_oscar_matrix: convert GAP cyclotomic matrix to Oscar matrix over Q(ζ_N)
-- compute_parity: extract sign ε in S² = ε·C (charge conjugation sign)
-- exact_order: order of matrix T (= conductor of its eigenvalues)
+The helper layer records the arithmetic data used by the pipeline:
+- `matrix_conductor`: minimal cyclotomic conductor of matrix entries
+- `gap_to_oscar_matrix`: conversion from GAP cyclotomics to Oscar matrices
+- `compute_parity`: sign `ε` in `S² = ε·C`
+- `exact_order`: order of the diagonal `T` matrix
 """
 
 using Oscar
@@ -30,8 +30,12 @@ using LinearAlgebra: diag
 """
     AtomicIrrep
 
-A single irreducible representation of SL(2, ℤ/N), realized as matrices
-over the cyclotomic field Q(ζ_N).
+A single irreducible representation of `SL(2, ℤ/N)`, realized as matrices
+over the cyclotomic field `Q(ζ_N)`.
+
+Atomic irreps are the representation-theoretic building blocks for strata.
+The classification pipeline forms direct sums of these irreps, then searches
+for modular-data bases inside the resulting representation space.
 
 Fields:
 - dim:    dimension of the irrep (= number of simple objects it provides)
@@ -59,7 +63,7 @@ function Base.show(io::IO, atom::AtomicIrrep)
 end
 
 # ============================================================
-#  Helper functions (reimplementation of v5's mtc_types.jl)
+#  Helper functions
 # ============================================================
 
 """
@@ -217,14 +221,12 @@ end
 """
     build_atomic_catalog(N::Int; max_rank::Int = 20, verbose::Bool = true) -> Vector{AtomicIrrep}
 
-Build the catalog of all SL(2, ℤ/N) irreducible representations of dimension
-≤ max_rank, realized as Oscar matrices over Q(ζ_N).
+Build a catalog of `SL(2, ℤ/N)` irreducible representations of dimension
+`≤ max_rank`, realized as Oscar matrices over `Q(ζ_N)`.
 
 Enumerates irreps at all levels (divisors of N), requiring that both
 cond(S) | N and cond(T) | N so the irrep genuinely lives in Q(ζ_N).
 Deduplicates by T-spectrum + dimension.
-
-Port of v5's build_atomic_catalog (mtc_pipeline.jl:192-232).
 """
 function build_atomic_catalog(N::Int; max_rank::Int = 20, verbose::Bool = true)
     load_sl2reps_package()

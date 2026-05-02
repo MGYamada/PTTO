@@ -35,7 +35,9 @@ A `ModularData` object over the selected `CyclotomicContext`.
 @doc """
     HigherCentralChargeResult
 
-Structured result returned by `higher_central_charge`.
+Legacy structured Gauss-sum result returned by `higher_central_charge_result`.
+The public HCC moment API is `higher_central_charge(data, n)`, which uses
+D² normalization and returns the exact value directly.
 
 # Fields
 - `ok`: Whether the requested normalization was available.
@@ -49,6 +51,20 @@ Structured result returned by `higher_central_charge`.
 - `status`: Machine-readable status symbol.
 - `message`: Human-readable explanation.
 """ HigherCentralChargeResult
+
+@doc """
+    HCCGeneratingFunction
+
+Structured HCC generating function with exact `weights` and `twists`.
+Calling the object on an integer `n` returns the D²-normalized moment `ξ_n`.
+""" HCCGeneratingFunction
+
+@doc """
+    HCCLocalFactor
+
+Prime-field local Euler factor for an HCC value.  Coefficients are stored in
+ascending powers of `T`; `[1, p-a]` represents `1 - aT` over `F_p`.
+""" HCCLocalFactor
 
 @doc """
     FREquationSystem
@@ -115,33 +131,17 @@ classification.
 """ ZariskiClosureDiagnostics
 
 @doc """
-    FRSolutionModP
-
-Experimental finite-field F/R solution record.
-
-# Notes
-Residues must be lifted and verified exactly before use as cyclotomic F/R
-data.  This is not part of the stable public surface.
-""" FRSolutionModP
-
-@doc """
-    HigherCentralChargeModPResult
-
-Experimental finite-field higher-central-charge record.
-""" HigherCentralChargeModPResult
-
-@doc """
     FRStatus
 
-Enum describing Phase-4 F/R status in `ClassifiedMTC`.
+Enum describing exact F/R reconstruction status in `ClassifiedMTC`.
 """ FRStatus
 
-@doc "Phase 4 was intentionally skipped." FRSkipped
-@doc "Phase 4 found and verified F/R data." FRSolved
-@doc "Phase 4 found no solution in the attempted search." FRNoSolutionFound
-@doc "Phase 4 stopped because of timeout-like resource limits." FRTimeoutLikeFailure
-@doc "Phase 4 reconstruction failed." FRReconstructionFailed
-@doc "Phase 4 reconstructed data but exact verification failed." FRVerificationFailed
+@doc "Exact F/R reconstruction was intentionally skipped." FRSkipped
+@doc "Exact F/R reconstruction found and verified F/R data." FRSolved
+@doc "Exact F/R reconstruction found no solution in the attempted search." FRNoSolutionFound
+@doc "Exact F/R reconstruction stopped because of timeout-like resource limits." FRTimeoutLikeFailure
+@doc "Exact F/R reconstruction failed." FRReconstructionFailed
+@doc "F/R data were reconstructed but exact verification failed." FRVerificationFailed
 
 _brief_docs = Dict{Symbol, String}(
     :field => "    field(x)\n\nReturn the cyclotomic field parent associated with a context or exact data object.",
@@ -151,6 +151,23 @@ _brief_docs = Dict{Symbol, String}(
     :cond_T => "    cond_T(data)\n\nReturn the declared conductor of the `T`-matrix entries.",
     :cond_F => "    cond_F(data)\n\nReturn the declared conductor of the F/R layer when known, or `nothing`.",
     :quantum_dimensions => "    quantum_dimensions(data)\n\nReturn quantum dimensions extracted from exact modular data.",
+    :higher_central_charge => "    higher_central_charge(data, n = 1; normalization = :D2)\n\nReturn the D²-normalized higher central charge moment `ξ_n`.",
+    :higher_central_charges => "    higher_central_charges(data, ns)\n\nReturn D²-normalized higher central charge moments for the supplied integers.",
+    :higher_central_charge_result => "    higher_central_charge_result(data; n = 1, normalization = :galois)\n\nReturn the legacy structured Gauss-sum result used by compatibility code.",
+    :higher_central_charge_period => "    higher_central_charge_period(data)\n\nReturn the period used by the HCC sequence, usually the twist conductor.",
+    :higher_central_charge_sequence => "    higher_central_charge_sequence(data)\n\nReturn one full period of D²-normalized HCC values.",
+    :higher_central_charge_generating_function => "    higher_central_charge_generating_function(data)\n\nReturn exact weights and twists representing the HCC generating function.",
+    :higher_central_charge_modp => "    higher_central_charge_modp(data, n, p; embedding = nothing)\n\nReduce a D²-normalized HCC value modulo a good prime.",
+    :higher_central_charge_sequence_modp => "    higher_central_charge_sequence_modp(data, p; embedding = nothing)\n\nReturn one full HCC period reduced modulo `p`.",
+    :hcc_local_factor => "    hcc_local_factor(data, n, p; embedding = nothing)\n\nReturn the prime-field local factor `1 - ξ_{n,p}T`.",
+    :hcc_local_factors => "    hcc_local_factors(data, p; embedding = nothing)\n\nReturn one full period of prime-field HCC local factors.",
+    :enumerate_strata => "    enumerate_strata(catalog, r; require_unit_summand = false, max_multiplicity = typemax(Int))\n\nEnumerate semisimple representation strata of total dimension `r` from an atomic `SL(2, ℤ/N)` catalog.",
+    :count_strata => "    count_strata(catalog, r; kwargs...)\n\nCount rank-`r` strata for an atomic catalog.",
+    :describe_stratum => "    describe_stratum(s, catalog)\n\nReturn a compact direct-sum description of a stratum using atomic-catalog labels.",
+    :classify_mtcs_at_conductor => "    classify_mtcs_at_conductor(N; kwargs...)\n\nSearch for exact cyclotomic modular-data candidates whose modular representation factors through `SL(2, ℤ/N)`.",
+    :classify_mtcs_auto => "    classify_mtcs_auto(N; kwargs...)\n\nConvenience wrapper around `classify_mtcs_at_conductor` that selects rank cutoffs and admissible primes.",
+    :recommend_primes => "    recommend_primes(N; kwargs...)\n\nSuggest admissible finite-field primes for conductor-level searches.",
+    :recommend_skip_FR => "    recommend_skip_FR(N, rank; kwargs...)\n\nHeuristic recommendation for whether exact F/R solving is likely to be expensive.",
     :galois_orbit => "    galois_orbit(data)\n\nReturn Galois orbit data using the conductor attached to `data`.",
     :frobenius => "    frobenius(x, p)\n\nApply the Frobenius operation at the prime `p` to a supported exact object.",
     :reduce_mod_p => "    reduce_mod_p(x, p)\n\nReduce a supported ACMG object modulo the prime `p`.",
@@ -205,16 +222,16 @@ _brief_docs = Dict{Symbol, String}(
     :MatrixAlgebraDiagnostics => "    MatrixAlgebraDiagnostics\n\nExperimental finite-field matrix-algebra diagnostic record.",
     :CommutantDiagnostics => "    CommutantDiagnostics\n\nExperimental finite-field commutant diagnostic record.",
     :reconstruct_cyclotomic_element_from_residues => "    reconstruct_cyclotomic_element_from_residues(residues, primes, N)\n\nExperimental CRT helper for reconstructing a cyclotomic element.",
-    :assign_F_to_associator! => "    assign_F_to_associator!(args...)\n\nExperimental/internal Phase-4 helper for associator coordinates.",
+    :assign_F_to_associator! => "    assign_F_to_associator!(args...)\n\nExperimental/internal helper for associator coordinates.",
     :get_hexagon_system => "    get_hexagon_system(args...)\n\nLow-level hexagon-equation system constructor.",
     :get_hexagon_fr_system => "    get_hexagon_fr_system(args...)\n\nLow-level F/R hexagon-equation system constructor.",
     :number_of_variables_in_hexagon_equations => "    number_of_variables_in_hexagon_equations(args...)\n\nReturn the number of variables used by the low-level hexagon system.",
-    :solve_pentagon_modular_crt => "    solve_pentagon_modular_crt(args...)\n\nExperimental Phase-4 pentagon solver using modular CRT reconstruction.",
+    :solve_pentagon_modular_crt => "    solve_pentagon_modular_crt(args...)\n\nExperimental pentagon solver using modular CRT reconstruction.",
     :solve_pentagon_homotopy => "    solve_pentagon_homotopy(args...)\n\nExperimental pentagon solver hook.",
     :solve_pentagon_newton => "    solve_pentagon_newton(args...)\n\nExperimental pentagon Newton solver hook.",
     :solve_hexagon_modular_crt => "    solve_hexagon_modular_crt(args...)\n\nExperimental hexagon solver using modular CRT reconstruction.",
     :solve_hexagon_homotopy => "    solve_hexagon_homotopy(args...)\n\nExperimental hexagon solver hook.",
-    :fr_status => "    fr_status(m::ClassifiedMTC)\n\nReturn the explicit Phase-4 F/R status for a classification result.",
+    :fr_status => "    fr_status(m::ClassifiedMTC)\n\nReturn the exact F/R reconstruction status for a classification result.",
     :compute_FR_from_ST => "    compute_FR_from_ST(args...)\n\nCompute exact F/R data from exact modular data when ACMG has a supported route.",
     :is_modular_data_automorphism => "    is_modular_data_automorphism(data, perm)\n\nReturn whether `perm` preserves the exact modular data.",
 )

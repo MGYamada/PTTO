@@ -1,7 +1,7 @@
 using Test
 using ACMG
 
-@testset "finite-field Phase-4 FR solve: semion" begin
+@testset "finite-field exact F/R solve: semion" begin
     fr = semion_fr_data_mod_p(17)
 
     @test fr_metadata(fr)[:solver_status] == :solved
@@ -16,12 +16,12 @@ using ACMG
     @test !iszero(σ1[1, 1])
     @test σ1[1, 1]^2 == FpElem(-1, 17)
 
-    phase4 = solve_fr_mod_p(semion_fusion_rules(), 17;
-                            solver = :phase4,
-                            primes = [17],
-                            max_solutions = 4)
-    @test fr_metadata(phase4)[:solver] == :phase4
-    @test verify_FRData(phase4)
+    reference = solve_fr_mod_p(semion_fusion_rules(), 17;
+                               solver = :reference,
+                               primes = [17],
+                               max_solutions = 4)
+    @test fr_metadata(reference)[:solver] == :reference
+    @test verify_FRData(reference)
     @test_throws ErrorException solve_fr_mod_p(semion_fusion_rules(), 17;
                                                solver = :direct,
                                                primes = [17])

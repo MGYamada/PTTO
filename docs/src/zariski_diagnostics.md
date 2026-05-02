@@ -39,7 +39,7 @@ should not be cited as classification proofs without separate exact arguments.
 - Bounded enumeration may truncate.
 - Finite-field irreducibility or image size is evidence, not a theorem about
   the exact representation.
-- Diagnostic return schemas may change before v1.0.
+- Diagnostic return schemas may change.
 
 ## Stability notes
 

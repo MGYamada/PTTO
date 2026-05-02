@@ -4,7 +4,6 @@
 
     documented_experimental = [
         :solve_fr_mod_p,
-        :lift_higher_central_charge,
         :solve_finite_field,
         :cyclotomic_reconstruct,
         :generated_subgroup,
@@ -15,6 +14,39 @@
     ]
     @test all(sym -> isdefined(ACMG, sym), documented_experimental)
     @test :solve_FR_mod_p ∉ names(ACMG)
+end
+
+@testset "Julia 1.11 public surface" begin
+    root = dirname(@__DIR__)
+    project = read(joinpath(root, "Project.toml"), String)
+    @test occursin("julia = \"1.11\"", project)
+    @test occursin("LinearAlgebra = \"1.11\"", project)
+
+    stable_public = [
+        :CyclotomicContext,
+        :modular_data,
+        :validate_exact_modular_data,
+        :higher_central_charge,
+        :higher_central_charge_result,
+        :higher_central_charge_sequence,
+        :HCCGeneratingFunction,
+        :FRData,
+        :F_symbol,
+        :braid_representation,
+        :classify_mtcs_auto,
+    ]
+    @test all(sym -> Base.ispublic(ACMG, sym), stable_public)
+    @test Base.isexported(ACMG, :higher_central_charge)
+    @test !Base.isexported(ACMG, :higher_central_charge_result)
+    @test !Base.isexported(ACMG, :HCCGeneratingFunction)
+    @test Base.isexported(ACMG, :solve_fr_mod_p)
+
+    removed_hcc_prototype_names = [
+        :FRSolutionModP,
+        :HigherCentralChargeModPResult,
+        :lift_higher_central_charge,
+    ]
+    @test all(sym -> !isdefined(ACMG, sym), removed_hcc_prototype_names)
 end
 
 @testset "experimental warning helper" begin

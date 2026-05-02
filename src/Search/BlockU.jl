@@ -1,7 +1,7 @@
 """
-Phase 2: Block-U parametrisation and MTC reconstruction.
+Block-U parametrisation and finite-field MTC reconstruction.
 
-This module implements the core of the Phase 2 pipeline:
+This module implements the core fixed-stratum finite-field search:
 
 1. `build_block_diagonal`: given a stratum {m_λ} and atomic catalog,
    build the block-diagonal atomic (S, T) on V = ⊕_λ V_λ^{m_λ}.

@@ -1,4 +1,5 @@
 using Test
+include("test_imports.jl")
 
 @testset "ACMG Prototype" begin
     include("test_fparith.jl")
@@ -15,7 +16,7 @@ using Test
     include("test_gauge.jl")
     include("test_finite_fields.jl")
     include("test_toric_gauge.jl")
-    include("test_phase4_roundtrip.jl")
+    include("test_fr_roundtrip.jl")
     include("test_pipeline_primes.jl")
     include("test_pipeline_end_to_end.jl")
     include("test_pipeline_rank23_smoke.jl")

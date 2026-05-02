@@ -1,5 +1,85 @@
 # Changelog
 
+## v0.9.0 - Higher Central Charges, Public API Boundary, and Classification Docs
+
+### Added
+- Added a dedicated higher-central-charge API using the canonical
+  D²-normalized moment convention:
+  `higher_central_charge`, `higher_central_charges`,
+  `higher_central_charge_period`, `higher_central_charge_sequence`, and
+  `higher_central_charge_generating_function`.
+- Added `HCCGeneratingFunction` as a structured exact generating-function
+  object storing twist-spectrum weights and twists.
+- Added experimental finite-field higher-central-charge helpers:
+  `higher_central_charge_modp`, `higher_central_charge_sequence_modp`,
+  `hcc_local_factor`, and `hcc_local_factors`.
+- Added regression coverage for Semion, Fibonacci, and Ising higher central
+  charges, including the Fibonacci `p = 11`, `ζ_5 ↦ 3` sequence
+  `[1, 6, 7, 5, 9]` and local factor checks.
+- Added `docs/src/invariants/higher_central_charge.md` with the exact moment
+  definition, examples, finite-field reduction notes, and local Euler factors.
+- Added `docs/src/classify_mtcs.md`, a mathematically focused classification
+  guide explaining conductor-first search, `SL(2, Z/N)` representation strata,
+  Block-U search, exact reconstruction, and F/R reconstruction.
+- Added API stability tests for the thin exported/public surface under
+  Julia 1.11.
+
+### Changed
+- Updated `Project.toml` compatibility to require Julia `1.11` and
+  `LinearAlgebra` `1.11`, enabling use of Julia's `public` keyword.
+- Reworked the top-level API boundary:
+  docs/examples-level names are exported for `using ACMG`, while qualified-only
+  stable records such as HCC helper records are marked `public` without export.
+- Expanded docstrings for classification records, strata, conductor-first
+  pipeline entry points, SL2 atomic catalogs, exact F/R reconstruction helpers,
+  finite-field diagnostics, and higher-central-charge utilities.
+- Removed version-specific prose from the docs and public-facing docstrings.
+- Replaced internal stage terminology in docs, docstrings, error messages,
+  verbose output, and tests with mathematical or functional names such as
+  Block-U search, CRT modular-data reconstruction, and exact F/R reconstruction.
+- Renamed the experimental finite-field F/R reference-solution selector from
+  `solver = :phase4` to `solver = :reference`.
+- Renamed the coarse F/R cost helper to
+  `estimate_fr_reconstruction_complexity`.
+- Refined `classify_mtcs_auto` and `classify_mtcs_at_conductor` docs to state
+  that the input conductor is fixed and the modular representation factors
+  through `SL(2, Z/N)`.
+- Updated `docs/src/api_stability.md` to describe the thin stable surface,
+  exported example-level names, qualified-only public records, experimental
+  APIs, and current limitations.
+
+### Removed
+- Removed duplicate higher-central-charge finite-field prototype plumbing from
+  `Experimental/FiniteFieldHigherCentralCharge.jl`.
+- Removed the old uppercase `solve_FR_mod_p` public prototype path and the
+  obsolete `FRSolutionModP`, `HigherCentralChargeModPResult`, and
+  `lift_higher_central_charge` experimental records.
+- Removed public exposure of internals from
+  `Experimental/FiniteFieldHigherCentralCharge.jl`; finite-field HCC behavior
+  now routes through the main HCC API.
+
+### Compatibility
+- `higher_central_charge_result` remains available as the structured legacy
+  Gauss-sum compatibility result.
+- Exact F/R reconstruction and finite-field F/R APIs remain experimental
+  outside the documented stable workflow boundary.
+- `conductor_mode` accepts only `:full_mtc`; unsupported modes now report a
+  direct unsupported-mode error.
+- Low-level Block-U, reconstruction, and diagnostic helpers remain outside the
+  stable public API even when reachable for research workflows.
+
+### Documentation
+- Added the HCC documentation page to the manual navigation.
+- Added the classification guide to the manual navigation and linked the
+  lower-level Block-U page to it.
+- Improved the home page documentation map and stability guidance.
+- Kept examples in the `using ACMG` style so documented workflows match the
+  exported API surface.
+
+### Tests
+- Verified the full package test suite with `julia --project=. test/runtests.jl`.
+- Verified the documentation build with `julia --project=docs docs/make.jl`.
+
 ## v0.8.9 - Algebraic Gauge Fixing Infrastructure
 
 ### Added

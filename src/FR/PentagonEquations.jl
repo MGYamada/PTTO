@@ -35,7 +35,7 @@ Arguments
 - `Nijk`: fusion coefficients, `Nijk[i, j, k] = N_{ij}^k ∈ Z_{≥0}`.
           Index 1 is assumed to be the unit object.
 - `r`:    rank (= `size(Nijk, 1)`). Passed explicitly for consistency with
-          other Phase 4 routines.
+          other exact F/R reconstruction routines.
 
 Output
 - `R`:    an Oscar `QQMPolyRing` in `n` variables x_1, …, x_n, each

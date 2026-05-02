@@ -63,9 +63,9 @@ end
     @test gauge_equivalent(result.F, result.R, canon.F, canon.R, Nijk)
     @test gauge_transform(result.F, result.R, canon.gauge).F == result.F
 
-    phase4 = estimate_phase4_complexity(Nijk)
-    @test phase4.score >= 1
-    @test recommend_skip_FR(Nijk).estimate == phase4
+    fr_estimate = estimate_fr_reconstruction_complexity(Nijk)
+    @test fr_estimate.score >= 1
+    @test recommend_skip_FR(Nijk).estimate == fr_estimate
     @test length(recommend_primes(8, 2; min_count = 2, window = 200)) >= 4
 
     mtc = ACMG.ClassifiedMTC(8, 8, 2, ACMG.Stratum(Dict(1 => 2), 2), Nijk,

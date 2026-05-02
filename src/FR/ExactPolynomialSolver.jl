@@ -1,5 +1,5 @@
 """
-Small exact polynomial-system solver used by the Phase-4 F/R routines.
+Small exact polynomial-system solver used by exact F/R routines.
 
 The systems generated here are intentionally small and usually triangular
 after a lexicographic Groebner pass.  The solver chooses a deterministic
@@ -12,7 +12,7 @@ using Oscar
 function _default_context_from_kwargs(; context = nothing, conductor = nothing, N = nothing)
     context !== nothing && return context
     n = conductor === nothing ? N : conductor
-    n === nothing && error("a CyclotomicContext or conductor N is required for exact Phase 4")
+    n === nothing && error("a CyclotomicContext or conductor N is required for exact F/R solving")
     return CyclotomicContext(n)
 end
 

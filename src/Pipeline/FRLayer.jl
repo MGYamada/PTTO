@@ -13,12 +13,12 @@ _is_reconstruction_unstable_message(msg::AbstractString) = begin
            occursin("crt", low)
 end
 
-function _phase4_removed_error()
-    error("exact Phase 4 did not find a cyclotomic F/R solution for this input")
+function _fr_reconstruction_no_solution_error()
+    error("exact F/R reconstruction did not find a cyclotomic solution for this input")
 end
 
 function _select_fr_for_st(candidates, Nijk, S_cyc, T_cyc, N)
-    isempty(candidates) && _phase4_removed_error()
+    isempty(candidates) && _fr_reconstruction_no_solution_error()
     all_scores = NamedTuple[]
     best_idx = 0
     best_score = nothing
@@ -250,10 +250,10 @@ function _twists_from_T_arg(T)
     return collect(T)
 end
 
-function _select_phase4_candidate(candidates::Vector{NamedTuple},
-                                  Nijk::Array{Int,3},
-                                  ctx::CyclotomicContext,
-                                  S_arg, T_arg)
+function _select_fr_candidate(candidates::Vector{NamedTuple},
+                              Nijk::Array{Int,3},
+                              ctx::CyclotomicContext,
+                              S_arg, T_arg)
     S_target = S_arg
     T_target = _twists_from_T_arg(T_arg)
     (S_target === nothing || T_target === nothing) && return candidates[1]
@@ -266,7 +266,7 @@ function _select_phase4_candidate(candidates::Vector{NamedTuple},
 end
 
 # ============================================================
-#  compute_FR_from_ST: exact Phase 4 over Q(ζ_N)
+#  compute_FR_from_ST: exact F/R reconstruction over Q(ζ_N)
 # ============================================================
 
 function compute_FR_from_ST(Nijk::Array{Int,3};
@@ -296,7 +296,7 @@ function compute_FR_from_ST(Nijk::Array{Int,3};
         F = elem_type(K)[]
         R = elem_type(K)[one(K), one(K)]
         candidates = NamedTuple[(F = F, R = R, report = nothing)]
-        selected = _select_phase4_candidate(candidates, Nijk, ctx, S, T)
+        selected = _select_fr_candidate(candidates, Nijk, ctx, S, T)
         fixed = canonicalize_gauge ? canonical_gauge(selected.F, selected.R, Nijk) :
                 (F = selected.F, R = selected.R, gauge = nothing)
         result = (F = fixed.F,
@@ -348,8 +348,8 @@ function compute_FR_from_ST(Nijk::Array{Int,3};
             push!(candidates, (F = F, R = R, report = nothing))
         end
     end
-    isempty(candidates) && _phase4_removed_error()
-    selected = _select_phase4_candidate(candidates, Nijk, ctx, S, T)
+    isempty(candidates) && _fr_reconstruction_no_solution_error()
+    selected = _select_fr_candidate(candidates, Nijk, ctx, S, T)
     fixed = canonicalize_gauge ? canonical_gauge(selected.F, selected.R, Nijk) :
             (F = selected.F, R = selected.R, gauge = nothing)
     result = (F = fixed.F,

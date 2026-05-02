@@ -1,24 +1,22 @@
 """
     ModularDataLift
 
-Bridge from finite-field Phase 3 output to exact cyclotomic modular data.
+Bridge from finite-field modular-data candidates to exact cyclotomic modular data.
 
-Phase 3 produces finite-field candidates and reconstructs modular data
-directly over `Q(ζ_N)`.
+The conductor pipeline produces finite-field candidates and reconstructs
+modular data directly over `Q(ζ_N)`.
 
-Phase 4 consumes:
+Exact F/R reconstruction consumes:
 - `Nijk :: Array{Int,3}`                 —  used as-is
 - `(S, T)` over `Q(ζ_N)`                 —  for exact modular-data checks
 
 This module provides:
 - `lift_T_Fp_to_cyclotomic`:  discrete log T_Fp → powers of ζ_N
-
-Depends on: Primes (already in v0.2 via ACMG); no new dependencies.
 """
 
 using Primes
 
-# Access v0.2 utilities. We must reach into the outer ACMG module.
+# Access finite-field utilities defined at ACMG top level.
 # These functions are expected to be defined at ACMG top level:
 #   find_zeta_in_Fp(N, p) :: Int
 #   primitive_root(p) :: Int
@@ -105,9 +103,9 @@ Arguments:
 
 Returns: a vector of elements in `Q(ζ_N)`.
 
-Consistency requirement: The `zeta_Fp` passed here must be THE SAME
-primitive root used when producing `T_Fp`. In v0.2's pipeline this is
-`find_zeta_in_Fp(N, p)`, which uses `primitive_root(p)` as a fixed base.
+Consistency requirement: the `zeta_Fp` passed here must be the same primitive
+root used when producing `T_Fp`.  The conductor pipeline uses
+`find_zeta_in_Fp(N, p)`, which fixes a deterministic primitive-root choice.
 """
 function lift_T_Fp_to_cyclotomic(T_Fp::Vector{Int}, N::Int, p::Int, zeta_Fp::Int)
     (p - 1) % N == 0 || error("N=$N does not divide p-1=$(p-1)")

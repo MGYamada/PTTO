@@ -24,7 +24,7 @@ commutant, determinant, projective-order, and note fields.
 
 Mathematical caveats: this function does not compute a full Zariski closure
 or classify algebraic groups.  Treat diagnostics as computational evidence,
-not as mathematical theorems.  API inputs and outputs may change before v1.0.
+not as mathematical theorems.  API inputs and outputs may change.
 """
 function zariski_closure_diagnostics(br::FiniteFieldBraidRepresentation; max_words = 200, max_degree = 2)
     warn_experimental("zariski_closure_diagnostics")

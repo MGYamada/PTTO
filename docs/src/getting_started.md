@@ -22,4 +22,4 @@ reduce_mod_p(fib, 41)
 ```
 
 Notes: the conductor is part of the data model.  Choose it before constructing
-modular data, and prefer documented exported functions for ordinary use.
+modular data, and prefer documented public functions for ordinary use.

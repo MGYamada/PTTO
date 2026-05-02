@@ -1,7 +1,7 @@
 """
     PentagonSolver
 
-Exact Phase-4 pentagon solver over a fixed cyclotomic context.
+Exact pentagon solver over a fixed cyclotomic context.
 
 The solver keeps the old public entry point name
 `solve_pentagon_modular_crt`, but it no longer reconstructs floating

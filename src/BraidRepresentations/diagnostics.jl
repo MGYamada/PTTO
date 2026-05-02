@@ -81,7 +81,7 @@ the search.
 
 Mathematical caveats: this is a bounded diagnostic, uses positive generators
 only, and should be treated as computational evidence rather than a theorem
-about the full image.  API inputs and outputs may change before v1.0.
+about the full image.  API inputs and outputs may change.
 """
 function generated_subgroup(sigmas::AbstractVector{<:AbstractMatrix{<:Integer}}, p::Int; max_size = 100000)
     warn_experimental("generated_subgroup")
@@ -124,7 +124,7 @@ possibly truncated group size.
 
 Mathematical caveats: the result is finite-field computational evidence and
 not a characteristic-zero density or finiteness theorem.  API inputs and
-outputs may change before v1.0.
+outputs may change.
 """
 function finite_group_diagnostics(br::FiniteFieldBraidRepresentation; max_size = 100000)
     warn_experimental("finite_group_diagnostics")

@@ -30,7 +30,7 @@ Fields:
 - `best_perm`:       fusion-rule automorphism giving the best match
 - `S_roundtrip`:     S-matrix reconstructed from the selected R-data
 - `T_roundtrip`:     T-eigenvalues reconstructed from the selected R-data
-- `candidate_index`: selected Phase 4 candidate index, when known
+- `candidate_index`: selected F/R candidate index, when known
 - `galois_exponent`: selected Galois branch exponent, when known
 
 For compatibility with earlier `NamedTuple` reports, `S_max` and `T_max`
@@ -87,9 +87,17 @@ end
 """
     ClassifiedMTC
 
-The full output of `classify_mtcs_at_conductor` for a single MTC.
+The full output of the conductor-first classification pipeline for one
+Galois sector.
 
-Arithmetic / F_p layer (Phase 0–3 output):
+A `ClassifiedMTC` is best read as a verified arithmetic candidate: it contains
+an exact cyclotomic modular-data lift, its finite-field reconstruction
+provenance, and optional exact `(F, R)` data.  When F/R reconstruction is
+skipped or does not solve, the modular-data layer may still be present; inspect
+`fr_status(m)` and `m.verify_report` before treating the result as a fully
+realized braided fusion category.
+
+Arithmetic / F_p and modular-data layer:
 - `N`:              conductor used internally by the pipeline
 - `N_input`:        user-requested conductor (for provenance)
 - `rank`:           rank
@@ -105,18 +113,18 @@ Arithmetic / F_p layer (Phase 0–3 output):
                     finite-field checked at all group primes; `nothing`
                     when no fixed exact lift was used
 
-Exact modular data (Phase 4 input):
+Exact modular data:
 - `S_cyclotomic`:   S-matrix over `Q(ζ_N)`
 - `T_cyclotomic`:   T-eigenvalues over `Q(ζ_N)`
 
 Exact `(F, R)` layer:
 - `F_values`:       exact associator coordinates over `Q(ζ_N)`, or `nothing`
-                    if Phase 4 was skipped or inconclusive
+                    if F/R reconstruction was skipped or inconclusive
 - `R_values`:       exact braiding coordinates over `Q(ζ_N)`, or `nothing`
-                    if Phase 4 was skipped or inconclusive
+                    if F/R reconstruction was skipped or inconclusive
 - `verify_report`:  exact roundtrip report comparing `S,T` reconstructed
                     from `F,R` against the target modular data, or `nothing`
-- `fr_status`:      explicit Phase 4 status
+- `fr_status`:      explicit F/R reconstruction status
 
 Provenance:
 - `galois_sector`:  integer sector index retained for provenance
