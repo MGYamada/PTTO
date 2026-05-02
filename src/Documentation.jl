@@ -186,7 +186,7 @@ _brief_docs = Dict{Symbol, String}(
     :validate_fr_system => "    validate_fr_system(system)\n\nValidate structural assumptions of an `FREquationSystem`.",
     :gauge_variables => "    gauge_variables(rules)\n\nReturn channel gauge variables for a multiplicity-free fusion rule.",
     :gauge_fix => "    gauge_fix(system; strategy = :toric_snf)\n\nFix a deterministic F-only toric Smith-normal-form slice by substituting selected F-symbol coordinates to `1`; use strategy=:none to disable equation-level gauge fixing.",
-    :toric_gauge_data => "    toric_gauge_data(frdata; include_R = true)\n\nReturn toric gauge coordinates, character matrix, and Smith-normal-form split for multiplicity-free FRData.",
+    :toric_gauge_data => "    toric_gauge_data(frdata; include_R = true)\n    toric_gauge_data(fusion; field = nothing, conventions = :tensorcategories)\n\nReturn toric gauge coordinates, character matrix, and Smith-normal-form split for multiplicity-free FRData, or pre-reconstruction toric gauge data for a multiplicity-free fusion rule.",
     :toric_gauge_normal_form => "    toric_gauge_normal_form(frdata; include_R = true)\n\nReport the pre-solver toric F-slice and Smith-normal-form stabilizer metadata recorded on solved FRData.",
     :frobenius_metadata => "    frobenius_metadata(p, conductor)\n\nReturn metadata describing a prime relative to a conductor.",
     :check_modular_data => "    check_modular_data(candidate, known_data)\n\nCompare a candidate modular-data object with known data.",

@@ -117,6 +117,27 @@ modular-data search.  Use `skip_FR = true` when you want a fast
 modular-data-only exploration, and inspect `fr_status(m)` on each result when
 F/R reconstruction is enabled.
 
+Immediately before this F/R reconstruction step, ACMG v0.9.2 performs toric
+gauge preconditioning for multiplicity-free fusion rules.  The pipeline checks
+the fusion tensor only: all multiplicities must be `0` or `1`.  In that case,
+it records the torus of trivalent-channel scalars and fixes a deterministic
+Smith-normal-form slice of F-symbol coordinates to `1` before solving.  For
+fusion rules with multiplicity greater than one, the step is skipped by
+default.
+
+Controls:
+
+- `gauge_fixing = :auto`: apply toric preconditioning only when
+  multiplicity-free.
+- `gauge_fixing = :toric`: require the multiplicity-free toric step and error
+  otherwise.
+- `gauge_fixing = :none` or `toric_gauge_fixing = false`: preserve the old
+  ungauge-fixed reconstruction path.
+
+Gauge-fixed F/R representatives can differ from older output, but accepted
+results must still pass the exact pentagon, hexagon, and modular-data
+roundtrip checks.
+
 A classification result is represented by `ClassifiedMTC`.  It stores:
 
 - conductor and rank,

@@ -53,7 +53,7 @@ import ACMG: number_of_variables_in_hexagon_equations
 import ACMG: solve_hexagon_modular_crt, solve_hexagon_homotopy
 import ACMG: DiscreteLogTable, lift_T_Fp_to_cyclotomic
 import ACMG: GaugeTransform, GaugeParameters, GaugeChoice, GaugeAction, GaugeFixingResult
-import ACMG: ToricGaugeNormalFormResult
+import ACMG: ToricGaugeData, ToricGaugeFixingError, ToricGaugeNormalFormResult
 import ACMG: GaugeDegreeOfFreedom, GaugeConstraint, FixUnitConstraints
 import ACMG: FixSelectedFSymbols, FixSelectedRSymbols, NormalizationConstraint
 import ACMG: canonical_gauge, gauge_equivalent, gauge_transform

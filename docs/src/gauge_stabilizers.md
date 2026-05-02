@@ -81,6 +81,15 @@ eqs = stabilizer_equations(problem)
 F/R symbol coordinates.  These equations are deterministic algebraic data for
 future finite-field solving or counting code.
 
+The finite-field group currently uses ACMG's full channel-scalar convention:
+every channel with `N_ab^c = 1` contributes a parameter, including unit
+channels.  Consequently the group includes the usual ineffective kernel.  The
+group and equation metadata expose
+`gauge_convention = :full_channel_scalar`,
+`includes_unit_channels = true`, and
+`includes_ineffective_kernel = true` so downstream counting code can
+distinguish this from unit-normalized or effective toric quotients.
+
 Brute-force enumeration is available for small finite gauge groups:
 
 ```julia
@@ -110,4 +119,3 @@ Not implemented in v0.9.1:
 - higher-central-charge trace sums
 - stacky point counting as a full feature
 - automatic classification of quotient-stack points
-

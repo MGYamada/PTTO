@@ -146,7 +146,11 @@ function finite_field_gauge_group(data::FRData{FpElem}; metadata = NamedTuple())
     params = gauge_parameters(data)
     meta = _metadata_with(metadata, :kind => :finite_field_toric_gauge_group,
                           :p => p, :parameter_count => length(params),
-                          :parameters => params)
+                          :parameters => params,
+                          :gauge_convention => :full_channel_scalar,
+                          :gauge_group_kind => :full_channel_toric_gauge,
+                          :includes_unit_channels => true,
+                          :includes_ineffective_kernel => true)
     return _FiniteFieldGaugeGroup{typeof(meta)}(p, params, meta)
 end
 
@@ -294,7 +298,11 @@ function _toric_stabilizer_equations(data::FRData, group::_FiniteFieldGaugeGroup
     meta = (kind = :toric_character_equations,
             field = Symbol("F_", group.p),
             parameters = group.parameters,
-            coordinate_count = length(coords))
+            coordinate_count = length(coords),
+            gauge_convention = :full_channel_scalar,
+            gauge_group_kind = :full_channel_toric_gauge,
+            includes_unit_channels = true,
+            includes_ineffective_kernel = true)
     return StabilizerEquations(equations; metadata = meta)
 end
 

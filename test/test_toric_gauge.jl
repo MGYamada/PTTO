@@ -1,5 +1,10 @@
 using Test
 using ACMG
+import ACMG: apply_gauge_mod_p, f_symbol_weight, gauge_weight_matrix
+import ACMG: ineffective_kernel_rank, residual_gauge_orders, r_symbol_weight
+import ACMG: smith_gauge_split, stabilizer_size_mod_p, stacky_weight_mod_p
+import ACMG: FpElem, ToricGaugeNormalFormResult, fr_symbol_coordinates
+import ACMG: symbol_coordinates, toric_gauge_normal_form
 
 function _tg_semion_fusion()
     N = zeros(Int, 2, 2, 2)
@@ -70,8 +75,13 @@ end
                                                                  for ((a, b, c), v) in gauge)),
                                             p)
             moved_action = apply_gauge_mod_p(symbol_data, GaugeAction(gauge; field = :F_17), p)
+            fp_action = GaugeAction(Dict((a, b, c, 1) => FpElem(v, p)
+                                         for ((a, b, c), v) in gauge);
+                                    field = :F_17)
+            moved_fp_action = apply_gauge_mod_p(symbol_data, fp_action, p)
             @test moved_typed.values == moved.values
             @test moved_action.values == moved.values
+            @test moved_fp_action.values == moved.values
             returned = apply_gauge_mod_p(moved,
                                          Dict(ch => invmod(v, p) for (ch, v) in gauge),
                                          p)
@@ -89,6 +99,32 @@ end
     @test residual_gauge_orders([2 0; 0 0]) == [2]
 end
 
+@testset "Multiplicity-free detection and toric preconditioning data" begin
+    @test is_multiplicity_free(semion_fusion_rules())
+    @test is_multiplicity_free(fibonacci_fusion_rules())
+    @test is_multiplicity_free(ising_fusion_rules())
+
+    nonfree = copy(fibonacci_fusion_rules().N)
+    nonfree[2, 2, 2] = 2
+    @test !is_multiplicity_free(nonfree)
+    @test_throws ToricGaugeFixingError toric_gauge_data(nonfree)
+
+    data = toric_gauge_data(fibonacci_fusion_rules(); field = :F_101)
+    @test data isa ToricGaugeData
+    @test data.metadata[:nonzero_parameter_domain] == :F_101_units
+    @test data.metadata[:gauge_convention] == :full_channel_scalar
+    @test data.metadata[:includes_unit_channels]
+    @test data.metadata[:includes_ineffective_kernel]
+    @test data.parameters == gauge_parameters(fibonacci_fusion_rules())
+    @test !isempty(data.slice.fixed_indices)
+
+    skipped = ACMG._toric_pre_reconstruction_data(nonfree)
+    @test !skipped.apply
+    @test skipped.reason == :not_multiplicity_free
+    @test_throws ToricGaugeFixingError ACMG._toric_pre_reconstruction_data(nonfree;
+                                                                           gauge_fixing = :toric)
+end
+
 @testset "SNF toric gauge normal forms feed braid representations" begin
     fr = fibonacci_fr_data_mod_p(101)
     p = fr_metadata(fr)[:p]
@@ -102,6 +138,8 @@ end
     @test gf[:gauge_fix_method] == :toric_snf_f_slice
     @test gf[:fixed_f_indices] == slice.fixed_indices
     @test F_values(fr)[gf[:fixed_f_indices]] == fill(FpElem(1, p), length(gf[:fixed_f_indices]))
+    @test all(ch -> fr.rules.N[ch...] == 1, gauge_parameters(fr))
+    @test all(v -> !iszero(v.value), F_values(fr)[gf[:fixed_f_indices]])
 
     normal = toric_gauge_normal_form(fr)
     @test normal isa ToricGaugeNormalFormResult
