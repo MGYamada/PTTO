@@ -67,4 +67,4 @@ pipeline entry points are the stable public surface.
 
 Low-level Block-U search helpers, finite-field F/R solving, cyclotomic
 reconstruction hooks, finite-field braid image diagnostics, and Zariski
-diagnostics are experimental or semi-public compatibility exports.
+diagnostics are experimental implementation APIs.

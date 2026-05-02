@@ -1,29 +1,18 @@
 """
-    End-to-end pipeline driver `N → List[ClassifiedMTC]`.
+End-to-end conductor-first classification pipeline.
 
-Given a conductor `N`, `classify_mtcs_at_conductor` executes the full pipeline and returns a list of fully classified
-MTCs, each carrying:
+Given a conductor `N`, ACMG searches for modular data whose modular
+representation factors through `SL(2, ℤ/N)` and whose entries are reconstructed
+over `Q(ζ_N)`.  A successful result records:
 
-- the SL(2, ℤ/N) stratum (m_λ) decomposition (Phase 0/1),
-- F_p-validated modular data (Phase 2),
-- exact cyclotomic modular data reconstructed in `Q(ζ_N)` (Phase 3),
-- exact `(S, T)` lifted to `Q(ζ_N)` with `N` fixed as the base conductor.
+- the semisimple `SL(2, ℤ/N)` stratum `(m_λ)` used in the search,
+- finite-field modular-data candidates at admissible split primes,
+- exact cyclotomic `(S, T)` data reconstructed and cross-checked from those
+  residues,
+- optional exact `(F, R)` data solving pentagon and hexagon constraints.
 
-This file provides the orchestration entry points:
-
-- `classify_from_group(group, all_primes; ...)`: given a prime-indexed
-  group, performs Phase 3 CRT + Phase 4
-  exact lift and returns a single `ClassifiedMTC`.
-
-- `classify_mtcs_at_conductor(N; ...)`: the conductor-first top-level
-  classification driver.
-
-Design notes:
-- The pipeline is conductor-first: `N` is the outer loop; rank emerges
-  from stratum enumeration.
-- Modular data is lifted exactly to `Q(ζ_N)`.  The effective conductor is
-  fixed to the user-supplied `N`.
-- `skip_FR = false` runs exact cyclotomic `(F, R)` reconstruction.
+The pipeline is conductor-first: `N` is the outer arithmetic parameter, while
+rank is bounded by `max_rank` and discovered through stratum enumeration.
 """
 # ============================================================
 #  classify_from_group: CRT + (F, R) solve for one Galois sector
@@ -121,9 +110,12 @@ end
                         verbose = false)
         -> ClassifiedMTC
 
-Given a single prime-indexed group, perform Phase 3 reconstruction directly
-as modular data over `Q(ζ_N)`, and
-return a `ClassifiedMTC`.
+Given one prime-indexed Galois sector of finite-field candidates, perform
+cyclotomic reconstruction of modular data over `Q(ζ_N)`, verify it at fresh
+primes when available, and return a `ClassifiedMTC`.
+
+This is mainly a lower-level orchestration hook for the conductor pipeline.
+Most users should call `classify_mtcs_at_conductor` or `classify_mtcs_auto`.
 
 Arguments:
 - `group::Dict{Int, MTCCandidate}`:  a single group (one sector)
@@ -227,15 +219,15 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
 
     # TensorCategories assumes the unit object is at index 1.
     # MTCCandidate stores `unit_index` explicitly and may keep a different
-    # basis ordering; permute all lifted data coherently before Phase 4.
+    # basis ordering; permute all lifted data coherently before F/R solving.
     if rep.unit_index != 1
         perm = vcat(rep.unit_index, [i for i in 1:length(T_cyc) if i != rep.unit_index])
         S_cyc = S_cyc[perm, perm]
         T_cyc = T_cyc[perm]
         Nijk = Nijk[perm, perm, perm]
     end
-    T_for_phase4 = _normalize_T_by_unit(T_cyc)
-    exact_mtc_check = validate_exact_mtc(nothing, nothing, S_cyc, T_for_phase4, Nijk)
+    T_for_fr = _normalize_T_by_unit(T_cyc)
+    exact_mtc_check = validate_exact_mtc(nothing, nothing, S_cyc, T_for_fr, Nijk)
     exact_mtc_check.valid ||
         error("exact modular data failed fusion/twist validation: $(exact_mtc_check.reason)")
 
@@ -246,7 +238,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
         return ClassifiedMTC(N, N_input, rank, stratum, Nijk,
                              scale_factor, used, fresh, verify_fresh,
                              verify_exact_lift,
-                             S_cyc, T_for_phase4, nothing, nothing, nothing,
+                             S_cyc, T_for_fr, nothing, nothing, nothing,
                              galois_sector)
     end
     verbose && println("  exact (F,R) layer requested on rank=$rank...")
@@ -254,23 +246,23 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     fr_result = compute_FR_from_ST(Nijk;
                                    context = CyclotomicContext(N),
                                    S = S_cyc,
-                                   T = T_for_phase4,
+                                   T = T_for_fr,
                                    return_all = true,
                                    primes = all_primes,
                                    verbose = verbose)
-    fr_result.F === nothing && error("Phase 4 could not produce any (F,R) solution")
-    isempty(fr_result.candidates) && error("Phase 4 produced no valid (F,R) candidates")
+    fr_result.F === nothing && error("exact F/R reconstruction could not produce any solution")
+    isempty(fr_result.candidates) && error("exact F/R reconstruction produced no valid candidates")
 
-    # Select an exact (F,R) branch against the Phase 3 modular data itself.
-    selection = _select_fr_for_st(fr_result.candidates, Nijk, S_cyc, T_for_phase4, N)
+    # Select an exact (F,R) branch against the reconstructed modular data itself.
+    selection = _select_fr_for_st(fr_result.candidates, Nijk, S_cyc, T_for_fr, N)
     selected = selection.selected
     md_roundtrip = _modular_data_roundtrip(selected.F, selected.R, Nijk,
-                                           S_cyc, T_for_phase4, N)
+                                           S_cyc, T_for_fr, N)
     md_roundtrip = _with_fr_roundtrip_metadata(md_roundtrip;
                                                candidate_index = selection.selected_index,
                                                galois_exponent = selection.score.galois_exponent)
     _fr_roundtrip_attachable(md_roundtrip) ||
-        error("Phase 4 selected (F,R) does not roundtrip to exact modular data")
+        error("selected exact (F,R) data does not roundtrip to exact modular data")
     verbose && println("  modular-data roundtrip: perm=$(md_roundtrip.best_perm), " *
                        "S_err=$(md_roundtrip.S_max), T_err=$(md_roundtrip.T_max), " *
                        "ok=$(md_roundtrip.ok)")
@@ -278,7 +270,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     return ClassifiedMTC(N, N_input, rank, stratum, Nijk,
                          scale_factor, used, fresh, verify_fresh,
                          verify_exact_lift,
-                         S_cyc, T_for_phase4,
+                         S_cyc, T_for_fr,
                          selected.F, selected.R, md_roundtrip,
                          galois_sector)
 end
@@ -299,19 +291,31 @@ end
                                 verbose = true)
         -> Vector{ClassifiedMTC}
 
-Fully automated MTC classification for a given conductor input `N`.
+Classify modular-data candidates at a fixed conductor `N`.
+
 For a user-friendly wrapper that auto-selects parameters, see
 `classify_mtcs_auto`.
 
+The mathematical search space is organized as follows.  Let
+`G_N = SL(2, ℤ/N)` and let the atomic catalog be the irreducible
+`G_N`-representations realized over `Q(ζ_N)`.  For each rank up to
+`max_rank`, ACMG enumerates semisimple strata
+`ρ ≅ ⊕_λ ρ_λ^{⊕m_λ}` with total dimension equal to the rank.  Within each
+stratum, Block-U search changes basis inside degenerate `T`-eigenspaces and
+tests the modular-data axioms, including Verlinde integrality, over admissible
+finite fields.
+
 Pipeline:
-  Phase 0: build SL(2, ℤ/N) atomic irrep catalog (≤ max_rank)
-  Phase 1: enumerate strata (m_λ) with Σ m_λ d_λ = r for each r ≤ max_rank
-  Phase 2: for each stratum, sweep block-U at each prime → MTC candidates
-  Phase 3: grouping + modular CRT reconstruction in `Q(ζ_N)`
-  Phase 4: compute exact `(F, R)`
+  1. build the `SL(2, ℤ/N)` atomic irrep catalog (≤ max_rank)
+  2. enumerate strata `(m_λ)` with `Σ m_λ d_λ = r` for each `r ≤ max_rank`
+  3. sweep Block-U at each prime for each stratum
+  4. group candidates and reconstruct modular data in `Q(ζ_N)`
+  5. optionally solve exact `(F, R)` pentagon/hexagon data
 
 Returns one `ClassifiedMTC` per Galois sector per stratum that yields a
-valid modular-data candidate and exact cyclotomic `(F, R)` data.
+valid exact cyclotomic modular-data candidate.  If `skip_FR=false`, the result
+also attempts exact `(F, R)` reconstruction; the outcome is recorded in
+`fr_status(result)`.
 
 Note on conductor: `N` is the cyclotomic base conductor. Internally,
 `N_effective = N`; the conductor is not enlarged after discovering an
@@ -353,12 +357,12 @@ Arguments:
 - `max_block_dim::Int = 3`:        cap on the degenerate T-eigenspace
                                    dimension for block-U solving.
 - `search_mode::Symbol = :groebner`:
-                                   Phase 2 block-U backend mode passed
+                                   Block-U backend mode passed
                                    to `find_mtcs_at_prime` (`:groebner`
                                    or `:exhaustive`).
 - `max_units_for_groebner::Int = typemax(Int)`:
                                    cap on fixed-unit Gröbner systems
-                                   tried per stratum/prime in Phase 2.
+                                   tried per stratum/prime in Block-U search.
 - `groebner_allow_fallback::Bool = false`:
                                    when `search_mode=:groebner`,
                                    whether to fall back to explicit
@@ -367,14 +371,14 @@ Arguments:
 - `precheck_unit_axiom::Bool = true`:
                                    run fast unit-axiom precheck before
                                    full Verlinde tensor evaluation in
-                                   Phase 2 candidate loop.
+                                   finite-field candidate loop.
 - `reconstruction_bound::Int = 50`: requested coefficient and denominator
                                    bound for cyclotomic power-basis CRT.
                                    Pipeline fallback caps this to a small
                                    search-safe bound before reconstruction.
 - `skip_FR::Bool = false`:         when true, stop after exact
                                    cyclotomic modular-data lift.
-- `verbose::Bool = true`:          print per-phase progress.
+- `verbose::Bool = true`:          print progress.
 """
 function classify_mtcs_at_conductor(N::Int;
                                     max_rank::Int = 5,
@@ -420,22 +424,22 @@ function classify_mtcs_at_conductor(N::Int;
     length(chosen_primes) >= 2 || error(
         "need at least 2 primes (got $(length(chosen_primes)))")
 
-    # ------- Phase 0: atomic catalog -------
+    # ------- atomic catalog -------
     # Enumerate atomic SL(2, Z/N)-irreps at the user-specified base conductor N.
     # The cyclotomic field is fixed by the requested conductor.
-    verbose && println("=== Phase 0: atomic SL(2, ℤ/$N) irrep catalog ===")
+    verbose && println("=== Atomic SL(2, ℤ/$N) irrep catalog ===")
     catalog = build_atomic_catalog(N; max_rank = max_rank, verbose = false)
     verbose && println("  $(length(catalog)) atomic irreps (≤ rank $max_rank)")
 
-    # ------- Phase 1: strata -------
-    verbose && println("\n=== Phase 1: stratum enumeration ===")
+    # ------- strata -------
+    verbose && println("\n=== Stratum enumeration ===")
     strata_list = strata === nothing ?
         vcat([enumerate_strata(catalog, r) for r in 1:max_rank]...) :
         strata
     verbose && println("  $(length(strata_list)) strata")
 
-    # ------- Phase 2: find MTCs at each prime, for each stratum -------
-    verbose && println("\n=== Phase 2: block-U sweep at primes $chosen_primes ===")
+    # ------- find MTCs at each prime, for each stratum -------
+    verbose && println("\n=== Block-U sweep at primes $chosen_primes ===")
 
     # Collect (stratum, Dict{p => candidates}) only for strata that yield
     # something at at least one prime.
@@ -489,8 +493,8 @@ function classify_mtcs_at_conductor(N::Int;
         end
     end
 
-    # ------- Phase 3: per-stratum, per-sector modular-data reconstruction -------
-    verbose && println("\n=== Phase 3: CRT modular-data reconstruction ===")
+    # ------- per-stratum, per-sector modular-data reconstruction -------
+    verbose && println("\n=== CRT modular-data reconstruction ===")
 
     out = ClassifiedMTC[]
     for (st, results_by_prime) in stratum_results
@@ -570,13 +574,13 @@ function classify_mtcs_at_conductor(N::Int;
     end
 
     if skip_FR
-        verbose && println("\n=== Phase 4 skipped: returning modular-data results only ===")
+        verbose && println("\n=== F/R reconstruction skipped: returning modular-data results only ===")
         verbose && println("\n=== Done: $(length(out)) ClassifiedMTC(s) ===")
         return out
     end
 
-    # ------- Exact (F,R) layer -------
-    verbose && println("\n=== Exact (F, R) layer requested ===")
+    # ------- Exact (F,R) reconstruction -------
+    verbose && println("\n=== Exact (F, R) reconstruction requested ===")
     out = filter(m -> m.verify_fresh, out)
     grouped = _classify_modular_data_by_fusion_rule(out)
     key_to_members = Dict{String, Vector{Tuple{Any, Any}}}()
@@ -602,14 +606,14 @@ function classify_mtcs_at_conductor(N::Int;
                                            verbose = verbose)
         catch err
             msg = sprint(showerror, err)
-            if occursin("exact Phase 4 did not find", msg)
-                verbose && println("    Phase 4 found no (F,R) solution; leaving members without F/R")
+            if occursin("exact F/R reconstruction did not find", msg)
+                verbose && println("    exact F/R reconstruction found no solution; leaving members without F/R")
                 for i in idxs
                     out[i] = _with_fr_status(out[i], FRNoSolutionFound)
                 end
                 continue
             elseif _is_reconstruction_unstable_message(msg)
-                verbose && println("    Phase 4 reconstruction failed; leaving members without F/R")
+                verbose && println("    exact F/R reconstruction failed; leaving members without F/R")
                 for i in idxs
                     out[i] = _with_fr_status(out[i], FRReconstructionFailed)
                 end
@@ -618,7 +622,7 @@ function classify_mtcs_at_conductor(N::Int;
             rethrow()
         end
         if fr_result.F === nothing || isempty(fr_result.candidates)
-            verbose && println("    Phase 4 produced no valid (F,R) candidates; leaving members without F/R")
+            verbose && println("    exact F/R reconstruction produced no valid candidates; leaving members without F/R")
             for i in idxs
                 out[i] = _with_fr_status(out[i], FRNoSolutionFound)
             end

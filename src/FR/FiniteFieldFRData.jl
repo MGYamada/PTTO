@@ -1,7 +1,7 @@
 """
 Finite-field F/R solving boundary.
 
-This file adapts the existing Phase-4 equation generators to a direct
+This file adapts the existing exact F/R equation generators to a direct
 prime-field fiber: symbolic pentagon and hexagon equations are combined over
 `QQ`, reduced modulo a prime, solved by the existing finite-field Groebner
 point enumerator, and wrapped as `FRData{FpElem}`.
@@ -37,7 +37,7 @@ _fp_values(xs::AbstractVector{<:Integer}, p::Int) = FpElem[FpElem(x, p) for x in
 
 function _known_fr_modp_conductor_and_labels(fr::FusionRule)
     # Fusion rules alone do not determine a braided MTC.  These labels identify
-    # ACMG's built-in reference branches used for branch selection and Phase-4
+    # ACMG's built-in reference branches used for branch selection and exact F/R
     # fallback, not a mathematical classification from fusion data alone.
     fusion_isomorphic(fr, semion_fusion_rules()) &&
         return (name = :semion, conductor = 8)
@@ -122,15 +122,15 @@ function _expand_gauge_fixed_modp_points(points::Vector{Vector{Int}},
             for point in points]
 end
 
-function _modp_phase4_reference_solution(fr::FusionRule, p::Int, info;
-                                         primes::Vector{Int} = [p],
-                                         kwargs...)
+function _modp_fr_reference_solution(fr::FusionRule, p::Int, info;
+                                     primes::Vector{Int} = [p],
+                                     kwargs...)
     info.conductor === nothing &&
         error("direct finite-field solve did not finish and no conductor metadata is known")
     data = info.name == :semion ? semion_modular_data(CyclotomicContext(info.conductor)) :
            info.name == :fibonacci ? fibonacci_modular_data(CyclotomicContext(info.conductor)) :
            info.name == :ising ? ising_modular_data(CyclotomicContext(info.conductor)) :
-           error("no Phase-4 branch metadata is available for $(info.name)")
+           error("no exact F/R branch metadata is available for $(info.name)")
     twists = [data.T[i, i] for i in 1:length(data.labels)]
     result = compute_FR_from_ST(fr.N;
                                 conductor = info.conductor,
@@ -141,7 +141,7 @@ function _modp_phase4_reference_solution(fr::FusionRule, p::Int, info;
     Fp = [reduce_mod_p(data.context, x, p) for x in result.F]
     Rp = [reduce_mod_p(data.context, x, p) for x in result.R]
     _, nR = _braiding_block_positions(fr.N)
-    length(Rp) == 2 * nR || error("Phase-4 result returned $(length(Rp)) R coordinates; expected $(2 * nR)")
+    length(Rp) == 2 * nR || error("exact F/R result returned $(length(Rp)) R coordinates; expected $(2 * nR)")
     return vcat(Fp, Rp)
 end
 
@@ -307,7 +307,7 @@ function frdata_from_modp_solution(rules, solution::AbstractVector{<:Integer}, p
     meta[:simple_objects] = get(meta, :simple_objects, simple_objects(fr))
     meta[:name] = get(meta, :name, info.name)
     info.conductor === nothing || (meta[:conductor] = get(meta, :conductor, info.conductor))
-    meta[:source] = get(meta, :source, :phase4_modp_solution)
+    meta[:source] = get(meta, :source, :exact_fr_modp_solution)
     meta[:format] = :tensorcategories_variable_order
     return FRData(fr, F, R, Rinv; metadata = meta)
 end
@@ -316,7 +316,7 @@ end
     solve_fr_mod_p(rules, p; strategy=:toric_snf, branch=:auto, max_points=4096, failure=:throw)
 
 Solve the multiplicity-free pentagon/hexagon equations over `F_p` and return
-`FRData{FpElem}`.  The implementation uses the existing Phase-4 equation
+`FRData{FpElem}`.  The implementation uses the existing exact F/R equation
 generators and finite-field Groebner point enumeration; no hard-coded F/R
 coordinates are used.
 """
@@ -332,15 +332,15 @@ function solve_fr_mod_p(rules, p::Integer; strategy::Symbol = :toric_snf,
         info = _known_fr_modp_conductor_and_labels(fr)
         fixed = gauge_fix(fr_equation_system(fr); strategy = strategy)
         reduced = reduce_mod_p(fixed, pp)
-        reduced_points = if solver == :phase4
-            [_modp_phase4_reference_solution(fr, pp, info; kwargs...)]
+        reduced_points = if solver == :reference
+            [_modp_fr_reference_solution(fr, pp, info; kwargs...)]
         elseif solver == :direct || solver == :auto
             isempty(kwargs) || error("unsupported keyword arguments for direct solver: $(collect(keys(kwargs)))")
             _fr_modp_groebner_points(fixed, pp; max_points = max_points)
         else
-            error("unknown solver=$(repr(solver)); expected :auto, :direct, or :phase4")
+            error("unknown solver=$(repr(solver)); expected :auto, :direct, or :reference")
         end
-        points = solver == :phase4 ? reduced_points :
+        points = solver == :reference ? reduced_points :
             _expand_gauge_fixed_modp_points(reduced_points, fixed, pp)
         isempty(points) && error("no F/R solution found over F_$pp")
         selected_index = _select_modp_branch(points, fr, pp, branch, info)

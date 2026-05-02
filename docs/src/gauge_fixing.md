@@ -97,4 +97,4 @@ workflows.  `GaugeTransform` is a legacy multiplicity-free wrapper, while
 `GaugeAction`, `identity_gauge`, `apply_gauge`, `compose_gauge`,
 `inverse_gauge`, constraint records, and normal-form orchestration are public
 infrastructure.  Low-level quotient diagnostics and future solver-specific
-gauge-fixing strategies remain experimental before v1.0.
+gauge-fixing strategies remain experimental.

@@ -11,7 +11,7 @@ function _semion_fusion()
     return Nijk
 end
 
-@testset "Phase 4 solution limits are configurable" begin
+@testset "Exact F/R solution limits are configurable" begin
     R, x = polynomial_ring(QQ, 1, :x)
     eqs = [x[1]^2 - 1]
 
@@ -94,7 +94,7 @@ function _eval_exact_equation(eq, values)
     return v
 end
 
-@testset "Exact cyclotomic Phase 4 roundtrip" begin
+@testset "Exact cyclotomic F/R roundtrip" begin
     cases = [
         (name = "semion", N = 8, primes = [17, 41],
          fusion = _semion_fusion(), data = semion_modular_data()),
@@ -168,7 +168,7 @@ end
     @test !check_vafa_constraints([one(K), -one(K), z^6], Nijk).valid
 end
 
-@testset "Phase 4 roundtrip is checked against the requested target" begin
+@testset "Exact F/R roundtrip is checked against the requested target" begin
     data = semion_modular_data()
     Nijk = _semion_fusion()
     twists = _twists(data)

@@ -1,31 +1,48 @@
 """
-Stratum enumeration.
+Stratum enumeration for conductor-level modular-data search.
 
-Given an atomic catalog of SL(2, ℤ/N) irreps and a target rank r, enumerate
-all possible "strata" — i.e., assignments of multiplicity m_λ to each atomic
-irrep such that Σ m_λ · dim(λ) = r.
+Fix a conductor `N`, write `G_N = SL(2, ℤ/N)`, and let the atomic catalog be a
+chosen list of irreducible `G_N`-representations `ρ_λ` realized over
+`Q(ζ_N)`.  For a target rank `r`, a stratum is a multiplicity function
 
-In the NRWW scheme-theoretic framework, each stratum corresponds to a locally
-closed subscheme of the representation variety Hom(SL(2, ℤ/N), GL_r), indexed
-by the isomorphism type of the representation as a direct sum of irreducibles.
+```math
+m : λ \\mapsto m_λ \\in ℤ_{\\ge 0},
+\\qquad
+\\sum_λ m_λ \\dim ρ_λ = r.
+```
 
-This is a pure combinatorial step (dim-based partition); T-spectrum matching
-and block-U enumeration come later.
+It indexes the semisimple representation isomorphism type
+
+```math
+ρ_m \\cong \\bigoplus_λ ρ_λ^{\\oplus m_λ}.
+```
+
+Equivalently, in the representation variety of `G_N` in dimension `r`, the
+stratum is the locally closed locus with this fixed Jordan-Hölder
+decomposition.  In ACMG this step is purely combinatorial.  The unit object,
+T-spectrum constraints, Verlinde integrality, and Block-U equations are
+imposed later.
 
 Key type: `Stratum`
-- `multiplicities`: Dict{Int, Int} mapping catalog index → multiplicity m_λ
-- `total_dim`: sum of m_λ · dim(λ), equals r by construction
+- `multiplicities`: `Dict{Int, Int}` mapping catalog index to `m_λ`
+- `total_dim`: cached value of `Σ m_λ dim(ρ_λ)`, equal to the searched rank
 """
 
 """
     Stratum
 
-A stratum of the representation variety = an assignment of multiplicities
-to atomic irreps.
+A semisimple representation stratum for `SL(2, ℤ/N)` at fixed rank.
+
+If the atomic catalog contains irreducibles `ρ_λ`, a `Stratum` stores the
+finite-support multiplicity vector `(m_λ)`.  The corresponding representation
+type is `⊕_λ ρ_λ^{⊕m_λ}`.  This is not yet a modular tensor category: it is the
+ambient representation-theoretic layer in which candidate modular data are
+searched.
 
 Fields:
-- multiplicities: Dict mapping catalog index (1-based) to multiplicity m_λ ≥ 1
-- total_dim: sum of m_λ · dim(λ) (redundant but cached)
+- `multiplicities`: dictionary mapping catalog index (1-based) to positive
+  multiplicity `m_λ`
+- `total_dim`: sum of `m_λ · dim(ρ_λ)` (redundant but cached)
 """
 struct Stratum
     multiplicities::Dict{Int, Int}
@@ -41,9 +58,9 @@ end
 """
     describe_stratum(s::Stratum, catalog) -> String
 
-Human-readable description of a stratum using catalog labels.
-E.g., "3d_8 + 2×1d_3 + 1d_1" for a stratum with a 3-dimensional irrep at level 8
-and two copies of the non-trivial 1-dim irrep at level 3, plus the trivial irrep.
+Human-readable description of a stratum using catalog labels.  The result is a
+compact direct-sum expression such as `"3d_8+ ⊕ 2×1d_3+"`, where each term
+records multiplicity, atomic label, and parity sign.
 """
 function describe_stratum(s::Stratum, catalog)
     parts = String[]
@@ -60,8 +77,10 @@ end
     find_unit_indices(catalog) -> Vector{Int}
 
 Return indices of the trivial irrep (dim 1, level 1, parity +1).
-The unit object of the MTC must transform under this irrep.
-There should be exactly one such index in a well-formed catalog.
+This is a useful diagnostic, but a valid MTC need not contain the unit object
+as a separate trivial direct summand of the `SL(2, ℤ/N)` representation.  The
+unit is ultimately a basis vector in the modular-data basis and may lie inside
+a higher-dimensional irreducible summand.
 """
 function find_unit_indices(catalog)
     return [i for (i, a) in enumerate(catalog)
@@ -72,14 +91,14 @@ end
     enumerate_strata(catalog, r::Int; require_unit_summand::Bool = false,
                      max_multiplicity::Int = typemax(Int)) -> Vector{Stratum}
 
-Enumerate all strata {m_λ} with Σ m_λ · dim(λ) = r using atomic irreps from
-the catalog.
+Enumerate all strata `{m_λ}` with `Σ m_λ · dim(ρ_λ) = r` using atomic irreps
+from the catalog.
 
-NOTE on unit objects: In general, the unit object of an MTC sits as a
-specific basis vector WITHIN an irreducible block (whichever irrep contains
-T-eigenvalue 1), not as a separate 1d_1 summand. For example, SU(2)_4 at N=24
-has rank 5 decomposition (ρ_8^(3) ⊠ 1_3) ⊕ (1_8 ⊠ ρ_3^(2)) with NO explicit
-1d_1 summand, yet two objects have spin 0 (one in each block).
+Mathematical note on the unit object: in general, the tensor unit is a
+distinguished simple object, hence a distinguished basis vector after modular
+data are assembled.  It need not appear as a separate trivial summand of the
+`SL(2, ℤ/N)` representation.  It may lie inside a nontrivial irreducible block
+that contains a `T`-eigenvalue equal to `1`.
 
 Therefore `require_unit_summand=false` is the correct default. The unit
 constraint is enforced later, at the T-spectrum / S-matrix assembly step.

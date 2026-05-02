@@ -1,7 +1,7 @@
 """
     HexagonSolver
 
-Exact Phase-4 braiding solver over `Q(ζ_N)`.
+Exact braiding solver over `Q(ζ_N)`.
 """
 
 using Oscar

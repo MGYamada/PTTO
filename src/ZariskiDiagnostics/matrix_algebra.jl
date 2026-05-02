@@ -57,7 +57,7 @@ basis dimension, ambient dimension, basis matrices, and truncation status.
 
 Mathematical caveats: this is a finite-field diagnostic and does not prove a
 characteristic-zero Zariski closure statement.  API inputs and outputs may
-change before v1.0.
+change.
 """
 function generated_matrix_algebra(sigmas::AbstractVector{<:AbstractMatrix{<:Integer}}, p::Int; max_dimension = nothing)
     warn_experimental("generated_matrix_algebra")

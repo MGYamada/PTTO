@@ -16,6 +16,6 @@ function warn_experimental(name::AbstractString)
     _experimental_warnings_enabled() || return false
     name in _EXPERIMENTAL_WARNED && return false
     push!(_EXPERIMENTAL_WARNED, String(name))
-    @warn "$name is an experimental ACMG API; inputs, outputs, and semantics may change before v1.0. Pin ACMG.jl when depending on this interface." maxlog=1
+    @warn "$name is an experimental ACMG API; inputs, outputs, and semantics may change. Pin ACMG.jl when depending on this interface." maxlog=1
     return true
 end

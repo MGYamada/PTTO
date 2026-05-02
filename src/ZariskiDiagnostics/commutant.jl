@@ -50,7 +50,7 @@ irreducibility heuristic.
 
 Mathematical caveats: the result is a finite-field diagnostic and not a full
 characteristic-zero representation-theoretic proof.  API inputs and outputs
-may change before v1.0.
+may change.
 """
 function commutant(sigmas::AbstractVector{<:AbstractMatrix{<:Integer}}, p::Int)
     warn_experimental("commutant")

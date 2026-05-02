@@ -48,7 +48,7 @@ using ACMG
         @test occursin("N_eff=24", msg)
     end
 
-    @testset "conductor_mode=:T_only is removed" begin
+    @testset "conductor_mode=:T_only is unsupported" begin
         err = try
             ACMG.classify_mtcs_at_conductor(8;
                                             max_rank = 1,
@@ -62,7 +62,7 @@ using ACMG
         end
 
         @test err isa ErrorException
-        @test occursin("removed", sprint(showerror, err))
+        @test occursin("unsupported conductor_mode", sprint(showerror, err))
     end
 
     @testset "classify_mtcs_auto returns reproducibility metadata" begin

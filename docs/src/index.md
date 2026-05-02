@@ -11,6 +11,7 @@ finite-field experiments.
 
 - [Getting Started](@ref) introduces the basic conductor-first workflow.
 - [Concepts](@ref) summarizes the main mathematical objects.
+- [Classifying MTCs](@ref) explains the conductor-level search and strata.
 - [API Stability](@ref) defines stable, experimental, and internal APIs.
 - [API reference](@ref) lists the exported API via `@autodocs`.
 

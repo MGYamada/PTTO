@@ -1,7 +1,7 @@
 """
 Shared bounded modular CRT over the power basis of `Q(ζ_N)`.
 
-This is the common lifting layer used by Phase 3 modular-data
+This is the common lifting layer used by modular-data
 reconstruction and by the exact F/R solvers.
 """
 

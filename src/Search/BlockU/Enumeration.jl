@@ -447,7 +447,7 @@ end
     enumerate_block_candidates(n_block::Int, p::Int, search_mode::Symbol)
         -> Vector{Matrix{Int}}
 
-Choose the Phase-2 block-U search backend.
+Choose the Block-U search backend.
 
 Supported modes:
 - `:exhaustive`: Cayley + reflection sweep.
@@ -465,7 +465,7 @@ end
 """
     validate_search_mode(search_mode::Symbol)
 
-Validate Phase-2 search backend selector.
+Validate the Block-U search backend selector.
 """
 function validate_search_mode(search_mode::Symbol)
     search_mode in (:exhaustive, :groebner) ||

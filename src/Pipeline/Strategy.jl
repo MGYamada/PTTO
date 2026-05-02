@@ -16,11 +16,12 @@ function estimate_search_complexity(N::Int, rank::Int, stratum)
 end
 
 """
-    estimate_phase4_complexity(Nijk)
+    estimate_fr_reconstruction_complexity(Nijk)
 
-Return a coarse Phase 4 estimate from associator and braiding slot counts.
+Return a coarse exact F/R reconstruction estimate from associator and braiding
+slot counts.
 """
-function estimate_phase4_complexity(Nijk::Array{Int,3})
+function estimate_fr_reconstruction_complexity(Nijk::Array{Int,3})
     r = size(Nijk, 1)
     nF = try
         _, _, n = get_pentagon_system(Nijk, r)
@@ -50,14 +51,14 @@ end
 """
     recommend_skip_FR(Nijk; threshold = :medium)
 
-Recommend whether to skip exact Phase 4 for a fusion rule.
+Recommend whether to skip exact F/R reconstruction for a fusion rule.
 """
 function recommend_skip_FR(Nijk::Array{Int,3}; threshold = :medium)
-    est = estimate_phase4_complexity(Nijk)
+    est = estimate_fr_reconstruction_complexity(Nijk)
     skip = threshold == :small ? est.class != :small :
            threshold == :medium ? est.class == :large :
            false
     return (skip_FR = skip, estimate = est,
-            reason = skip ? "estimated Phase 4 complexity is $(est.class)" :
-                     "estimated Phase 4 complexity is acceptable")
+            reason = skip ? "estimated exact F/R reconstruction complexity is $(est.class)" :
+                     "estimated exact F/R reconstruction complexity is acceptable")
 end

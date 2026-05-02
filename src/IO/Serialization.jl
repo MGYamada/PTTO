@@ -94,7 +94,7 @@ end
 _io_report_payload(::Nothing) = nothing
 
 function _io_modular_data_payload(data::ModularData)
-    hcc = higher_central_charge(data)
+    hcc = higher_central_charge_result(data)
     return Dict{String, Any}(
         "type" => "ModularData",
         "N" => conductor(data.context),
@@ -124,7 +124,7 @@ function _io_higher_central_charge_payload(r::HigherCentralChargeResult)
 end
 
 function _io_classified_payload(m::ClassifiedMTC)
-    hcc = higher_central_charge(m)
+    hcc = higher_central_charge_result(m)
     return Dict{String, Any}(
         "type" => "ClassifiedMTC",
         "N" => m.N,
@@ -292,7 +292,7 @@ function export_modular_data(result; format = :json)
     payload = if result isa ModularData
         _io_modular_data_payload(result)
     elseif result isa ClassifiedMTC
-        hcc = higher_central_charge(result)
+        hcc = higher_central_charge_result(result)
         Dict{String, Any}(
             "type" => "ModularData",
             "N" => result.N,
@@ -366,7 +366,7 @@ function _io_report_lines(result::ClassifiedMTC)
         "- F/R status: $(result.fr_status)",
         "- F/R attached: $(result.F_values !== nothing && result.R_values !== nothing)",
     ]
-    hcc = higher_central_charge(result)
+    hcc = higher_central_charge_result(result)
     push!(lines, "- central charge: $(hcc.ok ? hcc.value : hcc.status)")
     if fr !== nothing
         push!(lines, "- F/R roundtrip ok: $(fr.ok)")

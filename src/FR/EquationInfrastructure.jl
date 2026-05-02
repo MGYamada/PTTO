@@ -468,7 +468,7 @@ that the general solver is not implemented.
 
 Mathematical caveats: finite-field solutions require lifting and exact
 verification before they should be treated as cyclotomic F/R data.  API inputs
-and outputs may change before v1.0.
+and outputs may change.
 """
 function solve_finite_field(system::FiniteFieldEquationSystem; kwargs...)
     warn_experimental("solve_finite_field")
@@ -488,7 +488,7 @@ conductor and reports that the reconstruction backend is incomplete.
 
 Mathematical caveats: modular residues are not a proof of a cyclotomic lift
 without CRT bounds and exact equation verification.  API inputs and outputs
-may change before v1.0.
+may change.
 """
 function cyclotomic_reconstruct(fp_solution; conductor::Integer)
     warn_experimental("cyclotomic_reconstruct")

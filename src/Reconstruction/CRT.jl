@@ -1,8 +1,8 @@
 """
-Phase 3: Multi-prime CRT reconstruction.
+Multi-prime CRT reconstruction.
 
 Given MTC candidates found at multiple primes via `find_mtcs_at_prime`
-(Phase 2), this module:
+this module:
 
 1. Matches candidates across primes using fusion-tensor invariants
    (the integer fusion tensor N is prime-independent, so candidates

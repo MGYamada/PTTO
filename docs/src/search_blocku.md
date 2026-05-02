@@ -5,6 +5,10 @@
 The search layer enumerates SL(2, Z/N) strata and performs finite-field
 Block-U searches used by the conductor-first pipeline.
 
+For the mathematical definition of strata and the public classification
+workflow, see [Classifying MTCs](@ref).  This page is a short orientation to
+the lower-level search layer.
+
 ## Minimal example
 
 ```julia
@@ -27,6 +31,10 @@ result = classify_mtcs_auto(8;
 The conductor-level pipeline starts with `N`, builds arithmetic representation
 data modulo `N`, searches finite-field candidates at admissible primes, groups
 Galois-related data, and attempts exact cyclotomic reconstruction.
+
+Block-U search is the fixed-stratum step: after choosing a semisimple
+`SL(2, Z/N)` representation type, ACMG changes basis inside the allowed
+`T`-eigenspace blocks and tests modular-data constraints over finite fields.
 
 ## API overview
 

@@ -1,8 +1,10 @@
 """
 Auto-parameter wrapper for conductor-first classification.
 
-This file contains compatibility conductor helpers and the public
-classify_mtcs_auto convenience API.
+This file contains conductor helpers and the public `classify_mtcs_auto`
+convenience API.  The mathematical input conductor is kept fixed: ACMG treats
+`N` as the cyclotomic level through which the modular representation
+`SL(2, ℤ) -> GL_r` factors.
 """
 
 # ============================================================
@@ -12,7 +14,7 @@ classify_mtcs_auto convenience API.
 function compute_effective_conductor(N::Int, args...;
                                      conductor_mode::Symbol = :full_mtc)
     conductor_mode == :full_mtc ||
-        error("conductor_mode=:$(conductor_mode) was removed in v0.5.0. Use :full_mtc.")
+        error("unsupported conductor_mode=:$(conductor_mode); use :full_mtc")
     return N
 end
 
@@ -42,18 +44,22 @@ end
 Auto-select wrapper around `classify_mtcs_at_conductor`.
 
 This function is intended as the recommended public entry point for
-users who do not want to manually specify `max_rank` and `primes`. The
-effective conductor is fixed to the user-supplied `N`.
+users who do not want to manually specify a rank cutoff and admissible
+finite-field primes.  The conductor is fixed to the user-supplied `N`.
 
-The effective conductor is computed once, then the driver tries
-`(conductor_mode, max_rank)` combinations and records stage metadata.
-Since `N_effective = N`, there is only one executable stage. Search stops
-when any of:
+Mathematically, the search is over modular data whose `SL(2, ℤ)` representation
+factors through `SL(2, ℤ/N)`.  For each requested rank cutoff, ACMG builds the
+atomic irreducible representation catalog, enumerates strata, searches the
+finite-field Block-U equations at admissible primes, and reconstructs exact
+cyclotomic modular data when the residues are consistent.
+
+The driver records stage metadata for reproducibility.  Search stops when any
+of:
 
 - `N_eff_candidate > N_eff_max`,
 - total attempted runs reaches `max_attempts`.
 
-`stagnation_k` is retained as a compatibility keyword.
+`stagnation_k` is accepted as a compatibility keyword.
 
 Returns:
 
@@ -68,7 +74,7 @@ Returns:
    - `history`
 
 Prime selection chooses the first `min_primes` primes `p > prime_start`
-with `(p - 1) % N_effective == 0`.
+with `N | (p - 1)`, so that the `N`-th roots of unity split in `F_p`.
 
 `reconstruction_bound` is forwarded as the requested cyclotomic CRT
 fallback bound. The pipeline applies a small internal cap before MITM
@@ -131,7 +137,7 @@ function classify_mtcs_auto(N::Int;
         for conductor_mode in conductor_modes
             attempts >= max_attempts && break
             conductor_mode == :full_mtc || error(
-                "conductor_mode=:$(conductor_mode) was removed in v0.5.0. Use :full_mtc.")
+                "unsupported conductor_mode=:$(conductor_mode); use :full_mtc")
 
             req = N_eff_candidate
 

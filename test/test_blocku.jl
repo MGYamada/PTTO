@@ -2,7 +2,7 @@ using Test
 using ACMG
 
 """
-Tests for BlockU module — Phase 2 core.
+Tests for BlockU fixed-stratum finite-field search.
 
 These tests are split into two groups:
 1. Pure F_p tests (no Oscar needed): circle enumeration, apply_o2_block,

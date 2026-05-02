@@ -45,13 +45,16 @@ admissible primes such as `17`; the default test suite uses a precomputed
 finite-field Ising fixture for braid and verification regressions so routine
 tests do not pay the full solver cost.
 
-`solve_fr_mod_p` is the finite-field F/R solver.  The older uppercase
-`solve_FR_mod_p` name is deprecated and no longer exported.
+`solve_fr_mod_p` is the finite-field F/R solver.  Pass a fusion rule, such as
+`fibonacci_fusion_rules()`, rather than a category symbol.  The older
+uppercase `solve_FR_mod_p` name and the built-in modular-data prototype
+overload have been removed.
 
 ## Verification
 
 `verify_pentagon`, `verify_hexagon`, and `verify_FRData` reevaluate the
-Phase-4 equations at the finite-field coordinates stored in `FRData{FpElem}`.
+pentagon and hexagon equations at the finite-field coordinates stored in
+`FRData{FpElem}`.
 Braid examples should verify F/R data before constructing generators.
 
 The solver records metadata such as `:p`, `:base_field`, `:solver_status`,

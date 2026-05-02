@@ -1,7 +1,7 @@
 using Test
 using ACMG
 
-@testset "finite-field Phase-4 FR solve: Fibonacci" begin
+@testset "finite-field exact F/R solve: Fibonacci" begin
     fr = fibonacci_fr_data_mod_p(101)
 
     @test fr_metadata(fr)[:solver_status] == :solved
