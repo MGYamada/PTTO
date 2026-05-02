@@ -35,4 +35,16 @@ using ACMG
             end
         end
     end
+
+    @testset "toric gauge fixing can be disabled" begin
+        classified = ACMG.classify_mtcs_at_conductor(8;
+                                                     max_rank = 2,
+                                                     primes = [17, 41],
+                                                     skip_FR = false,
+                                                     toric_gauge_fixing = false,
+                                                     verbose = false)
+        @test !isempty(classified)
+        @test any(m -> m.rank == 2 && m.verify_report !== nothing && m.verify_report.ok,
+                  classified)
+    end
 end

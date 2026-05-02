@@ -1,5 +1,35 @@
 """
-Smith normal form summaries for toric gauge actions.
+    ToricGaugeFixingError(message)
+
+Error raised when a requested toric gauge-fixing step is mathematically or
+arithmetically unsupported.
+"""
+struct ToricGaugeFixingError <: Exception
+    message::String
+end
+
+Base.showerror(io::IO, err::ToricGaugeFixingError) = print(io, err.message)
+
+"""
+    ToricGaugeData
+
+Structured toric gauge preconditioning data for multiplicity-free fusion
+rules.  `parameters` are the trivalent channels carrying torus coordinates,
+and `slice` records the deterministic F-symbol normalization used before
+F/R reconstruction.
+"""
+struct ToricGaugeData
+    fusion::FusionRule
+    parameters::Vector{GaugeParameter}
+    channels::Vector{GaugeParameter}
+    slice::NamedTuple
+    field::Any
+    conventions::Any
+    metadata::Dict{Symbol, Any}
+end
+
+"""
+    Smith normal form summaries for toric gauge actions.
 """
 
 function _smith_invariant_factors(W::AbstractMatrix{<:Integer})
@@ -105,6 +135,42 @@ function toric_gauge_data(data::FRData; include_R::Bool = true)
             coordinates = coords,
             weight_matrix = W,
             split = smith_gauge_split(W))
+end
+
+"""
+    toric_gauge_data(fusion; field=nothing, conventions=:tensorcategories)
+
+Return deterministic toric gauge preconditioning data for a multiplicity-free
+fusion rule.  The object records all channels `(a,b,c)` with `N_ab^c = 1`
+and the reproducible F-symbol slice used by the reconstruction layer.
+"""
+function toric_gauge_data(rules::Union{FusionRule, Array{Int, 3}};
+                          field = nothing,
+                          conventions = :tensorcategories,
+                          coordinate_kind::Symbol = :F)
+    is_multiplicity_free(rules) ||
+        throw(ToricGaugeFixingError("toric gauge fixing requires multiplicity-free fusion rules; found a fusion coefficient greater than 1"))
+    fr = _fusion_rule(rules)
+    coordinate_kind == :F ||
+        throw(ToricGaugeFixingError("toric gauge fixing currently supports only F-symbol preconditioning; got coordinate_kind=$(repr(coordinate_kind))"))
+    slice = toric_gauge_slice(fr; coordinate_kind = coordinate_kind)
+    params = gauge_parameters(fr)
+    metadata = Dict{Symbol, Any}(
+        :gauge_fix_method => :toric_snf_f_slice,
+        :fixed_f_indices => slice.fixed_indices,
+        :effective_rank => slice.split.effective_rank,
+        :complete => slice.complete,
+        :nonzero_parameter_domain => field === nothing ? :torus : Symbol("$(field)_units"),
+        :gauge_convention => :full_channel_scalar,
+        :gauge_group_kind => :full_channel_toric_gauge,
+        :includes_unit_channels => true,
+        :includes_ineffective_kernel => true,
+    )
+    return ToricGaugeData(fr, params, copy(params), slice, field, conventions, metadata)
+end
+
+function Base.show(io::IO, data::ToricGaugeData)
+    print(io, "ToricGaugeData(rank=$(data.fusion.rank), parameters=$(length(data.parameters)), fixed_f=$(length(data.slice.fixed_indices)))")
 end
 
 function _rank_int_matrix_rows(rows::Vector{Vector{Int}}, ncols::Int)

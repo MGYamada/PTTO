@@ -49,6 +49,9 @@ using ACMG
         @test equations isa StabilizerEquations
         @test equations.metadata.kind == :toric_character_equations
         @test equations.metadata.field == :F_17
+        @test equations.metadata.gauge_convention == :full_channel_scalar
+        @test equations.metadata.includes_unit_channels
+        @test equations.metadata.includes_ineffective_kernel
         @test length(equations.equations) == length(stabilizer_equations(problem).equations)
 
         id = identity_gauge(fr)
@@ -62,5 +65,24 @@ using ACMG
         @test automorphisms(result)[1] == id
 
         @test_throws ErrorException stabilizer(problem; max_enumeration = 10)
+    end
+
+    @testset "finite-field stabilizer agrees with SNF count for tiny primes" begin
+        fr = semion_fr_data_mod_p(5)
+        group = ACMG.finite_field_gauge_group(fr)
+        @test group.metadata.gauge_convention == :full_channel_scalar
+        @test group.metadata.gauge_group_kind == :full_channel_toric_gauge
+        @test group.metadata.includes_unit_channels
+        @test group.metadata.includes_ineffective_kernel
+
+        brute = stabilizer(fr, group; max_enumeration = 10_000,
+                           return_automorphisms = false)
+        symbol_data = (
+            coordinates = ACMG.fr_symbol_coordinates(fr),
+            values = vcat(F_values(fr), R_values(fr)),
+            parameters = gauge_parameters(fr),
+        )
+        snf_order = ACMG.stabilizer_size_mod_p(symbol_data, fusion_rule(fr), 5)
+        @test stabilizer_order(brute) == snf_order
     end
 end

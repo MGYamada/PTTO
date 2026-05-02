@@ -38,6 +38,8 @@ end
                        precheck_unit_axiom = true,
                        reconstruction_bound = 50,
                        skip_FR = false,
+                       gauge_fixing = :auto,
+                       toric_gauge_fixing = true,
                        verbose = true)
         -> NamedTuple
 
@@ -99,6 +101,8 @@ function classify_mtcs_auto(N::Int;
                             precheck_unit_axiom::Bool = true,
                             reconstruction_bound::Int = 50,
                             skip_FR::Bool = false,
+                            gauge_fixing::Symbol = :auto,
+                            toric_gauge_fixing::Bool = true,
                             verbose::Bool = true)
     N >= 1 || error("N must be positive, got $N")
     min_primes >= 2 || error("min_primes must be ≥ 2, got $min_primes")
@@ -182,6 +186,8 @@ function classify_mtcs_auto(N::Int;
                                                                 precheck_unit_axiom = precheck_unit_axiom,
                                                                 reconstruction_bound = reconstruction_bound,
                                                                 skip_FR = skip_FR,
+                                                                gauge_fixing = gauge_fixing,
+                                                                toric_gauge_fixing = toric_gauge_fixing,
                                                                 verbose = verbose)
                     catch err
                         stage_reason = sprint(showerror, err)

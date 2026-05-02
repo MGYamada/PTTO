@@ -1,5 +1,59 @@
 # Changelog
 
+## v0.9.2 - Multiplicity-Free Toric Gauge Preconditioning
+
+### Added
+- Added multiplicity-free toric gauge preconditioning immediately before
+  exact F/R reconstruction in `classify_mtcs_at_conductor` and
+  `classify_mtcs_auto`.
+- Added `ToricGaugeData` and `ToricGaugeFixingError` for structured
+  pre-reconstruction toric gauge data and explicit failure reporting.
+- Added `gauge_fixing = :auto | :toric | :none` and
+  `toric_gauge_fixing::Bool` controls to the conductor pipeline:
+  `:auto` applies the toric F-symbol slice only for multiplicity-free fusion
+  rules, `:toric` requires it, and `:none` disables it.
+- Added tests for multiplicity-free detection on Semion, Fibonacci, and Ising,
+  plus a synthetic non-multiplicity-free fusion tensor.
+- Added finite-field regression coverage for `GaugeAction` values stored as
+  `FpElem` in `apply_gauge_mod_p`.
+- Added a small-prime stabilizer test comparing brute-force finite-field
+  stabilizer enumeration against the Smith-normal-form stabilizer count.
+
+### Changed
+- Bumped the package version to `0.9.2`.
+- Exact F/R reconstruction now receives the deterministic toric F-symbol slice
+  as preconditioning data when the fusion rule is multiplicity-free.
+- Clarified that ACMG's current toric gauge convention is the full
+  channel-scalar gauge group: unit channels such as `(1,a,a)`, `(a,1,a)`,
+  and `(1,1,1)` are included, so the action generally includes an
+  ineffective kernel.
+- Added gauge-convention metadata to finite-field gauge groups, stabilizer
+  equations, toric gauge data, and toric normal-form reports:
+  `:gauge_convention => :full_channel_scalar`,
+  `:gauge_group_kind => :full_channel_toric_gauge`,
+  `:includes_unit_channels => true`, and
+  `:includes_ineffective_kernel => true`.
+- Documented that `gauge_equivalent` is a deterministic F-slice based
+  comparison, reliable when the selected F-slice is complete or the residual
+  gauge action is known to be trivial on R-symbols.
+
+### Fixed
+- Fixed `apply_gauge_mod_p` for `GaugeAction`, `GaugeParameters`, dictionaries,
+  vectors, and symbol data containing `FpElem` scalars.  The helper now checks
+  that finite-field scalars belong to the requested prime field instead of
+  relying on `Int(::FpElem)`.
+
+### Documentation
+- Updated `docs/src/classify_mtcs.md` to describe the new toric gauge
+  preconditioning step and how to disable or require it.
+- Updated `docs/src/gauge_fixing.md` and `docs/src/gauge_stabilizers.md` to
+  distinguish the full channel-scalar convention from unit-normalized or
+  effective toric gauge conventions.
+
+### Tests
+- Verified the full package test suite with
+  `julia --project=. test/runtests.jl` (`943` tests).
+
 ## v0.9.1 - Gauge Stabilizers and API Boundary Refinements
 
 ### Added

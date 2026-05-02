@@ -13,6 +13,35 @@ _is_reconstruction_unstable_message(msg::AbstractString) = begin
            occursin("crt", low)
 end
 
+function _normalize_toric_gauge_mode(gauge_fixing::Symbol,
+                                     toric_gauge_fixing::Bool)
+    gauge_fixing in (:auto, :toric, :none) ||
+        error("gauge_fixing must be one of :auto, :toric, or :none; got $(repr(gauge_fixing))")
+    !toric_gauge_fixing && gauge_fixing == :auto && return :none
+    !toric_gauge_fixing && gauge_fixing == :toric &&
+        error("conflicting gauge-fixing options: toric_gauge_fixing=false but gauge_fixing=:toric")
+    return gauge_fixing
+end
+
+function _toric_pre_reconstruction_data(Nijk::Array{Int,3};
+                                        gauge_fixing::Symbol = :auto,
+                                        toric_gauge_fixing::Bool = true,
+                                        field = nothing,
+                                        conventions = :tensorcategories)
+    mode = _normalize_toric_gauge_mode(gauge_fixing, toric_gauge_fixing)
+    mode == :none &&
+        return (apply = false, mode = mode, data = nothing,
+                reason = :disabled)
+    if !is_multiplicity_free(Nijk)
+        mode == :toric &&
+            throw(ToricGaugeFixingError("gauge_fixing=:toric was requested, but the fusion rule is not multiplicity-free"))
+        return (apply = false, mode = mode, data = nothing,
+                reason = :not_multiplicity_free)
+    end
+    data = toric_gauge_data(Nijk; field = field, conventions = conventions)
+    return (apply = true, mode = mode, data = data, reason = :multiplicity_free)
+end
+
 function _fr_reconstruction_no_solution_error()
     error("exact F/R reconstruction did not find a cyclotomic solution for this input")
 end
@@ -285,6 +314,7 @@ function compute_FR_from_ST(Nijk::Array{Int,3};
                             max_ambiguous_crt_coords::Int = 4096,
                             exact_fallback::Bool = true,
                             pentagon_gauge_fixing::Bool = false,
+                            toric_gauge_data = nothing,
                             canonicalize_gauge::Bool = true,
                             verbose::Bool = false,
                             kwargs...)
@@ -305,9 +335,15 @@ function compute_FR_from_ST(Nijk::Array{Int,3};
         return return_all ? merge(result, (candidates = candidates,)) : result
     end
     _, pentagon_eqs, nF = get_pentagon_system(Nijk, r)
-    gauge_fixed = pentagon_gauge_fixing ?
-        _select_pentagon_gauge_fixed_indices(Nijk, r, nF) :
+    gauge_fixed = if pentagon_gauge_fixing
+        if toric_gauge_data !== nothing
+            Int[i for i in toric_gauge_data.slice.fixed_indices if i <= nF]
+        else
+            _select_pentagon_gauge_fixed_indices(Nijk, r, nF)
+        end
+    else
         Int[]
+    end
     reduced_pentagon = _substitute_fixed_one_polys(pentagon_eqs, nF, gauge_fixed;
                                                    var_prefix = :x)
     verbose && !isempty(gauge_fixed) &&

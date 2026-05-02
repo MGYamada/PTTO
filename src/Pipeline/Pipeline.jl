@@ -107,6 +107,8 @@ end
                         galois_sector = 1,
                         test_primes = nothing,
                         skip_FR = false,
+                        gauge_fixing = :auto,
+                        toric_gauge_fixing = true,
                         verbose = false)
         -> ClassifiedMTC
 
@@ -134,6 +136,12 @@ Arguments:
                                      primes; remaining are fresh.
 - `skip_FR::Bool = false`:           when true, stop after exact
                                      cyclotomic modular-data lift.
+- `gauge_fixing::Symbol = :auto`:    `:auto` applies toric F-symbol gauge
+                                     preconditioning only for multiplicity-free
+                                     fusion rules; `:toric` requires it and
+                                     `:none` disables it.
+- `toric_gauge_fixing::Bool = true`: compatibility switch for disabling the
+                                     toric preconditioning step.
 - `verbose::Bool = false`:           print progress.
 """
 function classify_from_group(group::Dict{Int, MTCCandidate},
@@ -147,6 +155,8 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                              test_primes::Union{Vector{Int}, Nothing} = nothing,
                              catalog = nothing,
                              skip_FR::Bool = false,
+                             gauge_fixing::Symbol = :auto,
+                             toric_gauge_fixing::Bool = true,
                              verbose::Bool = false,
                              kwargs...)
     isempty(kwargs) || error("unsupported keyword arguments: $(collect(keys(kwargs)))")
@@ -242,6 +252,19 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                              galois_sector)
     end
     verbose && println("  exact (F,R) layer requested on rank=$rank...")
+    toric_pre = _toric_pre_reconstruction_data(Nijk;
+                                               gauge_fixing = gauge_fixing,
+                                               toric_gauge_fixing = toric_gauge_fixing,
+                                               field = field(CyclotomicContext(N)),
+                                               conventions = :tensorcategories)
+    if verbose
+        if toric_pre.apply
+            println("  toric gauge fixing: multiplicity-free; fixing " *
+                    "$(length(toric_pre.data.slice.fixed_indices)) F-coordinate(s) before F/R reconstruction")
+        elseif toric_pre.reason == :not_multiplicity_free
+            println("  toric gauge fixing skipped: fusion rule is not multiplicity-free")
+        end
+    end
 
     fr_result = compute_FR_from_ST(Nijk;
                                    context = CyclotomicContext(N),
@@ -249,6 +272,8 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                                    T = T_for_fr,
                                    return_all = true,
                                    primes = all_primes,
+                                   pentagon_gauge_fixing = toric_pre.apply,
+                                   toric_gauge_data = toric_pre.data,
                                    verbose = verbose)
     fr_result.F === nothing && error("exact F/R reconstruction could not produce any solution")
     isempty(fr_result.candidates) && error("exact F/R reconstruction produced no valid candidates")
@@ -288,6 +313,8 @@ end
                                 max_block_dim = 3,
                                 reconstruction_bound = 50,
                                 skip_FR = false,
+                                gauge_fixing = :auto,
+                                toric_gauge_fixing = true,
                                 verbose = true)
         -> Vector{ClassifiedMTC}
 
@@ -378,6 +405,12 @@ Arguments:
                                    search-safe bound before reconstruction.
 - `skip_FR::Bool = false`:         when true, stop after exact
                                    cyclotomic modular-data lift.
+- `gauge_fixing::Symbol = :auto`:  `:auto` applies toric F-symbol gauge
+                                   preconditioning only for multiplicity-free
+                                   fusion rules; `:toric` requires it and
+                                   errors otherwise; `:none` disables it.
+- `toric_gauge_fixing::Bool = true`: compatibility switch. Set false to
+                                   disable the toric preconditioning step.
 - `verbose::Bool = true`:          print progress.
 """
 function classify_mtcs_at_conductor(N::Int;
@@ -397,6 +430,8 @@ function classify_mtcs_at_conductor(N::Int;
                                     precheck_unit_axiom::Bool = true,
                                     reconstruction_bound::Int = 50,
                                     skip_FR::Bool = false,
+                                    gauge_fixing::Symbol = :auto,
+                                    toric_gauge_fixing::Bool = true,
                                     verbose::Bool = true,
                                     kwargs...)
     N_effective = compute_effective_conductor(N; conductor_mode = conductor_mode)
@@ -535,6 +570,8 @@ function classify_mtcs_at_conductor(N::Int;
                                                 test_primes = used,
                                                 catalog = catalog,
                                                 skip_FR = true,
+                                                gauge_fixing = gauge_fixing,
+                                                toric_gauge_fixing = toric_gauge_fixing,
                                                 verbose = verbose)
                     if !cmtc.verify_fresh && extra_idx <= length(group_primes)
                         p_new = group_primes[extra_idx]
@@ -597,12 +634,27 @@ function classify_mtcs_at_conductor(N::Int;
         verbose && println("  key=$key: members=$(length(idxs)), rank=$(rep.rank)")
         local fr_result
         try
+            toric_pre = _toric_pre_reconstruction_data(rep.Nijk;
+                                                       gauge_fixing = gauge_fixing,
+                                                       toric_gauge_fixing = toric_gauge_fixing,
+                                                       field = field(CyclotomicContext(rep.N)),
+                                                       conventions = :tensorcategories)
+            if verbose
+                if toric_pre.apply
+                    println("    toric gauge fixing: multiplicity-free; fixing " *
+                            "$(length(toric_pre.data.slice.fixed_indices)) F-coordinate(s) before F/R reconstruction")
+                elseif toric_pre.reason == :not_multiplicity_free
+                    println("    toric gauge fixing skipped: fusion rule is not multiplicity-free")
+                end
+            end
             fr_result = compute_FR_from_ST(rep.Nijk;
                                            context = CyclotomicContext(rep.N),
                                            S = rep.S_cyclotomic,
                                            T = rep.T_cyclotomic,
                                            return_all = true,
                                            primes = chosen_primes,
+                                           pentagon_gauge_fixing = toric_pre.apply,
+                                           toric_gauge_data = toric_pre.data,
                                            verbose = verbose)
         catch err
             msg = sprint(showerror, err)

@@ -162,9 +162,11 @@ export semion_fusion_rules, fibonacci_fusion_rules, toric_code_fusion_rules
 export ising_fusion_rules
 
 export GaugeAction, GaugeParameters, GaugeChoice, GaugeFixingResult
+export ToricGaugeData, ToricGaugeFixingError
 export identity_gauge, apply_gauge, compose_gauge, inverse_gauge
 export gauge_normal_form, validate_gauge_fixed
 export gauge_parameters, gauge_fixing_plan, is_gauge_fixed, gauge_fix
+export toric_gauge_data
 export StabilizerProblem, StabilizerEquations, StabilizerResult
 export stabilizer, stabilizer_equations, stabilizer_order
 export automorphisms, is_trivial_stabilizer, stabilizer_metadata

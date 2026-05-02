@@ -7,9 +7,13 @@ acts by
     F'^{ijk}_{o;a,b} = u[i,j,a] u[a,k,o] / (u[j,k,b] u[i,b,o]) F^{ijk}_{o;a,b}
     R'^{ij}_k       = u[i,j,k] / u[j,i,k] R^{ij}_k
 
-with unit channels normalized to `1`.  The current implementation is
-intentionally exact and multiplicity-free; higher multiplicity needs full
-change-of-basis matrices rather than channel scalars.
+The current implementation uses the full channel-scalar toric gauge group:
+unit channels such as `(1,a,a)`, `(a,1,a)`, and `(1,1,1)` are included as
+gauge parameters.  Consequently the action usually has an ineffective kernel.
+This convention is natural for stacky stabilizer counts, while unit-normalized
+or effective toric quotients should be treated as separate conventions.
+The implementation is intentionally exact and multiplicity-free; higher
+multiplicity needs full change-of-basis matrices rather than channel scalars.
 """
 
 function _identity_gauge(Nijk::Array{Int,3})
@@ -316,6 +320,9 @@ is_gauge_fixed(data::FRData) =
     gauge_equivalent(F1, R1, F2, R2, Nijk)
 
 Test gauge equivalence by comparing canonical channel-scalar representatives.
+This is a deterministic F-slice based comparison, not a complete quotient
+algorithm in all cases.  It is reliable when the selected F-slice is complete
+or when the residual gauge action is known to be trivial on R-symbols.
 """
 function gauge_equivalent(F1, R1, F2, R2, Nijk::Array{Int,3})
     c1 = canonical_gauge(F1, R1, Nijk)

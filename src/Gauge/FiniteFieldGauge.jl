@@ -15,22 +15,30 @@ function _pow_mod_signed(a::Integer, exponent::Integer, p::Integer)
     return Int(powermod(_inv_mod_nonzero(a, p), -exponent, p))
 end
 
+function _modp_scalar_value(x, p::Int)
+    if x isa FpElem
+        x.p == p || error("cannot use F_$(x.p) scalar over F_$p")
+        return x.value
+    end
+    return mod(Int(x), p)
+end
+
 function _gauge_value_mod_p(gauge_element, ch::GaugeParameter, idx::Int, p::Int)
     if gauge_element isa AbstractDict
-        return mod(Int(get(gauge_element, ch, 1)), p)
+        return _modp_scalar_value(get(gauge_element, ch, 1), p)
     elseif gauge_element isa GaugeTransform
-        return mod(Int(get(gauge_element.scalars, ch, 1)), p)
+        return _modp_scalar_value(get(gauge_element.scalars, ch, 1), p)
     elseif gauge_element isa GaugeParameters
-        return mod(Int(get(gauge_element.values, (ch[1], ch[2], ch[3], 1), 1)), p)
+        return _modp_scalar_value(get(gauge_element.values, (ch[1], ch[2], ch[3], 1), 1), p)
     elseif gauge_element isa GaugeAction
-        return mod(Int(get(gauge_element.parameters, (ch[1], ch[2], ch[3], 1), 1)), p)
+        return _modp_scalar_value(get(gauge_element.parameters, (ch[1], ch[2], ch[3], 1), 1), p)
     elseif gauge_element isa AbstractVector
         idx <= length(gauge_element) || error("gauge vector is shorter than the parameter list")
-        return mod(Int(gauge_element[idx]), p)
+        return _modp_scalar_value(gauge_element[idx], p)
     elseif hasproperty(gauge_element, :parameters) && hasproperty(gauge_element, :values)
         pos = findfirst(==(ch), gauge_element.parameters)
         pos === nothing && return 1
-        return mod(Int(gauge_element.values[pos]), p)
+        return _modp_scalar_value(gauge_element.values[pos], p)
     end
     error("unsupported gauge element $(typeof(gauge_element))")
 end
@@ -74,7 +82,8 @@ function _apply_values_mod_p(values, coords, params, gauge_element, p::Int)
     length(values) == length(coords) || error("values and coordinates length mismatch")
     out = similar(collect(values), Int)
     for (i, coord) in enumerate(coords)
-        out[i] = mod(Int(values[i]) * _coordinate_factor_mod_p(coord, params, gauge_element, p), p)
+        out[i] = mod(_modp_scalar_value(values[i], p) *
+                     _coordinate_factor_mod_p(coord, params, gauge_element, p), p)
     end
     return out
 end
@@ -96,17 +105,17 @@ function apply_gauge_mod_p(symbol_data, gauge_element, p::Integer)
                 values = values,
                 parameters = params)
     elseif symbol_data isa AbstractDict
-        return Dict(coord => mod(Int(value) *
+        return Dict(coord => mod(_modp_scalar_value(value, p) *
                                  _coordinate_factor_mod_p(coord, params, gauge_element, p), p)
                     for (coord, value) in symbol_data)
     elseif hasproperty(symbol_data, :F) || hasproperty(symbol_data, :R)
         Fout = hasproperty(symbol_data, :F) ?
-            Dict(coord => mod(Int(value) *
+            Dict(coord => mod(_modp_scalar_value(value, p) *
                               _coordinate_factor_mod_p(coord, params, gauge_element, p), p)
                  for (coord, value) in symbol_data.F) :
             Dict{NamedTuple, Int}()
         Rout = hasproperty(symbol_data, :R) ?
-            Dict(coord => mod(Int(value) *
+            Dict(coord => mod(_modp_scalar_value(value, p) *
                               _coordinate_factor_mod_p(coord, params, gauge_element, p), p)
                  for (coord, value) in symbol_data.R) :
             Dict{NamedTuple, Int}()
@@ -228,6 +237,10 @@ function toric_gauge_normal_form(data::FRData; include_R::Bool = true,
                              :fixed_indices => fixed_indices,
                              :complete => complete,
                              :stage => :fr_solve_preprocessing,
+                             :gauge_convention => :full_channel_scalar,
+                             :gauge_group_kind => :full_channel_toric_gauge,
+                             :includes_unit_channels => true,
+                             :includes_ineffective_kernel => true,
                              :stabilizer_size => stabilizer,
                              :stacky_weight => stacky,
                              :verification => verification)
