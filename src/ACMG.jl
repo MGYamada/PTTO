@@ -79,6 +79,7 @@ include("BraidRepresentations/BraidRepresentations.jl")
 # Gauge: public gauge API surface and gauge-fixing helpers over FRData accessors.
 include("Gauge/GaugeWeights.jl")
 include("Gauge/GaugeTypes.jl")
+include("Gauge/GeneralGauge.jl")
 include("Gauge/ToricGauge.jl")
 include("Gauge/FiniteFieldGauge.jl")
 include("Gauge/Gauge.jl")
@@ -163,10 +164,17 @@ export ising_fusion_rules
 
 export GaugeAction, GaugeParameters, GaugeChoice, GaugeFixingResult
 export ToricGaugeData, ToricGaugeFixingError
+export FusionSpaceIndex, GaugeFactor, GeneralGaugeData, GaugeTransformation
+export GeneralGaugeValidationError, GeneralGaugeActionNotImplementedError
 export identity_gauge, apply_gauge, compose_gauge, inverse_gauge
 export gauge_normal_form, validate_gauge_fixed
 export gauge_parameters, gauge_fixing_plan, is_gauge_fixed, gauge_fix
 export toric_gauge_data
+export general_gauge_data, is_toric, gauge_group_dimension
+export identity_gauge_transformation, validate_gauge_transformation
+export is_invertible_matrix_over_field, finite_gauge_group_order
+export apply_gauge_to_F, apply_gauge_to_R, apply_gauge_to_FR
+export gauge_stabilizer, gauge_orbit_dimension, GaugeStabilizerNotComputed
 export StabilizerProblem, StabilizerEquations, StabilizerResult
 export stabilizer, stabilizer_equations, stabilizer_order
 export automorphisms, is_trivial_stabilizer, stabilizer_metadata

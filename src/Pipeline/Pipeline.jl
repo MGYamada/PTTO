@@ -103,7 +103,7 @@ end
 """
     classify_from_group(group, N, stratum, all_primes;
                         scale_factor = 2,
-                        reconstruction_bound = 50,
+                        reconstruction_bound = 4,
                         galois_sector = 1,
                         test_primes = nothing,
                         skip_FR = false,
@@ -125,10 +125,11 @@ Arguments:
 - `stratum::Stratum`:                the stratum the group came from
 - `all_primes::Vector{Int}`:         primes present in `group`
 - `scale_factor::Int = 2`:           scalar multiplying S before rational CRT
-- `reconstruction_bound::Int = 50`:  requested coefficient/denominator bound
-                                     for cyclotomic CRT fallback. Pipeline
-                                     fallback caps this to a small search-safe
-                                     bound before MITM reconstruction.
+- `reconstruction_bound::Int = 4`:   coefficient/denominator bound for
+                                     cyclotomic CRT fallback. Values above
+                                     the pipeline's internal search-safe cap
+                                     are currently unsupported and are capped
+                                     before MITM reconstruction.
 - `galois_sector::Int = 1`:          sector index for provenance.
 - `test_primes::Vector{Int}=nothing`: which primes to use for CRT.
                                      If `nothing`, uses first
@@ -137,9 +138,12 @@ Arguments:
 - `skip_FR::Bool = false`:           when true, stop after exact
                                      cyclotomic modular-data lift.
 - `gauge_fixing::Symbol = :auto`:    `:auto` applies toric F-symbol gauge
-                                     preconditioning only for multiplicity-free
-                                     fusion rules; `:toric` requires it and
-                                     `:none` disables it.
+                                     preconditioning only when all
+                                     `GeneralGauge` factors are `GL(1)`;
+                                     `:toric` requires that condition,
+                                     `:general` constructs general gauge
+                                     metadata without canonical fixing, and
+                                     `:none` disables active fixing.
 - `toric_gauge_fixing::Bool = true`: compatibility switch for disabling the
                                      toric preconditioning step.
 - `verbose::Bool = false`:           print progress.
@@ -150,7 +154,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                              all_primes::Vector{Int};
                              N_input::Int = N,
                              scale_factor::Int = 2,
-                             reconstruction_bound::Int = 50,
+                             reconstruction_bound::Int = 4,
                              galois_sector::Int = 1,
                              test_primes::Union{Vector{Int}, Nothing} = nothing,
                              catalog = nothing,
@@ -241,6 +245,12 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
     exact_mtc_check.valid ||
         error("exact modular data failed fusion/twist validation: $(exact_mtc_check.reason)")
 
+    gauge_setup = _toric_pre_reconstruction_data(Nijk;
+                                                 gauge_fixing = gauge_fixing,
+                                                 toric_gauge_fixing = toric_gauge_fixing,
+                                                 field = field(CyclotomicContext(N)),
+                                                 conventions = :tensorcategories)
+
     # -------- Exact (F, R) layer --------
     rank = size(Nijk, 1)
 
@@ -249,21 +259,23 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                              scale_factor, used, fresh, verify_fresh,
                              verify_exact_lift,
                              S_cyc, T_for_fr, nothing, nothing, nothing,
-                             galois_sector)
+                             galois_sector; gauge_data = gauge_setup.general)
     end
     verbose && println("  exact (F,R) layer requested on rank=$rank...")
-    toric_pre = _toric_pre_reconstruction_data(Nijk;
-                                               gauge_fixing = gauge_fixing,
-                                               toric_gauge_fixing = toric_gauge_fixing,
-                                               field = field(CyclotomicContext(N)),
-                                               conventions = :tensorcategories)
+    toric_pre = gauge_setup
     if verbose
         if toric_pre.apply
             println("  toric gauge fixing: multiplicity-free; fixing " *
                     "$(length(toric_pre.data.slice.fixed_indices)) F-coordinate(s) before F/R reconstruction")
+        elseif toric_pre.reason == :general_metadata_only
+            println("  general gauge metadata constructed; canonical general gauge fixing is not implemented")
         elseif toric_pre.reason == :not_multiplicity_free
             println("  toric gauge fixing skipped: fusion rule is not multiplicity-free")
         end
+    end
+    if toric_pre.reason == :not_multiplicity_free
+        @info "Gauge fixing not implemented for non-multiplicity-free fusion rules; " *
+              "F/R search will not factor out the continuous gauge orbit" gauge_fixing = toric_pre.mode
     end
 
     fr_result = compute_FR_from_ST(Nijk;
@@ -297,7 +309,7 @@ function classify_from_group(group::Dict{Int, MTCCandidate},
                          verify_exact_lift,
                          S_cyc, T_for_fr,
                          selected.F, selected.R, md_roundtrip,
-                         galois_sector)
+                         galois_sector; gauge_data = gauge_setup.general)
 end
 
 # ============================================================
@@ -311,7 +323,7 @@ end
                                 min_primes = 4, prime_start = 29, prime_window = 2000,
                                 verlinde_threshold = 3,
                                 max_block_dim = 3,
-                                reconstruction_bound = 50,
+                                reconstruction_bound = 4,
                                 skip_FR = false,
                                 gauge_fixing = :auto,
                                 toric_gauge_fixing = true,
@@ -399,16 +411,20 @@ Arguments:
                                    run fast unit-axiom precheck before
                                    full Verlinde tensor evaluation in
                                    finite-field candidate loop.
-- `reconstruction_bound::Int = 50`: requested coefficient and denominator
-                                   bound for cyclotomic power-basis CRT.
-                                   Pipeline fallback caps this to a small
-                                   search-safe bound before reconstruction.
+- `reconstruction_bound::Int = 4`:  coefficient and denominator bound for
+                                   cyclotomic power-basis CRT. Values above
+                                   the pipeline's internal search-safe cap
+                                   are currently unsupported and are capped
+                                   before reconstruction.
 - `skip_FR::Bool = false`:         when true, stop after exact
                                    cyclotomic modular-data lift.
 - `gauge_fixing::Symbol = :auto`:  `:auto` applies toric F-symbol gauge
-                                   preconditioning only for multiplicity-free
-                                   fusion rules; `:toric` requires it and
-                                   errors otherwise; `:none` disables it.
+                                   preconditioning only when all
+                                   `GeneralGauge` factors are `GL(1)`;
+                                   `:toric` requires it and errors otherwise;
+                                   `:general` constructs general gauge
+                                   metadata without canonical fixing; `:none`
+                                   disables active fixing.
 - `toric_gauge_fixing::Bool = true`: compatibility switch. Set false to
                                    disable the toric preconditioning step.
 - `verbose::Bool = true`:          print progress.
@@ -428,7 +444,7 @@ function classify_mtcs_at_conductor(N::Int;
                                     max_units_for_groebner::Int = typemax(Int),
                                     groebner_allow_fallback::Bool = false,
                                     precheck_unit_axiom::Bool = true,
-                                    reconstruction_bound::Int = 50,
+                                    reconstruction_bound::Int = 4,
                                     skip_FR::Bool = false,
                                     gauge_fixing::Symbol = :auto,
                                     toric_gauge_fixing::Bool = true,
@@ -523,8 +539,8 @@ function classify_mtcs_at_conductor(N::Int;
                        "$(length(strata_list) - length(stratum_results)) skipped")
     if verbose && !isempty(skipped_reasons)
         println("  skip reasons (first 80 chars of error × count):")
-        for (reason, count) in sort(collect(skipped_reasons), by = x -> -x[2])
-            println("    [$count×] $reason")
+        for (reason, match_count) in sort(collect(skipped_reasons), by = x -> -x[2])
+            println("    [$match_count×] $reason")
         end
     end
 
@@ -643,9 +659,15 @@ function classify_mtcs_at_conductor(N::Int;
                 if toric_pre.apply
                     println("    toric gauge fixing: multiplicity-free; fixing " *
                             "$(length(toric_pre.data.slice.fixed_indices)) F-coordinate(s) before F/R reconstruction")
+                elseif toric_pre.reason == :general_metadata_only
+                    println("    general gauge metadata constructed; canonical general gauge fixing is not implemented")
                 elseif toric_pre.reason == :not_multiplicity_free
                     println("    toric gauge fixing skipped: fusion rule is not multiplicity-free")
                 end
+            end
+            if toric_pre.reason == :not_multiplicity_free
+                @info "Gauge fixing not implemented for non-multiplicity-free fusion rules; " *
+                      "F/R search will not factor out the continuous gauge orbit" gauge_fixing = toric_pre.mode
             end
             fr_result = compute_FR_from_ST(rep.Nijk;
                                            context = CyclotomicContext(rep.N),

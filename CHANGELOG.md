@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.9.3 - Review Fixes for Central-Charge and Pipeline Knobs
+
+### Changed
+- Bumped the package version to `0.9.3`.
+- Added `GeneralGaugeData` as the rigorous product
+  `∏_{a,b,c} GL(N_ab^c)` foundation for multiplicityful fusion spaces, with
+  `FusionSpaceIndex`, `GaugeFactor`, and `GaugeTransformation`.
+- Added identity and validation APIs for general gauge transformations,
+  finite-field singular-matrix rejection, `gauge_group_dimension`, and
+  placeholder orbit/stabilizer interfaces for future quotient workflows.
+- Aligned toric gauge data with `GeneralGaugeData`, making the existing
+  multiplicity-free toric layer the `GL(1)` special case.
+- Added `gauge_fixing = :general` to construct general gauge metadata without
+  claiming canonical nonabelian gauge fixing.
+- Changed conductor-pipeline `reconstruction_bound` defaults from `50` to the
+  effective internal cap `4`, and documented that larger values are capped.
+- Replaced local `count` variables in pipeline/gauge internals with more
+  specific names to avoid future `Base.count` shadowing mistakes.
+- Replaced finite-field element representative recovery with direct
+  `lift(ZZ, a)`-based conversion instead of O(p) linear search.
+
+### Fixed
+- Clarified that `central_charge(data)` returns the `D²`-normalized moment
+  `p_+ / D²`, not the unit phase `p_+ / |p_+|`.
+- Added explicit `@info` logging when pipeline F/R reconstruction receives
+  non-multiplicity-free fusion rules and gauge fixing is therefore skipped.
+
+### Tests
+- Added GeneralGauge tests for toric examples, a synthetic multiplicity-two
+  channel, identity transformations, malformed transformations, and
+  finite-field singular matrices.
+- Added exact checks distinguishing `central_charge(data)` from the unit
+  Galois normalization for Semion, Fibonacci, and Ising.
+- Added `validate_exact_modular_data(data).valid` coverage for Semion,
+  Fibonacci, and Ising exact modular data constructors.
+
 ## v0.9.2 - Multiplicity-Free Toric Gauge Preconditioning
 
 ### Added

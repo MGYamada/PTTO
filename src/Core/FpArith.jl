@@ -268,12 +268,24 @@ function _eval_fp_poly(f, vals::Vector)
     return v
 end
 
+function _fp_elem_to_int(a::FpElem, p::Int)
+    a.p == p || error("finite-field element lies in F_$(a.p), expected F_$p")
+    return a.value
+end
+
 function _fp_elem_to_int(a, p::Int)
-    F = parent(a)
-    for i in 0:(p - 1)
-        a == F(i) && return i
+    lifted = try
+        Oscar.lift(Oscar.ZZ, a)
+    catch
+        try
+            lift(Oscar.ZZ, a)
+        catch
+            nothing
+        end
     end
-    error("could not lift finite-field element to an integer representative")
+    lifted === nothing &&
+        error("could not lift finite-field element to an integer representative")
+    return mod(Int(lifted), p)
 end
 
 # ----- Matrix helpers over F_p -----

@@ -3,10 +3,9 @@
 ## What this page covers
 
 The gauge layer treats a change of fusion-channel bases as an algebraic group
-action on `FRData`.  In the current multiplicity-free backend, every nonzero
-channel `Hom(a ⊗ b, c)` carries one scalar parameter `u[a,b,c]`.  Future
-finite-field, GIT-quotient, and multiplicity-aware backends can replace the
-constraint solver while keeping the same public action boundary.
+action on `FRData`.  In v0.9.3, ACMG represents the full general gauge group
+of a fusion tensor, while active canonical gauge fixing remains implemented
+only for the multiplicity-free toric case.
 
 ## Mathematical meaning
 
@@ -31,6 +30,51 @@ gauge-group helpers records this as `:gauge_convention =>
 :full_channel_scalar`, `:includes_unit_channels => true`, and
 `:includes_ineffective_kernel => true`.  Unit-normalized and effective toric
 gauge groups are separate conventions, not the default used here.
+
+## GeneralGauge
+
+For general fusion multiplicities, gauge transformations are changes of basis
+in the fusion spaces
+
+```text
+V_ab^c = Hom(a ⊗ b, c),      dim V_ab^c = N_ab^c.
+```
+
+The gauge group is therefore
+
+```text
+G = ∏_{a,b,c} GL(N_ab^c),
+```
+
+omitting zero-dimensional channels.  Its algebraic dimension is
+
+```text
+dim G = Σ_{a,b,c} (N_ab^c)^2.
+```
+
+The multiplicity-free case is the special case `N_ab^c ∈ {0,1}`, where every
+positive factor is `GL(1) = G_m`; this is exactly the toric gauge group used
+by the existing Smith-normal-form preconditioning.
+
+The new foundation types are `FusionSpaceIndex`, `GaugeFactor`,
+`GeneralGaugeData`, and `GaugeTransformation`.  Use
+`general_gauge_data(fusion)` to construct the product of general linear
+groups, `gauge_group_dimension(gauge)` to compute the formula above, and
+`identity_gauge_transformation(gauge)` plus
+`validate_gauge_transformation(gauge, transformation)` to validate basis
+changes.  Validation checks that every positive-dimensional channel has a
+matrix, that no zero channel appears, that matrix sizes match `N_ab^c`, and
+that each matrix is invertible.
+
+In v0.9.3, the general action API is intentionally conservative:
+`apply_gauge_to_F`, `apply_gauge_to_R`, and `apply_gauge_to_FR` support the
+identity transformation for all `GeneralGaugeData`, and the scalar toric
+action for `GL(1)` factors.  Nontrivial nonabelian actions for factors
+`GL(n)` with `n > 1` throw `GeneralGaugeActionNotImplementedError` rather
+than silently applying an incorrect formula.  Stabilizer and quotient-facing
+hooks such as `gauge_stabilizer` and `gauge_orbit_dimension` are placeholders
+for future finite-field and GIT workflows; they do not fake stabilizer
+results.
 
 ## API overview
 
@@ -73,10 +117,22 @@ slice and asks the reconstruction solver to set those selected coordinates to
 `1`.  If any fusion coefficient is greater than one, the step is skipped by
 default and the previous reconstruction path is used.
 
-Use `gauge_fixing = :none` or `toric_gauge_fixing = false` to disable this
-preconditioning.  Use `gauge_fixing = :toric` when multiplicity-free toric
-gauge fixing is required; ACMG throws `ToricGaugeFixingError` if the fusion
-rule is not multiplicity-free.
+Use `gauge_fixing = :none` or `toric_gauge_fixing = false` to disable active
+preconditioning.  The `gauge_fixing` keyword accepts:
+
+```julia
+:auto
+:toric
+:general
+:none
+```
+
+`:auto` uses toric gauge fixing exactly when all `GeneralGauge` factors are
+`GL(1)`.  If multiplicities greater than one occur, ACMG records
+`GeneralGaugeData` and does not attempt nonabelian gauge fixing.  `:toric`
+requires the toric condition and throws `ToricGaugeFixingError` otherwise.
+`:general` constructs and validates the general gauge metadata but does not
+claim a canonical representative.  `:none` disables active fixing.
 
 ```julia
 using ACMG
