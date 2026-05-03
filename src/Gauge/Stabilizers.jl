@@ -211,13 +211,13 @@ function _enumerated_stabilizer(problem::StabilizerProblem, elements;
                                 return_automorphisms::Bool = true)
     act = _stabilizer_action(problem, action)
     autos = Any[]
-    count = 0
+    match_count = 0
     for g in elements
         _solution_equal(act(problem.solution, g), problem.solution) || continue
-        count += 1
+        match_count += 1
         return_automorphisms && push!(autos, g)
     end
-    order = BigInt(count)
+    order = BigInt(match_count)
     meta = _stabilizer_metadata(problem, :bruteforce, order, return_automorphisms)
     return StabilizerResult(return_automorphisms ? autos : nothing, order; metadata = meta)
 end
@@ -233,13 +233,13 @@ function _finite_field_gauge_stabilizer(problem::StabilizerProblem{<:FRData,<:_F
     end
     act = _stabilizer_action(problem, action)
     autos = GaugeAction[]
-    count = 0
+    match_count = 0
     for g in _iter_finite_field_gauge_actions(group)
         _solution_equal(act(problem.solution, g), problem.solution) || continue
-        count += 1
+        match_count += 1
         return_automorphisms && push!(autos, g)
     end
-    order = BigInt(count)
+    order = BigInt(match_count)
     meta = _stabilizer_metadata(problem, :bruteforce_finite_field_gauge,
                                 order, return_automorphisms,
                                 (field = Symbol("F_", group.p),

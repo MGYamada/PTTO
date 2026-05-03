@@ -42,8 +42,8 @@ Recommend admissible CRT primes for the given conductor.
 """
 function recommend_primes(N::Int, rank::Int; min_count::Int = 4,
                           window::Int = 2000, start_from::Int = 29)
-    count = max(min_count, rank <= 3 ? 4 : 6)
-    return select_admissible_primes(N; min_count = count,
+    prime_count = max(min_count, rank <= 3 ? 4 : 6)
+    return select_admissible_primes(N; min_count = prime_count,
                                     window = window,
                                     start_from = start_from)
 end

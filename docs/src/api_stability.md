@@ -67,6 +67,11 @@ F/R data, gauge, and braids:
   `identity_gauge`, `apply_gauge`, `compose_gauge`, `inverse_gauge`,
   `gauge_normal_form`, `validate_gauge_fixed`, `gauge_parameters`,
   `gauge_fixing_plan`, `is_gauge_fixed`, `gauge_fix`
+- `FusionSpaceIndex`, `GaugeFactor`, `GeneralGaugeData`,
+  `GaugeTransformation`, `general_gauge_data`, `is_toric`,
+  `gauge_group_dimension`, `identity_gauge_transformation`,
+  `validate_gauge_transformation`, `apply_gauge_to_F`,
+  `apply_gauge_to_R`, `apply_gauge_to_FR`
 - `FusionPath`, `FusionTreeBasis`, `BraidRepresentation`, `fusion_paths`,
   `fusion_basis`, `dim`, `braid_representation`, `braid_generator`,
   `braid_generators`, `braid_generators_B3`, `check_braid_relations`

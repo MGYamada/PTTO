@@ -23,6 +23,13 @@ moment API.  It makes the coefficients
 a probability distribution on the simple objects, so `ξ_n` is the `n`-th
 twist-spectrum moment and `ξ_0 = 1`.
 
+`central_charge(data)` is the same `D^2`-normalized moment as
+`higher_central_charge(data, 1)`: it returns `p_+ / D^2`, not the unit
+phase `p_+ / |p_+|`.  Its argument encodes the central charge modulo 8, while
+its magnitude is generally `1 / D`.  For the unit form, normalize numerically
+with `value / abs(value)` or use
+`higher_central_charge_result(data; normalization = :galois)`.
+
 ## Exact API
 
 ```julia

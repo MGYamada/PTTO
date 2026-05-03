@@ -36,7 +36,7 @@ end
                        max_units_for_groebner = typemax(Int),
                        groebner_allow_fallback = false,
                        precheck_unit_axiom = true,
-                       reconstruction_bound = 50,
+                       reconstruction_bound = 4,
                        skip_FR = false,
                        gauge_fixing = :auto,
                        toric_gauge_fixing = true,
@@ -78,9 +78,13 @@ Returns:
 Prime selection chooses the first `min_primes` primes `p > prime_start`
 with `N | (p - 1)`, so that the `N`-th roots of unity split in `F_p`.
 
-`reconstruction_bound` is forwarded as the requested cyclotomic CRT
-fallback bound. The pipeline applies a small internal cap before MITM
-reconstruction to avoid explosive searches in degenerate strata.
+`reconstruction_bound` is forwarded as the cyclotomic CRT fallback bound.
+Values above the pipeline's internal search-safe cap are currently unsupported
+and are capped before MITM reconstruction.
+
+`gauge_fixing` accepts `:auto`, `:toric`, `:general`, and `:none`.  The
+`:general` mode constructs `GeneralGaugeData` for provenance and future
+nonabelian workflows, but does not claim canonical gauge fixing.
 """
 function classify_mtcs_auto(N::Int;
                             max_rank_candidates::Vector{Int} = [2, 3, 4, 5],
@@ -99,7 +103,7 @@ function classify_mtcs_auto(N::Int;
                             max_units_for_groebner::Int = typemax(Int),
                             groebner_allow_fallback::Bool = false,
                             precheck_unit_axiom::Bool = true,
-                            reconstruction_bound::Int = 50,
+                            reconstruction_bound::Int = 4,
                             skip_FR::Bool = false,
                             gauge_fixing::Symbol = :auto,
                             toric_gauge_fixing::Bool = true,

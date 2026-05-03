@@ -15,8 +15,8 @@ end
 
 function _normalize_toric_gauge_mode(gauge_fixing::Symbol,
                                      toric_gauge_fixing::Bool)
-    gauge_fixing in (:auto, :toric, :none) ||
-        error("gauge_fixing must be one of :auto, :toric, or :none; got $(repr(gauge_fixing))")
+    gauge_fixing in (:auto, :toric, :general, :none) ||
+        error("gauge_fixing must be one of :auto, :toric, :general, or :none; got $(repr(gauge_fixing))")
     !toric_gauge_fixing && gauge_fixing == :auto && return :none
     !toric_gauge_fixing && gauge_fixing == :toric &&
         error("conflicting gauge-fixing options: toric_gauge_fixing=false but gauge_fixing=:toric")
@@ -29,17 +29,20 @@ function _toric_pre_reconstruction_data(Nijk::Array{Int,3};
                                         field = nothing,
                                         conventions = :tensorcategories)
     mode = _normalize_toric_gauge_mode(gauge_fixing, toric_gauge_fixing)
+    general = general_gauge_data(Nijk; field = field, conventions = conventions)
     mode == :none &&
         return (apply = false, mode = mode, data = nothing,
-                reason = :disabled)
-    if !is_multiplicity_free(Nijk)
+                reason = :disabled, general = general)
+    if !is_toric(general)
         mode == :toric &&
-            throw(ToricGaugeFixingError("gauge_fixing=:toric was requested, but the fusion rule is not multiplicity-free"))
+            throw(ToricGaugeFixingError("gauge_fixing=:toric was requested, but the GeneralGauge data has non-GL(1) factors"))
         return (apply = false, mode = mode, data = nothing,
-                reason = :not_multiplicity_free)
+                reason = :not_multiplicity_free, general = general)
     end
     data = toric_gauge_data(Nijk; field = field, conventions = conventions)
-    return (apply = true, mode = mode, data = data, reason = :multiplicity_free)
+    return (apply = mode != :general, mode = mode, data = data,
+            reason = mode == :general ? :general_metadata_only : :multiplicity_free,
+            general = general)
 end
 
 function _fr_reconstruction_no_solution_error()

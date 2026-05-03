@@ -244,6 +244,11 @@ end
 
 Return the ordinary exact central-charge moment using the same D²-normalized
 convention as `higher_central_charge(data, 1)`.
+
+This is the moment `p₊ / D²`, not the unit `p₊ / |p₊|`.  Its argument
+encodes the central charge modulo 8, while its magnitude is generally `1 / D`.
+For the unit form, use `value / abs(value)` numerically or call
+`higher_central_charge_result(data; normalization = :galois)`.
 """
 function central_charge(category_or_modular_data)
     return higher_central_charge(category_or_modular_data, 1)

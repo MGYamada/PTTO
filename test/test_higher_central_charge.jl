@@ -12,6 +12,9 @@ include("test_imports.jl")
         @test central_charge(semion) == higher_central_charge(semion, 1)
         @test ACMG.higher_central_charge_result(semion).ok
         @test ACMG.higher_central_charge_result(semion).value == z8
+        @test central_charge(semion) != ACMG.higher_central_charge_result(semion).value
+        @test central_charge(semion) * inv(semion.S[1, 1]) ==
+              ACMG.higher_central_charge_result(semion).value
         @test higher_central_charge(semion, 0) == one(K)
         @test higher_central_charge_period(semion) == 4
         @test higher_central_charge_sequence(semion) ==
@@ -26,6 +29,10 @@ include("test_imports.jl")
         theta = z20^8
         D2fib = one(Kfib) + phi^2
         @test central_charge(fib) == higher_central_charge(fib, 1)
+        @test central_charge(fib) !=
+              ACMG.higher_central_charge_result(fib; normalization = :galois).value
+        @test central_charge(fib) * inv(fib.S[1, 1]) ==
+              ACMG.higher_central_charge_result(fib; normalization = :galois).value
         @test higher_central_charge(fib, 0) == one(Kfib)
         @test higher_central_charge_period(fib) == 5
         @test higher_central_charge_sequence(fib) ==
@@ -36,6 +43,10 @@ include("test_imports.jl")
         Kising = ACMG.field(ising)
         z16 = ACMG.zeta(ising.context)
         @test central_charge(ising) == higher_central_charge(ising, 1)
+        @test central_charge(ising) !=
+              ACMG.higher_central_charge_result(ising; normalization = :galois).value
+        @test central_charge(ising) * inv(ising.S[1, 1]) ==
+              ACMG.higher_central_charge_result(ising; normalization = :galois).value
         @test higher_central_charge(ising, 0) == one(Kising)
         @test higher_central_charge_period(ising) == 16
         @test higher_central_charge_sequence(ising) ==

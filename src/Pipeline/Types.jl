@@ -128,6 +128,8 @@ Exact `(F, R)` layer:
 
 Provenance:
 - `galois_sector`:  integer sector index retained for provenance
+- `gauge_data`:     `GeneralGaugeData` constructed before F/R reconstruction
+                    when available
 """
 struct ClassifiedMTC
     N::Int
@@ -147,6 +149,7 @@ struct ClassifiedMTC
     verify_report::Union{FRRoundtripReport, Nothing}
     galois_sector::Int
     fr_status::FRStatus
+    gauge_data::Union{GeneralGaugeData, Nothing}
 end
 
 function ClassifiedMTC(N::Int, N_input::Int, rank::Int, stratum::Stratum,
@@ -157,7 +160,8 @@ function ClassifiedMTC(N::Int, N_input::Int, rank::Int, stratum::Stratum,
                        F_values::Union{Vector, Nothing},
                        R_values::Union{Vector, Nothing},
                        verify_report::Union{FRRoundtripReport, Nothing},
-                       galois_sector::Int)
+                       galois_sector::Int;
+                       gauge_data::Union{GeneralGaugeData, Nothing} = nothing)
     status = F_values === nothing || R_values === nothing ? FRSkipped :
              verify_report !== nothing && !verify_report.ok ? FRVerificationFailed :
              FRSolved
@@ -165,7 +169,7 @@ function ClassifiedMTC(N::Int, N_input::Int, rank::Int, stratum::Stratum,
                          used_primes, fresh_primes, verify_fresh,
                          verify_exact_lift, S_cyclotomic, T_cyclotomic,
                          F_values, R_values, verify_report, galois_sector,
-                         status)
+                         status, gauge_data)
 end
 
 fr_status(m::ClassifiedMTC) = m.fr_status
@@ -225,7 +229,7 @@ function _with_fr_result(c::ClassifiedMTC,
                          c.scale_factor, c.used_primes, c.fresh_primes, c.verify_fresh,
                          c.verify_exact_lift,
                          S, T,
-                         F, R, report, c.galois_sector, status)
+                         F, R, report, c.galois_sector, status, c.gauge_data)
 end
 
 function _with_fr_status(c::ClassifiedMTC, status::FRStatus)
@@ -234,7 +238,16 @@ function _with_fr_status(c::ClassifiedMTC, status::FRStatus)
                          c.verify_exact_lift,
                          c.S_cyclotomic, c.T_cyclotomic,
                          c.F_values, c.R_values, c.verify_report,
-                         c.galois_sector, status)
+                         c.galois_sector, status, c.gauge_data)
+end
+
+function _with_gauge_data(c::ClassifiedMTC, gauge_data::Union{GeneralGaugeData, Nothing})
+    return ClassifiedMTC(c.N, c.N_input, c.rank, c.stratum, c.Nijk,
+                         c.scale_factor, c.used_primes, c.fresh_primes, c.verify_fresh,
+                         c.verify_exact_lift,
+                         c.S_cyclotomic, c.T_cyclotomic,
+                         c.F_values, c.R_values, c.verify_report,
+                         c.galois_sector, c.fr_status, gauge_data)
 end
 function Base.show(io::IO, m::ClassifiedMTC)
     FR_status = if m.F_values === nothing

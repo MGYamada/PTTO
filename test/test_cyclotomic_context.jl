@@ -19,6 +19,7 @@ using ACMG
         @test base_ring(data.T) === K
         @test data.T[2, 2] == z^2
         @test data.S[1, 1] == inv(z + z^(-1))
+        @test validate_exact_modular_data(data).valid
 
         sigma3 = galois_action(data, 3)
         @test sigma3.T[2, 2] == z^6
@@ -42,6 +43,7 @@ using ACMG
         @test data.labels == [:one, :tau]
         @test data.T[2, 2] == z^8
         @test parent(data.S[1, 1]) === ACMG.field(ctx)
+        @test validate_exact_modular_data(data).valid
 
         sigma3 = galois_action(data, 3)
         @test sigma3.T[2, 2] == z^4
@@ -63,6 +65,7 @@ using ACMG
         @test data.T[2, 2] == z
         @test data.T[3, 3] == -one(ACMG.field(ctx))
         @test data.S[2, 2] == zero(ACMG.field(ctx))
+        @test validate_exact_modular_data(data).valid
 
         sigma3 = galois_action(data, 3)
         @test sigma3.T[2, 2] == z^3

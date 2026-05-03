@@ -148,8 +148,9 @@ function toric_gauge_data(rules::Union{FusionRule, Array{Int, 3}};
                           field = nothing,
                           conventions = :tensorcategories,
                           coordinate_kind::Symbol = :F)
-    is_multiplicity_free(rules) ||
-        throw(ToricGaugeFixingError("toric gauge fixing requires multiplicity-free fusion rules; found a fusion coefficient greater than 1"))
+    general = general_gauge_data(rules; field = field, conventions = conventions)
+    is_toric(general) ||
+        throw(ToricGaugeFixingError("toric gauge fixing requires all GeneralGauge factors to be GL(1); found a fusion coefficient greater than 1"))
     fr = _fusion_rule(rules)
     coordinate_kind == :F ||
         throw(ToricGaugeFixingError("toric gauge fixing currently supports only F-symbol preconditioning; got coordinate_kind=$(repr(coordinate_kind))"))
@@ -163,6 +164,7 @@ function toric_gauge_data(rules::Union{FusionRule, Array{Int, 3}};
         :nonzero_parameter_domain => field === nothing ? :torus : Symbol("$(field)_units"),
         :gauge_convention => :full_channel_scalar,
         :gauge_group_kind => :full_channel_toric_gauge,
+        :general_gauge => general,
         :includes_unit_channels => true,
         :includes_ineffective_kernel => true,
     )
